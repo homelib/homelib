@@ -1,0 +1,10 @@
+{
+  "name": "homelib",
+  "version": "0.0.0",
+  "license": "MIT",
+  "author": "vilicvane",
+  "dependencies": {
+    "@homelib/core": "workspace:*",
+    "tslib": "^2.6.1"
+  }
+}

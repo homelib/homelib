@@ -1,0 +1,14 @@
+{
+  "references": [
+    {
+      "path": "packages/core/src/library"
+    },
+    {
+      "path": "packages/core/src/test"
+    },
+    {
+      "path": "packages/homelib/src/program"
+    }
+  ],
+  "files": []
+}

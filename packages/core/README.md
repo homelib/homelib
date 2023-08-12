@@ -1,4 +1,4 @@
-# homelib-packages
+# @homelib/core
 
 Just another awesome magic.
 
