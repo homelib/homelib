@@ -1,0 +1,22 @@
+{
+  "root": true,
+  "ignorePatterns": [
+    "node_modules/",
+    "/packages/core/src/",
+    "/packages/core/bld/",
+    "/packages/homelib/src/",
+    "/packages/homelib/bld/"
+  ],
+  "extends": ["plugin:@mufan/js"],
+  "overrides": [
+    {
+      "files": "**/*.{js,jsx}"
+    },
+    {
+      "files": "**/*.cjs",
+      "parserOptions": {
+        "sourceType": "script"
+      }
+    }
+  ]
+}

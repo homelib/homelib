@@ -1,0 +1,14 @@
+{
+  "name": "@homelib/core",
+  "version": "0.0.0",
+  "license": "MIT",
+  "author": "vilicvane",
+  "exports": {
+    "types": "./bld/library/index.d.ts",
+    "require": "./bld/library/index.js",
+    "default": "./bld/library/index.js"
+  },
+  "dependencies": {
+    "tslib": "^2.6.1"
+  }
+}

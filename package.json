@@ -1,0 +1,24 @@
+{
+  "name": "homelib-packages",
+  "private": true,
+  "license": "MIT",
+  "author": "vilicvane",
+  "scripts": {
+    "3": "pnpm install && pnpm dedupe && pnpm install",
+    "build": "rimraf --glob packages/*/bld && tsc --build",
+    "lint": "eslint --no-error-on-unmatched-pattern . && run-in-every eslint-project --parallel --echo -- eslint --no-error-on-unmatched-pattern .",
+    "lint-prettier": "prettier --check .",
+    "test": "pnpm lint-prettier && pnpm build && pnpm lint",
+    "core": "pnpm --filter @homelib/core",
+    "homelib": "pnpm --filter homelib"
+  },
+  "devDependencies": {
+    "@mufan/code": "^0.2.16",
+    "@mufan/eslint-plugin": "^0.1.81",
+    "eslint": "^8.47.0",
+    "prettier": "^3.0.1",
+    "rimraf": "^5.0.1",
+    "run-in-every": "^0.2.0",
+    "typescript": "^5.1.6"
+  }
+}
