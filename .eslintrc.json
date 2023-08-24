@@ -4,6 +4,8 @@
     "node_modules/",
     "/packages/core/src/",
     "/packages/core/bld/",
+    "/packages/universal/src/",
+    "/packages/universal/bld/",
     "/packages/xiaomi/src/",
     "/packages/xiaomi/bld/",
     "/packages/homelib/src/",

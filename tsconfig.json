@@ -7,6 +7,9 @@
       "path": "packages/core/src/test"
     },
     {
+      "path": "packages/universal/src/library"
+    },
+    {
       "path": "packages/xiaomi/src/library"
     },
     {
