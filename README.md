@@ -1,4 +1,4 @@
-# homelib-packages
+# HomeLib
 
 Just another awesome magic.
 
