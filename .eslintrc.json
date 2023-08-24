@@ -7,7 +7,9 @@
     "/packages/xiaomi/src/",
     "/packages/xiaomi/bld/",
     "/packages/homelib/src/",
-    "/packages/homelib/bld/"
+    "/packages/homelib/bld/",
+    "/packages/design/src/",
+    "/packages/design/bld/"
   ],
   "extends": ["plugin:@mufan/js"],
   "overrides": [

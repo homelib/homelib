@@ -11,6 +11,9 @@
     },
     {
       "path": "packages/homelib/src/program"
+    },
+    {
+      "path": "packages/design/src/program"
     }
   ],
   "files": []

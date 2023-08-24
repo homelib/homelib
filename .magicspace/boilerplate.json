@@ -46,6 +46,24 @@
             ]
           }
         ]
+      },
+      {
+        "name": "@homelib/design",
+        "projects": [
+          {
+            "name": "program",
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              },
+              {
+                "package": "@homelib/xiaomi",
+                "project": "library"
+              }
+            ]
+          }
+        ]
       }
     ]
   }

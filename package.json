@@ -10,6 +10,7 @@
     "lint-prettier": "prettier --check .",
     "test": "pnpm lint-prettier && pnpm build && pnpm lint",
     "core": "pnpm --filter @homelib/core",
+    "design": "pnpm --filter @homelib/design",
     "xiaomi": "pnpm --filter @homelib/xiaomi",
     "homelib": "pnpm --filter homelib"
   },
