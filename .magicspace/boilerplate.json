@@ -23,7 +23,13 @@
         "name": "@homelib/xiaomi",
         "projects": [
           {
-            "name": "library"
+            "name": "library",
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              }
+            ]
           }
         ]
       },
