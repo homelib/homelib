@@ -41,6 +41,9 @@ importers:
       '@homelib/core':
         specifier: workspace:*
         version: link:../core
+      '@homelib/universal':
+        specifier: workspace:*
+        version: link:../universal
       '@homelib/xiaomi':
         specifier: workspace:*
         version: link:../xiaomi
@@ -49,6 +52,15 @@ importers:
         version: 2.6.2
 
   packages/homelib:
+    dependencies:
+      '@homelib/core':
+        specifier: workspace:*
+        version: link:../core
+      tslib:
+        specifier: ^2.6.2
+        version: 2.6.2
+
+  packages/universal:
     dependencies:
       '@homelib/core':
         specifier: workspace:*

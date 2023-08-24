@@ -20,6 +20,20 @@
         ]
       },
       {
+        "name": "@homelib/universal",
+        "projects": [
+          {
+            "name": "library",
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "@homelib/xiaomi",
         "projects": [
           {
@@ -55,6 +69,10 @@
             "references": [
               {
                 "package": "@homelib/core",
+                "project": "library"
+              },
+              {
+                "package": "@homelib/universal",
                 "project": "library"
               },
               {
