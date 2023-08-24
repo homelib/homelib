@@ -2,3 +2,4 @@ packages:
   - packages/core
   - packages/xiaomi
   - packages/homelib
+  - packages/design

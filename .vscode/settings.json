@@ -16,7 +16,8 @@
     "packages/core/src/library",
     "packages/core/src/test",
     "packages/xiaomi/src/library",
-    "packages/homelib/src/program"
+    "packages/homelib/src/program",
+    "packages/design/src/program"
   ],
   "eslint.validate": [
     "javascript",
