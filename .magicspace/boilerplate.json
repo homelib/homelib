@@ -20,6 +20,14 @@
         ]
       },
       {
+        "name": "@homelib/xiaomi",
+        "projects": [
+          {
+            "name": "library"
+          }
+        ]
+      },
+      {
         "name": "homelib",
         "projects": [
           {
