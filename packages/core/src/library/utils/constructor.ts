@@ -2,69 +2,42 @@ export function $constructor<
   TConstructor extends new (...args: never[]) => object,
 >(
   Constructor: TConstructor,
-): PreCallableConstructor<
+): ExtendedConstructor<
   ConstructorParameters<TConstructor>,
   InstanceType<TConstructor>
 >;
 export function $constructor(
   Constructor: new (...args: unknown[]) => object,
 ): (...args: unknown[]) => object {
-  const prototype = Constructor.prototype;
+  return build([]);
 
-  const calls: [key: string | symbol, args: unknown[]][] = [];
+  function build(
+    builders: ((instance: object) => object | void)[],
+  ): (...args: unknown[]) => object {
+    const built = (...args: unknown[]): object => {
+      let instance = new Constructor(...args);
 
-  return new Proxy(
-    (...args) => {
-      const instance = new Constructor(...args);
-
-      for (const [key, args] of calls) {
-        const method = Reflect.get(instance, key);
-
-        if (typeof method !== 'function') {
-          throw new TypeError(`Expected ${String(key)} to be a function`);
-        }
-
-        method.apply(instance, args);
+      for (const builder of builders) {
+        instance = builder(instance) ?? instance;
       }
 
       return instance;
-    },
-    {
-      get(target, key) {
-        const descriptor = Reflect.getOwnPropertyDescriptor(prototype, key);
+    };
 
-        if (!descriptor || typeof descriptor.value !== 'function') {
-          return Reflect.get(target, key);
-        }
-
-        return function (this: object, ...args: unknown[]) {
-          calls.push([key, args]);
-          return this;
-        };
+    Reflect.setPrototypeOf(built, {
+      build(builder: (instance: object) => object | void) {
+        return build([...builders, builder]);
       },
-    },
-  );
+    });
+
+    return built;
+  }
 }
 
-type PreCallableConstructor<
-  TConstructorArgs extends unknown[],
-  T extends object,
-> = ((...args: TConstructorArgs) => T) & {
-  [TKey in PreCallableKey<T>]: T[TKey] extends (
-    ...args: infer TMethodArgs
-  ) => infer TMethodReturn
-    ? (
-        TMethodReturn extends object ? TMethodReturn : T
-      ) extends infer TRefined extends object
-      ? (
-          ...args: TMethodArgs
-        ) => PreCallableConstructor<TConstructorArgs, TRefined>
-      : never
-    : never;
+export type ExtendedConstructor<TArgs extends unknown[], T extends object> = {
+  (...args: TArgs): T;
+  build<TRefined extends object>(
+    builder: (instance: T) => TRefined,
+  ): ExtendedConstructor<TArgs, TRefined>;
+  build(builder: (instance: T) => void): ExtendedConstructor<TArgs, T>;
 };
-
-type PreCallableKey<T extends object> = {
-  [TKey in keyof T]: T[TKey] extends (...args: never[]) => unknown
-    ? TKey
-    : never;
-}[keyof T];
