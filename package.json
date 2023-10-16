@@ -3,6 +3,7 @@
   "private": true,
   "license": "MIT",
   "author": "vilicvane",
+  "type": "module",
   "scripts": {
     "3": "pnpm install && pnpm dedupe && pnpm install",
     "build": "rimraf --glob packages/*/bld && tsc --build",
@@ -16,11 +17,10 @@
     "homelib": "pnpm --filter homelib"
   },
   "devDependencies": {
-    "@mufan/code": "^0.2.16",
-    "@mufan/eslint-plugin": "^0.1.81",
-    "eslint": "^8.47.0",
-    "prettier": "^3.0.2",
-    "rimraf": "^5.0.1",
+    "@mufan/eslint-plugin": "^0.2.5",
+    "eslint": "^8.51.0",
+    "prettier": "^3.0.3",
+    "rimraf": "^5.0.5",
     "run-in-every": "^0.2.0",
     "typescript": "^5.2.2"
   }

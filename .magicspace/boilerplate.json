@@ -5,7 +5,9 @@
     "name": "homelib-packages",
     "license": "MIT",
     "author": "vilicvane",
+    "defaultBranch": "master",
     "packageManager": "pnpm",
+    "type": "module",
     "packages": [
       {
         "name": "@homelib/core",
