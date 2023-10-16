@@ -9,7 +9,8 @@
     "build": "rimraf --glob packages/*/bld && tsc --build",
     "lint": "eslint --no-error-on-unmatched-pattern . && run-in-every eslint-project --parallel --echo -- eslint --no-error-on-unmatched-pattern .",
     "lint-prettier": "prettier --check .",
-    "test": "pnpm lint-prettier && pnpm build && pnpm lint",
+    "test": "pnpm lint-prettier && pnpm build && pnpm lint && pnpm bare-test",
+    "bare-test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "core": "pnpm --filter @homelib/core",
     "design": "pnpm --filter @homelib/design",
     "universal": "pnpm --filter @homelib/universal",
@@ -23,5 +24,11 @@
     "rimraf": "^5.0.5",
     "run-in-every": "^0.2.0",
     "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "@types/jest": "^29.5.5",
+    "@types/node": "^20.8.6",
+    "cross-env": "^7.0.3",
+    "jest": "^29.7.0"
   }
 }

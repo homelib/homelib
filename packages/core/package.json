@@ -9,6 +9,7 @@
     "default": "./bld/library/index.js"
   },
   "dependencies": {
+    "tslang": "^0.1.27",
     "tslib": "^2.6.2"
   }
 }
