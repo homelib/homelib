@@ -46,14 +46,25 @@ export function $constructor(
   );
 }
 
-type PreCallableConstructor<TArgs extends never[], T extends object> = ((
-  ...args: TArgs
-) => T) & {
-  [TKey in PreCallableKey<T>]: (
-    ...args: Parameters<Extract<T[TKey], (...args: never[]) => void>>
-  ) => T & PreCallableConstructor<TArgs, T>;
+type PreCallableConstructor<
+  TConstructorArgs extends unknown[],
+  T extends object,
+> = ((...args: TConstructorArgs) => T) & {
+  [TKey in PreCallableKey<T>]: T[TKey] extends (
+    ...args: infer TMethodArgs
+  ) => infer TMethodReturn
+    ? (
+        TMethodReturn extends object ? TMethodReturn : T
+      ) extends infer TRefined extends object
+      ? (
+          ...args: TMethodArgs
+        ) => PreCallableConstructor<TConstructorArgs, TRefined>
+      : never
+    : never;
 };
 
 type PreCallableKey<T extends object> = {
-  [TKey in keyof T]: T[TKey] extends (...args: never[]) => void ? TKey : never;
+  [TKey in keyof T]: T[TKey] extends (...args: never[]) => unknown
+    ? TKey
+    : never;
 }[keyof T];
