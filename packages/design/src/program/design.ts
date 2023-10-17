@@ -2,14 +2,14 @@ import {$, $area, $floor, $home, $room} from '@homelib/core';
 import {$cameraStream, $light, $securityCameraPlugin} from '@homelib/universal';
 import {$xiaomiPlugin} from '@homelib/xiaomi';
 
-import {$ambientLightAutomation} from './@ambient-light-automation.js';
+import {
+  $ambientLightAutomation,
+  $colorTemperatureSensor,
+} from './@ambient-light-automation.js';
 
 export default $home('My Home')
   .scopes({
     f1: $floor('Floor 1')
-      .devices({
-        lights: $light('Main Light'),
-      })
       .scopes({
         'living-room': $room('Living Room').scopes({
           'working-area': $area('Working Area').devices({
@@ -20,8 +20,14 @@ export default $home('My Home')
         bedroom: $room('Bedroom').scopes({
           balcony: $area('Balcony'),
         }),
+      })
+      .devices({
+        lights: $light('Main Light'),
       }),
-    f2: $floor('Floor 2'),
+    f2: $floor('Floor 2').devices({
+      lights: $light('Main Light'),
+      sensor: $colorTemperatureSensor('Main Light'),
+    }),
   })
   .devices({
     'outdoor-cctv-1': $cameraStream('Outdoor CCTV 1', {
@@ -38,8 +44,8 @@ export default $home('My Home')
   })
   .automations({
     'ambient-light': $ambientLightAutomation().bind({
-      lights: [$('f1', 'bedroom', 'balcony'), $('f2')],
-      colorTemperatureSensor: $(),
-      test: [$(), $()],
+      lights: [$('f1', 'working-area'), $()],
+      colorTemperatureSensor: $('f2'),
+      test: [$('f1', 'living-room'), $()],
     }),
   });

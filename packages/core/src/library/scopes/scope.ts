@@ -26,11 +26,11 @@ export class Scope {
     return this;
   }
 
-  devices<const TDeviceDescriptors extends DevicesConstraint>(
-    devices: TDeviceDescriptors,
+  devices<const TDevices extends DevicesConstraint>(
+    devices: TDevices,
   ): this & {
     [types]: {
-      devices: TDeviceDescriptors;
+      devices: TDevices;
     };
   };
   devices(devices: DevicesConstraint): this {

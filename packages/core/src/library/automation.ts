@@ -111,7 +111,7 @@ export namespace Automation {
   export type DeviceToDeviceBinding<
     TDevice extends Device,
     TScope extends Scope,
-  > = TDevice | DeviceQuery<TScope>;
+  > = TDevice | DeviceQuery<TDevice, TScope>;
 
   export type DeviceDeclarationToDeviceBinding<
     TDeclaration extends DeviceDeclaration,

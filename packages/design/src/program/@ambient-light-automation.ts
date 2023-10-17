@@ -1,9 +1,17 @@
-import {$automation, Automation, Device, types} from '@homelib/core';
+import {
+  $automation,
+  $constructor,
+  Automation,
+  Device,
+  types,
+} from '@homelib/core';
 import {Light} from '@homelib/universal';
 
 export class ColorTemperatureSensor extends Device {
   declare $value: number;
 }
+
+export const $colorTemperatureSensor = $constructor(ColorTemperatureSensor);
 
 export const $ambientLightAutomation = $automation.build(automation =>
   automation
