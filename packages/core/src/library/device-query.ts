@@ -1,3 +1,5 @@
 export interface DeviceQuery {}
 
-export function $() {}
+export function $(...queries: string[]): DeviceQuery {
+  throw new Error('Not implemented');
+}

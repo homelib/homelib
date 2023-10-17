@@ -1,4 +1,4 @@
-import {$automation, Automation, Device} from '@homelib/core';
+import {$automation, Automation, Device, types} from '@homelib/core';
 import {Light} from '@homelib/universal';
 
 export class ColorTemperatureSensor extends Device {
@@ -12,65 +12,59 @@ export const $ambientLightAutomation = $automation.build(automation =>
         class: Light,
         multiple: true,
       },
+      test: [Light, ColorTemperatureSensor],
       colorTemperatureSensor: ColorTemperatureSensor,
     })
-    .configurable({
+    .configs({
       mode: {
-        type: 'enum',
+        type: 'mode',
         values: ['day', 'night'],
       },
     })
     // event model
-    .setup(
-      (
-        {
-          lights,
-          colorTemperatureSensor,
-        }: {lights: Light[]; colorTemperatureSensor: ColorTemperatureSensor},
-        configs: {mode: 'day' | 'night'},
-      ) => {
-        reaction(
-          () => [colorTemperatureSensor.$value, configs.mode],
-          (colorTemperature, mode) => {
-            for (const light of lights) {
-              light.set({
-                colorTemperature: mode === 'day' ? colorTemperature : 2700,
-              });
-            }
-          },
-        );
-      },
-    )
+    .start((devices, configs) => {
+      const {
+        lights,
+        test: [testLight, testSensor],
+        colorTemperatureSensor,
+      } = devices;
+
+      configs.mode;
+
+      return reaction(
+        () => [colorTemperatureSensor.$value, configs.mode],
+        (colorTemperature, mode) => {
+          for (const light of lights) {
+            light.set({
+              colorTemperature: mode === 'day' ? colorTemperature : 2700,
+            });
+          }
+        },
+      );
+    })
     // state model
-    .reaction(
-      (
-        {
-          colorTemperatureSensor,
-        }: {lights: Light[]; colorTemperatureSensor: ColorTemperatureSensor},
-        {mode}: {mode: 'day' | 'night'},
-      ) => {
-        return {
-          lights_: {
-            colorTemperature:
-              mode === 'day' ? colorTemperatureSensor.$value : 2700,
+    .react(({colorTemperatureSensor}, {mode}) => {
+      return {
+        lights_: {
+          colorTemperature:
+            mode === 'day' ? colorTemperatureSensor.$value : 2700,
+        },
+        lights: [
+          {
+            $filter(light: Light) {
+              return light.scopes.some(scope => scope.people);
+            },
+            $state: {
+              colorTemperature:
+                mode === 'day' ? colorTemperatureSensor.$value : 2700,
+            },
           },
-          lights: [
-            {
-              $filter(light: Light) {
-                return light.scopes.some(scope => scope.people);
-              },
-              $state: {
-                colorTemperature:
-                  mode === 'day' ? colorTemperatureSensor.$value : 2700,
-              },
+          {
+            $filter: {
+              people: true,
             },
-            {
-              $filter: {
-                people: true,
-              },
-            },
-          ],
-        };
-      },
-    ),
+          },
+        ],
+      };
+    }),
 );
