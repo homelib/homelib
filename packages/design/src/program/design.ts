@@ -4,40 +4,41 @@ import {$xiaomiPlugin} from '@homelib/xiaomi';
 
 import {$ambientLightAutomation} from './@ambient-light-automation.js';
 
-export default $home('新家')
+export default $home('My Home')
   .scopes({
-    f1: $floor('一楼')
+    f1: $floor('Floor 1')
       .devices({
-        lights: $light('主灯'),
+        lights: $light('Main Light'),
       })
       .scopes({
-        'living-room': $room('客厅').scopes({
-          'working-area': $area('工作区').devices({
-            lights: $light('工作区灯'),
+        'living-room': $room('Living Room').scopes({
+          'working-area': $area('Working Area').devices({
+            lights: $light('Main Light'),
           }),
-          'dining-area': $area('餐厅'),
+          'dining-area': $area('Dining Area'),
         }),
-        bedroom: $room('卧室').scopes({
-          balcony: $area('阳台'),
+        bedroom: $room('Bedroom').scopes({
+          balcony: $area('Balcony'),
         }),
       }),
+    f2: $floor('Floor 2'),
+  })
+  .devices({
+    'outdoor-cctv-1': $cameraStream('Outdoor CCTV 1', {
+      source: 'rtsp://...',
+    }),
+    'outdoor-cctv-2': $cameraStream('Outdoor CCTV 2', {
+      source: 'rtsp://...',
+    }),
   })
   // plugin may contain multiple functionalities.
   .plugins({
     xiaomi: $xiaomiPlugin(),
     cctv: $securityCameraPlugin(),
   })
-  .devices({
-    'outdoor-cctv-1': $cameraStream('室外摄像头 1', {
-      source: 'rtsp://...',
-    }),
-    'outdoor-cctv-2': $cameraStream('室外摄像头 2', {
-      source: 'rtsp://...',
-    }),
-  })
   .automations({
     'ambient-light': $ambientLightAutomation().bind({
-      lights: [$('f1', 'lights'), $('living-room', 'lights')],
+      lights: [$('f1', 'bedroom', 'balcony'), $('f2')],
       colorTemperatureSensor: $(),
       test: [$(), $()],
     }),

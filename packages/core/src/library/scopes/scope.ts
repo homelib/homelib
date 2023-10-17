@@ -5,8 +5,8 @@ import {$constructor} from '../utils/index.js';
 
 export class Scope {
   declare [types]: {
-    devices: DevicesConstraint;
-    scopes: Record<string, Scope>;
+    scopes: {};
+    devices: {};
   };
 
   constructor(readonly name: string) {}
@@ -37,7 +37,7 @@ export class Scope {
     return this;
   }
 
-  automations(automations: Record<string, Automation>): this {
+  automations(automations: Record<string, Automation<this>>): this {
     return this;
   }
 }
