@@ -4,7 +4,7 @@ export interface CameraStreamOptions {
   source: string;
 }
 
-export class CameraStream extends Device {
+export class CameraStream extends Device<'@homelib/universal/camera-stream'> {
   constructor(name: string, options: CameraStreamOptions) {
     super(name, {});
   }

@@ -1,10 +1,15 @@
 import type {ConfigDeclarationsConstraint} from './config.js';
+import {types} from './types.js';
 
 export type DeviceOptions = {
   configurations: ConfigDeclarationsConstraint;
 };
 
-export abstract class Device {
+export abstract class Device<TType extends string = string> {
+  declare [types]: {
+    type: TType;
+  };
+
   readonly options: DeviceOptions;
 
   constructor(
@@ -22,6 +27,6 @@ export abstract class Device {
   }
 }
 
-export type DeviceConstructor = typeof Device;
+export type DeviceConstructor = typeof Device<string>;
 
 export type DevicesConstraint = Record<string, Device>;

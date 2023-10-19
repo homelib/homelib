@@ -1,13 +1,7 @@
-import {
-  $automation,
-  $constructor,
-  Automation,
-  Device,
-  types,
-} from '@homelib/core';
+import {$automation, $constructor, Device} from '@homelib/core';
 import {Light} from '@homelib/universal';
 
-export class ColorTemperatureSensor extends Device {
+export class ColorTemperatureSensor extends Device<'color-temperature-sensor'> {
   declare $value: number;
 }
 
@@ -33,11 +27,15 @@ export const $ambientLightAutomation = $automation.build(automation =>
     .start((devices, configs) => {
       const {
         lights,
+        // ^?
         test: [testLight, testSensor],
+        // ^?
         colorTemperatureSensor,
+        // ^?
       } = devices;
 
       configs.mode;
+      //      ^?
 
       return reaction(
         () => [colorTemperatureSensor.$value, configs.mode],
