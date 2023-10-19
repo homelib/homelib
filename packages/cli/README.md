@@ -1,6 +1,6 @@
 [![Discord](https://img.shields.io/badge/chat-discord-5662f6?style=flat-square)](https://discord.gg/wEVn2qcf8h)
 
-# @homelib/core
+# homelib
 
 Just another awesome magic.
 

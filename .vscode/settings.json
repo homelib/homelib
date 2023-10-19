@@ -19,7 +19,7 @@
     "packages/core/src/test",
     "packages/universal/src/library",
     "packages/xiaomi/src/library",
-    "packages/homelib/src/program",
+    "packages/cli/src/program",
     "packages/design/src/program"
   ],
   "eslint.validate": [
