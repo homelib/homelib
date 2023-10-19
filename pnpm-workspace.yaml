@@ -2,5 +2,5 @@ packages:
   - packages/core
   - packages/universal
   - packages/xiaomi
-  - packages/homelib
+  - packages/cli
   - packages/design

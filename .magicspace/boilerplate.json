@@ -8,6 +8,9 @@
     "defaultBranch": "master",
     "packageManager": "pnpm",
     "type": "module",
+    "badges": {
+      "discord": "https://discord.gg/wEVn2qcf8h"
+    },
     "packages": [
       {
         "name": "@homelib/core",
@@ -51,6 +54,7 @@
       },
       {
         "name": "homelib",
+        "dir": "cli",
         "projects": [
           {
             "name": "program",

@@ -13,7 +13,7 @@
       "path": "packages/xiaomi/src/library"
     },
     {
-      "path": "packages/homelib/src/program"
+      "path": "packages/cli/src/program"
     },
     {
       "path": "packages/design/src/program"
