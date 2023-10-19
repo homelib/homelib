@@ -17,7 +17,7 @@
     "homelib": "pnpm --filter homelib"
   },
   "devDependencies": {
-    "@mufan/eslint-plugin": "^0.2.5",
+    "@mufan/eslint-plugin": "^0.2.6",
     "eslint": "^8.51.0",
     "prettier": "^3.0.3",
     "rimraf": "^5.0.5",
