@@ -22,8 +22,8 @@ importers:
         version: 29.7.0(@types/node@20.8.6)
     devDependencies:
       '@mufan/eslint-plugin':
-        specifier: ^0.2.7
-        version: 0.2.7(eslint@8.51.0)(typescript@5.2.2)
+        specifier: ^0.2.8
+        version: 0.2.8(eslint@8.51.0)(typescript@5.2.2)
       eslint:
         specifier: ^8.51.0
         version: 8.51.0
@@ -776,8 +776,8 @@ packages:
       '@jridgewell/sourcemap-codec': 1.4.15
     dev: false
 
-  /@mufan/eslint-plugin@0.2.7(eslint@8.51.0)(typescript@5.2.2):
-    resolution: {integrity: sha512-l7mZDBPMy713IR1F0A6M/0xPsGEVejsbOSIorrZP+NLk1WD86SVywePC9WMHsz3Tu7KYHfU0RBLhmdVnsF3pPA==}
+  /@mufan/eslint-plugin@0.2.8(eslint@8.51.0)(typescript@5.2.2):
+    resolution: {integrity: sha512-4oby7okvJhyK5fjTXfH00k52L/HPw5JH08UISOfasEPW5jO85EbGNIbLD5oGwILC1qDWj9AaeKZc/NCCzzvC0g==}
     peerDependencies:
       eslint: '8'
       typescript: '5'
