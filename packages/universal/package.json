@@ -11,5 +11,9 @@
   "dependencies": {
     "@homelib/core": "workspace:*",
     "tslib": "^2.6.2"
+  },
+  "peerDependencies": {
+    "@project-chip/matter.js": "0.6",
+    "@project-chip/matter-node.js": "0.6"
   }
 }
