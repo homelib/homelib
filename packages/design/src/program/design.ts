@@ -8,44 +8,35 @@ import {
 } from './@ambient-light-automation.js';
 
 export default $home('My Home')
-  .scopes({
-    f1: $floor('Floor 1')
-      .scopes({
-        'living-room': $room('Living Room').scopes({
-          'working-area': $area('Working Area').devices({
-            lights: $light('Main Light'),
-          }),
-          'dining-area': $area('Dining Area'),
-        }),
-        bedroom: $room('Bedroom').scopes({
-          balcony: $area('Balcony'),
-        }),
-      })
-      .devices({
-        lights: $light('Main Light'),
-      }),
-    f2: $floor('Floor 2').devices({
-      lights: $light('Main Light'),
-      sensor: $colorTemperatureSensor('Main Light'),
-    }),
-  })
-  .devices({
-    'outdoor-cctv-1': $cameraStream('Outdoor CCTV 1', {
+  .scopes([
+    $floor('Floor 1')
+      .scopes([
+        $room('Living Room').scopes([
+          $area('Working Area').devices([$light('Main Light')]),
+          $area('Dining Area'),
+        ]),
+        $room('Bedroom').scopes([$area('Balcony')]),
+      ])
+      .devices([$light('Main Light')]),
+    $floor('Floor 2').devices([
+      $light('Main Light'),
+      $colorTemperatureSensor('Main Light'),
+    ]),
+  ])
+  .devices([
+    $cameraStream('Outdoor CCTV 1', {
       source: 'rtsp://...',
     }),
-    'outdoor-cctv-2': $cameraStream('Outdoor CCTV 2', {
+    $cameraStream('Outdoor CCTV 2', {
       source: 'rtsp://...',
     }),
-  })
+  ])
   // plugin may contain multiple functionalities.
-  .plugins({
-    xiaomi: $xiaomiPlugin(),
-    cctv: $securityCameraPlugin(),
-  })
-  .automations({
-    'ambient-light': $ambientLightAutomation().bind({
-      lights: [$('f1', 'working-area'), $()],
-      colorTemperatureSensor: $('f2'),
-      test: [$('f1', 'living-room'), $()],
+  .plugins([$xiaomiPlugin(), $securityCameraPlugin()])
+  .automations([
+    $ambientLightAutomation('Amazing Ambient Light').bind({
+      lights: [$('Floor 1', 'Working Area'), $()],
+      colorTemperatureSensor: $('Floor 2'),
+      test: [$('Floor 1', 'Living Room'), $()],
     }),
-  });
+  ]);

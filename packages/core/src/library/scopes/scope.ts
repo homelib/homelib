@@ -1,47 +1,56 @@
-import type {Automation} from '../automation.js';
-import type {Device, DevicesConstraint} from '../device.js';
+import type {Automation, AutomationWithScope} from '../automation.js';
+import type {Device} from '../device.js';
+import type {Plugin} from '../plugin.js';
+import type {
+  NamedObject,
+  NamedTupleToRecord,
+  UnknownNamedObject,
+} from '../types.js';
 import {types} from '../types.js';
 import {$constructor} from '../utils/index.js';
 
-export class Scope {
+export class Scope implements UnknownNamedObject {
   declare [types]: {
+    name: string;
     scopes: {};
     devices: {};
   };
 
-  constructor(readonly name: string) {}
+  readonly name: this[types]['name'];
 
-  scopes<const TScopes extends ScopesConstraint>(
+  constructor(name: string) {
+    this.name = name;
+  }
+
+  scopes<const TScopes extends readonly Scope[]>(
     scopes: TScopes,
   ): this & {
     [types]: {
-      scopes: TScopes;
+      scopes: NamedTupleToRecord<TScopes>;
     };
   };
-  scopes(scopes: ScopesConstraint): this {
+  scopes(scopes: Scope[]): this {
     return this;
   }
 
-  plugins(plugins: Record<string, unknown>): this {
+  plugins(plugins: Plugin[]): this {
     return this;
   }
 
-  devices<const TDevices extends DevicesConstraint>(
+  devices<const TDevices extends readonly Device[]>(
     devices: TDevices,
   ): this & {
     [types]: {
-      devices: TDevices;
+      devices: NamedTupleToRecord<TDevices>;
     };
   };
-  devices(devices: DevicesConstraint): this {
+  devices(devices: Device[]): this {
     return this;
   }
 
-  automations(automations: Record<string, Automation<this>>): this {
+  automations(automations: AutomationWithScope<this>[]): this {
     return this;
   }
 }
 
 export const $scope = $constructor(Scope);
-
-export type ScopesConstraint = Record<string, Scope>;

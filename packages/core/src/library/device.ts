@@ -1,13 +1,18 @@
-import type {ConfigDeclarationsConstraint} from './config.js';
+import type {UnknownConfigDeclarations} from './config.js';
+import type {NamedObject, UnknownNamedObject} from './types.js';
 import {types} from './types.js';
 
+export const device_type = Symbol('device type');
+
 export type DeviceOptions = {
-  configurations: ConfigDeclarationsConstraint;
+  configurations: UnknownConfigDeclarations;
 };
 
-export abstract class Device<TType extends string = string> {
+export abstract class Device implements UnknownNamedObject {
+  abstract [device_type]: string;
+
   declare [types]: {
-    type: TType;
+    name: string;
   };
 
   readonly options: DeviceOptions;
@@ -21,12 +26,10 @@ export abstract class Device<TType extends string = string> {
     this.options = {configurations};
   }
 
-  configurations(configurations: ConfigDeclarationsConstraint): this {
+  configurations(configurations: UnknownConfigDeclarations): this {
     this.options.configurations = configurations;
     return this;
   }
 }
 
-export type DeviceConstructor = typeof Device<string>;
-
-export type DevicesConstraint = Record<string, Device>;
+export type DeviceConstructor = typeof Device;

@@ -1,6 +1,6 @@
 import type {
   ConfigDeclaration,
-  ConfigDeclarationsConstraint,
+  UnknownConfigDeclarations,
   ConfigDeclarationsToConfigs,
 } from './config.js';
 import type {DeviceQuery} from './device-query.js';
@@ -9,15 +9,17 @@ import type {Scope} from './scopes/index.js';
 import {types} from './types.js';
 import {$constructor} from './utils/index.js';
 
-export class Automation<TScope extends Scope> {
+export class Automation {
   declare [types]: {
-    scope: TScope;
+    scope: Scope;
     devices: {};
     configs: {};
   };
 
+  constructor(readonly name: string) {}
+
   devices<
-    const TDeviceDeclarations extends Automation.DeviceDeclarationsConstraint,
+    const TDeviceDeclarations extends Automation.UnknownDeviceDeclarations,
   >(
     devices: TDeviceDeclarations,
   ): this & {
@@ -25,18 +27,18 @@ export class Automation<TScope extends Scope> {
       devices: TDeviceDeclarations;
     };
   };
-  devices(devices: Automation.DeviceDeclarationsConstraint): this {
+  devices(devices: Automation.UnknownDeviceDeclarations): this {
     return this;
   }
 
-  configs<const TConfigDeclarations extends ConfigDeclarationsConstraint>(
+  configs<const TConfigDeclarations extends UnknownConfigDeclarations>(
     configs: TConfigDeclarations,
   ): this & {
     [types]: {
       configs: TConfigDeclarations;
     };
   };
-  configs(configs: ConfigDeclarationsConstraint): this {
+  configs(configs: UnknownConfigDeclarations): this {
     return this;
   }
 
@@ -72,6 +74,12 @@ export class Automation<TScope extends Scope> {
   }
 }
 
+export type AutomationWithScope<TScope extends Scope> = Automation & {
+  [types]: {
+    scope: TScope;
+  };
+};
+
 export namespace Automation {
   export type DeviceDeclaration =
     | DeviceConstructor
@@ -81,7 +89,7 @@ export namespace Automation {
         multiple: true;
       };
 
-  export type DeviceDeclarationsConstraint = Record<string, DeviceDeclaration>;
+  export type UnknownDeviceDeclarations = Record<string, DeviceDeclaration>;
 
   export type DeviceDeclarationToDevice<
     TDeclaration extends DeviceDeclaration,
@@ -101,7 +109,7 @@ export namespace Automation {
     : never;
 
   export type DeviceDeclarationsToDevices<
-    TDeclarations extends Automation.DeviceDeclarationsConstraint,
+    TDeclarations extends Automation.UnknownDeviceDeclarations,
   > = {
     [TKey in keyof TDeclarations]: DeviceDeclarationToDevice<
       TDeclarations[TKey]
@@ -109,33 +117,33 @@ export namespace Automation {
   };
 
   export type DeviceToDeviceBinding<
-    TDevice extends Device,
     TScope extends Scope,
-  > = TDevice | DeviceQuery<TDevice, TScope>;
+    TDevice extends Device,
+  > = TDevice | DeviceQuery<TScope, TDevice>;
 
   export type DeviceDeclarationToDeviceBinding<
     TDeclaration extends DeviceDeclaration,
     TScope extends Scope,
   > = TDeclaration extends DeviceConstructor
-    ? DeviceToDeviceBinding<InstanceType<TDeclaration>, TScope>
+    ? DeviceToDeviceBinding<TScope, InstanceType<TDeclaration>>
     : TDeclaration extends readonly DeviceConstructor[]
     ? {
         [TIndex in keyof TDeclaration]: DeviceToDeviceBinding<
+          TScope,
           InstanceType<
             Extract<TDeclaration[TIndex], new (...args: never[]) => object>
-          >,
-          TScope
+          >
         >;
       }
     : TDeclaration extends {
         class: infer TDeviceConstructor extends DeviceConstructor;
         multiple: true;
       }
-    ? DeviceToDeviceBinding<InstanceType<TDeviceConstructor>, TScope>[]
+    ? DeviceToDeviceBinding<TScope, InstanceType<TDeviceConstructor>>[]
     : never;
 
   export type DeviceDeclarationsToDeviceBindings<
-    TDeclarations extends Automation.DeviceDeclarationsConstraint,
+    TDeclarations extends Automation.UnknownDeviceDeclarations,
     TScope extends Scope,
   > = {
     [TKey in keyof TDeclarations]: DeviceDeclarationToDeviceBinding<

@@ -2,64 +2,71 @@ import type {Device} from './device.js';
 import type {Scope} from './scopes/index.js';
 import type {types} from './types.js';
 
-export interface DeviceQuery<TDevice extends Device, TScope extends Scope> {}
+export type DeviceQuery<TScope extends Scope, TDevice extends Device> = {
+  [types]: {
+    scope: TScope;
+    device: TDevice;
+  };
+};
+
+export type UnknownDeviceQuery = DeviceQuery<Scope, Device>;
 
 export function $<
-  TDevice extends Device,
   TScope extends Scope,
-  const TQ1 extends NextQueryForDevice<TDevice, TScope, []>,
->(q1: TQ1): DeviceQuery<TDevice, TScope>;
+  TDevice extends Device,
+  const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
+>(q1: TQ1): DeviceQuery<TScope, TDevice>;
 export function $<
-  TDevice extends Device,
   TScope extends Scope,
-  const TQ1 extends NextQueryForDevice<TDevice, TScope, []>,
-  const TQ2 extends NextQueryForDevice<TDevice, TScope, [TQ1]>,
->(q1: TQ1, q2: TQ2): DeviceQuery<TDevice, TScope>;
+  TDevice extends Device,
+  const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
+  const TQ2 extends NextQueryForDevice<TScope, TDevice, [TQ1]>,
+>(q1: TQ1, q2: TQ2): DeviceQuery<TScope, TDevice>;
 export function $<
-  TDevice extends Device,
   TScope extends Scope,
-  const TQ1 extends NextQueryForDevice<TDevice, TScope, []>,
-  const TQ2 extends NextQueryForDevice<TDevice, TScope, [TQ1]>,
-  const TQ3 extends NextQueryForDevice<TDevice, TScope, [TQ1, TQ2]>,
->(q1: TQ1, q2: TQ2, q3: TQ3): DeviceQuery<TDevice, TScope>;
+  TDevice extends Device,
+  const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
+  const TQ2 extends NextQueryForDevice<TScope, TDevice, [TQ1]>,
+  const TQ3 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2]>,
+>(q1: TQ1, q2: TQ2, q3: TQ3): DeviceQuery<TScope, TDevice>;
 export function $<
-  TDevice extends Device,
   TScope extends Scope,
-  const TQ1 extends NextQueryForDevice<TDevice, TScope, []>,
-  const TQ2 extends NextQueryForDevice<TDevice, TScope, [TQ1]>,
-  const TQ3 extends NextQueryForDevice<TDevice, TScope, [TQ1, TQ2]>,
-  const TQ4 extends NextQueryForDevice<TDevice, TScope, [TQ1, TQ2, TQ3]>,
->(q1: TQ1, q2: TQ2, q3: TQ3, q4: TQ4): DeviceQuery<TDevice, TScope>;
+  TDevice extends Device,
+  const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
+  const TQ2 extends NextQueryForDevice<TScope, TDevice, [TQ1]>,
+  const TQ3 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2]>,
+  const TQ4 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2, TQ3]>,
+>(q1: TQ1, q2: TQ2, q3: TQ3, q4: TQ4): DeviceQuery<TScope, TDevice>;
 export function $<
-  TDevice extends Device,
   TScope extends Scope,
-  const TQ1 extends NextQueryForDevice<TDevice, TScope, []>,
-  const TQ2 extends NextQueryForDevice<TDevice, TScope, [TQ1]>,
-  const TQ3 extends NextQueryForDevice<TDevice, TScope, [TQ1, TQ2]>,
-  const TQ4 extends NextQueryForDevice<TDevice, TScope, [TQ1, TQ2, TQ3]>,
-  const TQ5 extends NextQueryForDevice<TDevice, TScope, [TQ1, TQ2, TQ3, TQ4]>,
->(q1: TQ1, q2: TQ2, q3: TQ3, q4: TQ4, q5: TQ5): DeviceQuery<TDevice, TScope>;
+  TDevice extends Device,
+  const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
+  const TQ2 extends NextQueryForDevice<TScope, TDevice, [TQ1]>,
+  const TQ3 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2]>,
+  const TQ4 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2, TQ3]>,
+  const TQ5 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2, TQ3, TQ4]>,
+>(q1: TQ1, q2: TQ2, q3: TQ3, q4: TQ4, q5: TQ5): DeviceQuery<TScope, TDevice>;
 export function $<TDevice extends Device, TScope extends Scope>(
   ...args: ScopeTreeForDevice<TScope, TDevice> extends never ? never : []
-): DeviceQuery<TDevice, TScope>;
+): DeviceQuery<TScope, TDevice>;
 export function $<TScope extends Scope, TDevice extends Device>(
   ...queries: Extract<
     ScopeToQueriesForDevice<TScope, TDevice>,
     // at least 6 queries to match
     [string, string, string, string, string, string, ...string[]]
   >
-): DeviceQuery<TDevice, TScope>;
-export function $(...queries: string[]): DeviceQuery<Device, Scope> {
+): DeviceQuery<TScope, TDevice>;
+export function $(...queries: string[]): UnknownDeviceQuery {
   throw new Error('Not implemented');
 }
 
-type NextQueryForDevice<
-  TDevice extends Device,
+export type NextQueryForDevice<
   TScope extends Scope,
+  TDevice extends Device,
   TQueries extends string[],
 > = NextQuery<ScopeTreeForDevice<TScope, TDevice>, TQueries>;
 
-type ScopeTreeForDevice<TScope extends Scope, TDevice extends Device> = {
+export type ScopeTreeForDevice<TScope extends Scope, TDevice extends Device> = {
   [TName in keyof TScope[types]['scopes']]: ScopeTreeForDevice<
     Extract<TScope[types]['scopes'][TName], Scope>,
     TDevice

@@ -6,43 +6,43 @@ import type {Light, Television} from './@device-cases/index.js';
 import type {home1} from './@scope-cases/index.js';
 
 test('types', () => {
-  $() satisfies DeviceQuery<Light, home1>;
-  $('living-room') satisfies DeviceQuery<Light, home1>;
-  $('living-room', 'balcony') satisfies DeviceQuery<Light, home1>;
-  $('balcony') satisfies DeviceQuery<Light, home1>;
-  $('bedroom') satisfies DeviceQuery<Light, home1>;
+  $() satisfies DeviceQuery<home1, Light>;
+  $('Living Room') satisfies DeviceQuery<home1, Light>;
+  $('Living Room', 'Balcony') satisfies DeviceQuery<home1, Light>;
+  $('Balcony') satisfies DeviceQuery<home1, Light>;
+  $('Bedroom') satisfies DeviceQuery<home1, Light>;
   $(
-    'bedroom',
-    'level-2',
-    'level-3',
-    'level-4',
-    'level-5',
-    'level-6',
-    'level-7',
-  ) satisfies DeviceQuery<Light, home1>;
+    'Bedroom',
+    'Level 2',
+    'Level 3',
+    'Level 4',
+    'Level 5',
+    'Level 6',
+    'Level 7',
+  ) satisfies DeviceQuery<home1, Light>;
   $(
     // @ts-expect-error
-    'bedroom',
-    'level-2',
-    'level-3',
-    'level-4',
-    'level-5',
-    'level-6',
-    'level-7',
-    'level-8',
-  ) satisfies DeviceQuery<Light, home1>;
-  $('bedroom', 'duplicate') satisfies DeviceQuery<Light, home1>;
-  $('bedroom', 'duplicate', 'duplicate') satisfies DeviceQuery<Light, home1>;
+    'Bedroom',
+    'Level 2',
+    'Level 3',
+    'Level 4',
+    'Level 5',
+    'Level 6',
+    'Level 7',
+    'Level 8',
+  ) satisfies DeviceQuery<home1, Light>;
+  $('Bedroom', 'Duplicate') satisfies DeviceQuery<home1, Light>;
+  $('Bedroom', 'Duplicate', 'Duplicate') satisfies DeviceQuery<home1, Light>;
   // @ts-expect-error
-  $('bedroom', 'duplicate', 'duplicate', 'duplicate') satisfies DeviceQuery<
-    Light,
-    home1
+  $('Bedroom', 'Duplicate', 'Duplicate', 'Duplicate') satisfies DeviceQuery<
+    home1,
+    Light
   >;
   // @ts-expect-error
-  $('outdoor') satisfies DeviceQuery<Light, home1>;
+  $('outdoor') satisfies DeviceQuery<home1, Light>;
 
   // @ts-expect-error
   $() satisfies DeviceQuery<Television, home1>;
   // @ts-expect-error
-  $('balcony') satisfies DeviceQuery<Television, home1>;
+  $('Balcony') satisfies DeviceQuery<Television, home1>;
 });

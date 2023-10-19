@@ -8,7 +8,7 @@ export type ConfigDeclaration =
     };
 
 export type ConfigDeclarationsToConfigs<
-  TDeclarations extends ConfigDeclarationsConstraint,
+  TDeclarations extends UnknownConfigDeclarations,
 > = {
   [TKey in keyof TDeclarations]: ConfigDeclarationToConfig<TDeclarations[TKey]>;
 };
@@ -23,4 +23,4 @@ export type ConfigDeclarationToConfig<TDeclaration extends ConfigDeclaration> =
     ? TModeValues[number]
     : never;
 
-export type ConfigDeclarationsConstraint = Record<string, ConfigDeclaration>;
+export type UnknownConfigDeclarations = Record<string, ConfigDeclaration>;

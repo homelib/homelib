@@ -1,5 +1,7 @@
-import {$constructor, Device} from '../../library/index.js';
+import {$constructor, Device, device_type, types} from '../../library/index.js';
 
-export class Television extends Device<'television'> {}
+export class Television extends Device {
+  declare [device_type]: 'television';
+}
 
 export const $television = $constructor(Television);

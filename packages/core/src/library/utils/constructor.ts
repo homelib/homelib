@@ -1,3 +1,15 @@
+import type {NamedObject, UnknownNamedObject} from '../types.js';
+
+export function $constructor<
+  TConstructor extends new (...args: never[]) => UnknownNamedObject,
+>(
+  Constructor: TConstructor,
+): ConstructorParameters<TConstructor> extends [
+  name: string,
+  ...args: infer TRestArgs,
+]
+  ? ExtendedConstructorWithNameParameter<TRestArgs, InstanceType<TConstructor>>
+  : never;
 export function $constructor<
   TConstructor extends new (...args: never[]) => object,
 >(
@@ -33,6 +45,22 @@ export function $constructor(
     return built;
   }
 }
+
+export type ExtendedConstructorWithNameParameter<
+  TRestArgs extends unknown[],
+  T extends object,
+> = {
+  <TName extends string>(
+    name: TName,
+    ...args: TRestArgs
+  ): T & NamedObject<TName>;
+  build<TRefined extends object>(
+    builder: (instance: T) => TRefined,
+  ): ExtendedConstructorWithNameParameter<TRestArgs, TRefined>;
+  build(
+    builder: (instance: T) => void,
+  ): ExtendedConstructorWithNameParameter<TRestArgs, T>;
+};
 
 export type ExtendedConstructor<TArgs extends unknown[], T extends object> = {
   (...args: TArgs): T;

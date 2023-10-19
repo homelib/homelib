@@ -1,10 +1,12 @@
-import {$constructor, Device} from '@homelib/core';
+import {$constructor, Device, device_type, types} from '@homelib/core';
 
-export interface CameraStreamOptions {
+export type CameraStreamOptions = {
   source: string;
-}
+};
 
-export class CameraStream extends Device<'@homelib/universal/camera-stream'> {
+export class CameraStream extends Device {
+  declare [device_type]: '@homelib/universal/camera-stream';
+
   constructor(name: string, options: CameraStreamOptions) {
     super(name, {});
   }

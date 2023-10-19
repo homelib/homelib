@@ -1,7 +1,9 @@
-import {$automation, $constructor, Device} from '@homelib/core';
+import {$automation, $constructor, Device, device_type} from '@homelib/core';
 import {Light} from '@homelib/universal';
 
-export class ColorTemperatureSensor extends Device<'color-temperature-sensor'> {
+export class ColorTemperatureSensor extends Device {
+  declare [device_type]: 'color-temperature-sensor';
+
   declare $value: number;
 }
 
