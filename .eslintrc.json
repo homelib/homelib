@@ -9,9 +9,7 @@
     "/packages/xiaomi/src/",
     "/packages/xiaomi/bld/",
     "/packages/cli/src/",
-    "/packages/cli/bld/",
-    "/packages/design/src/",
-    "/packages/design/bld/"
+    "/packages/cli/bld/"
   ],
   "extends": ["plugin:@mufan/javascript"],
   "overrides": [

@@ -14,9 +14,6 @@
     },
     {
       "path": "packages/cli/src/program"
-    },
-    {
-      "path": "packages/design/src/program"
     }
   ],
   "files": []
