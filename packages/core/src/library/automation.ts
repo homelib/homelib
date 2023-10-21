@@ -3,8 +3,13 @@ import type {
   UnknownConfigDeclarations,
   ConfigDeclarationsToConfigs,
 } from './config.js';
+import type {
+  Device,
+  UnknownDeviceConstructor,
+  UnknownDevice,
+  DeviceConstructor,
+} from './device/index.js';
 import type {DeviceQuery} from './device-query.js';
-import type {Device, DeviceConstructor} from './device.js';
 import type {Scope} from './scopes/index.js';
 import {types} from './types.js';
 import {$constructor} from './utils/index.js';
@@ -82,51 +87,53 @@ export type AutomationWithScope<TScope extends Scope> = Automation & {
 
 export namespace Automation {
   export type DeviceDeclaration =
-    | DeviceConstructor
-    | readonly DeviceConstructor[]
+    | UnknownDeviceConstructor
+    | readonly UnknownDeviceConstructor[]
     | {
-        class: DeviceConstructor;
+        class: UnknownDeviceConstructor;
         multiple: true;
       };
 
   export type UnknownDeviceDeclarations = Record<string, DeviceDeclaration>;
 
-  export type DeviceDeclarationToDevice<
+  export type DeviceDeclarationToDeviceEndpoint<
     TDeclaration extends DeviceDeclaration,
-  > = TDeclaration extends DeviceConstructor
-    ? InstanceType<TDeclaration>
-    : TDeclaration extends readonly DeviceConstructor[]
+  > = TDeclaration extends DeviceConstructor<infer TDeviceEndpoint>
+    ? TDeviceEndpoint
+    : TDeclaration extends readonly UnknownDeviceConstructor[]
     ? {
-        [TIndex in keyof TDeclaration]: InstanceType<
-          Extract<TDeclaration[TIndex], new (...args: never[]) => object>
-        >;
+        [TIndex in keyof TDeclaration]: TDeclaration[TIndex] extends DeviceConstructor<
+          infer TDeviceEndpoint
+        >
+          ? TDeviceEndpoint
+          : never;
       }
     : TDeclaration extends {
-        class: infer TDeviceConstructor extends DeviceConstructor;
+        class: DeviceConstructor<infer TDeviceEndpoint>;
         multiple: true;
       }
-    ? InstanceType<TDeviceConstructor>[]
+    ? TDeviceEndpoint[]
     : never;
 
   export type DeviceDeclarationsToDevices<
     TDeclarations extends Automation.UnknownDeviceDeclarations,
   > = {
-    [TKey in keyof TDeclarations]: DeviceDeclarationToDevice<
+    [TKey in keyof TDeclarations]: DeviceDeclarationToDeviceEndpoint<
       TDeclarations[TKey]
     >;
   };
 
   export type DeviceToDeviceBinding<
     TScope extends Scope,
-    TDevice extends Device,
+    TDevice extends UnknownDevice,
   > = TDevice | DeviceQuery<TScope, TDevice>;
 
   export type DeviceDeclarationToDeviceBinding<
     TDeclaration extends DeviceDeclaration,
     TScope extends Scope,
-  > = TDeclaration extends DeviceConstructor
+  > = TDeclaration extends UnknownDeviceConstructor
     ? DeviceToDeviceBinding<TScope, InstanceType<TDeclaration>>
-    : TDeclaration extends readonly DeviceConstructor[]
+    : TDeclaration extends readonly UnknownDeviceConstructor[]
     ? {
         [TIndex in keyof TDeclaration]: DeviceToDeviceBinding<
           TScope,
@@ -136,10 +143,15 @@ export namespace Automation {
         >;
       }
     : TDeclaration extends {
-        class: infer TDeviceConstructor extends DeviceConstructor;
+        class: infer TDeviceConstructor extends UnknownDeviceConstructor;
         multiple: true;
       }
-    ? DeviceToDeviceBinding<TScope, InstanceType<TDeviceConstructor>>[]
+    ? DeviceToDeviceBinding<
+        TScope,
+        InstanceType<TDeviceConstructor>
+      > extends infer TBinding
+      ? TBinding | TBinding[]
+      : never
     : never;
 
   export type DeviceDeclarationsToDeviceBindings<

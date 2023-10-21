@@ -1,11 +1,7 @@
-import type {Automation, AutomationWithScope} from '../automation.js';
-import type {Device} from '../device.js';
+import type {AutomationWithScope} from '../automation.js';
+import type {Device, UnknownDevice} from '../device/index.js';
 import type {Plugin} from '../plugin.js';
-import type {
-  NamedObject,
-  NamedTupleToRecord,
-  UnknownNamedObject,
-} from '../types.js';
+import type {NamedTupleToRecord, UnknownNamedObject} from '../types.js';
 import {types} from '../types.js';
 import {$constructor} from '../utils/index.js';
 
@@ -37,14 +33,14 @@ export class Scope implements UnknownNamedObject {
     return this;
   }
 
-  devices<const TDevices extends readonly Device[]>(
+  devices<const TDevices extends readonly UnknownDevice[]>(
     devices: TDevices,
   ): this & {
     [types]: {
       devices: NamedTupleToRecord<TDevices>;
     };
   };
-  devices(devices: Device[]): this {
+  devices(devices: UnknownDevice[]): this {
     return this;
   }
 
