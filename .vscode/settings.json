@@ -16,6 +16,7 @@
   "eslint.workingDirectories": [
     ".",
     "packages/core/src/library",
+    "packages/core/src/mobx",
     "packages/core/src/test",
     "packages/universal/src/library",
     "packages/xiaomi/src/library",
