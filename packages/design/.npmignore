@@ -1,4 +1,0 @@
-*
-!/src/program/**/*.{ts,tsx}
-!/bld/program/**
-*.tsbuildinfo

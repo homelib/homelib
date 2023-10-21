@@ -3,4 +3,3 @@ packages:
   - packages/universal
   - packages/xiaomi
   - packages/cli
-  - packages/design
