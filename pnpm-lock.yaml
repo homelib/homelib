@@ -57,6 +57,9 @@ importers:
       '@project-chip/matter.js':
         specifier: ^0.6.0
         version: 0.6.0
+      mobx:
+        specifier: ^6.10.2
+        version: 6.10.2
       tslang:
         specifier: ^0.1.27
         version: 0.1.27
@@ -3114,6 +3117,10 @@ packages:
     resolution: {integrity: sha512-eL79dXrE1q9dBbDCLg7xfn/vl7MS4F1gvJAgjJrQli/jbQWdUttuVawphqpffoIYfRdq78LHx6GP4bU/EQ2ATA==}
     engines: {node: '>=16 || 14 >=14.17'}
     dev: true
+
+  /mobx@6.10.2:
+    resolution: {integrity: sha512-B1UGC3ieK3boCjnMEcZSwxqRDMdzX65H/8zOHbuTY8ZhvrIjTUoLRR2TP2bPqIgYRfb3+dUigu8yMZufNjn0LQ==}
+    dev: false
 
   /module-lens@0.1.6:
     resolution: {integrity: sha512-mVnydRRE7uaVZbfeS5ajDqcncoBL67qNyZvQ3MX5+dxnK7KjT96JSqpKjc2a1v3Hz1ElMHn+JO8k2QCUsUfrgA==}
