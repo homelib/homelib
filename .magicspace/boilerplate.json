@@ -19,6 +19,10 @@
             "name": "library"
           },
           {
+            "name": "mobx",
+            "type": "library"
+          },
+          {
             "name": "test",
             "references": ["library"]
           }

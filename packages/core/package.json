@@ -5,8 +5,14 @@
   "author": "vilicvane",
   "type": "module",
   "exports": {
-    "types": "./bld/library/index.d.ts",
-    "default": "./bld/library/index.js"
+    ".": {
+      "types": "./bld/library/index.d.ts",
+      "default": "./bld/library/index.js"
+    },
+    "./mobx": {
+      "types": "./bld/mobx/index.d.ts",
+      "default": "./bld/mobx/index.js"
+    }
   },
   "dependencies": {
     "@project-chip/matter-node.js": "^0.6.0",
