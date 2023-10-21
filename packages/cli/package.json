@@ -4,8 +4,16 @@
   "license": "MIT",
   "author": "vilicvane",
   "type": "module",
+  "bin": "./bin/run.js",
+  "oclif": {
+    "commands": "./bld/program/commands"
+  },
+  "scripts": {
+    "cli": "node ./bin/run.js"
+  },
   "dependencies": {
     "@homelib/core": "workspace:*",
+    "@oclif/core": "^3.5.0",
     "tslib": "^2.6.2"
   }
 }

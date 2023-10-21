@@ -15,8 +15,8 @@
     }
   },
   "dependencies": {
-    "@project-chip/matter-node.js": "^0.6.0",
-    "@project-chip/matter.js": "^0.6.0",
+    "@project-chip/matter-node.js": "dev",
+    "@project-chip/matter.js": "dev",
     "mobx": "^6.10.2",
     "tslang": "^0.1.27",
     "tslib": "^2.6.2"

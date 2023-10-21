@@ -27,9 +27,7 @@ export class LightEndpoint extends DeviceEndpoint {
     this._on = this.getClusterAttributeObservable(OnOffCluster, 'onOff');
   }
 
-  override dispose(): void {
-    throw new Error('Method not implemented.');
-  }
+  override dispose(): void {}
 }
 
 export const $light = $constructor(Light);

@@ -1,4 +1,4 @@
-import {$area, $home, $room, $scope} from '../../library/index.js';
+import {$area, $home, $room, $scope, types} from '../../library/index.js';
 import {$light, $television} from '../@device-cases/index.js';
 
 export const home_1 = $home('Home 1').scopes([

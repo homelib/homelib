@@ -1,4 +1,10 @@
-export declare const types: '__types__';
+/**
+ * Ideally a symbol but:
+ * https://github.com/microsoft/TypeScript/issues/52644
+ *
+ * So always use this constant instead of string literal '__types__'.
+ */
+export const types = '__types__';
 
 export type types = typeof types;
 
