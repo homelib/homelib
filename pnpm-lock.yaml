@@ -21,12 +21,21 @@ importers:
         specifier: ^29.7.0
         version: 29.7.0(@types/node@20.8.6)
     devDependencies:
+      '@homelib/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@homelib/universal':
+        specifier: workspace:*
+        version: link:packages/universal
       '@mufan/eslint-plugin':
         specifier: ^0.2.8
         version: 0.2.8(eslint@8.52.0)(typescript@5.2.2)
       eslint:
         specifier: ^8.52.0
         version: 8.52.0
+      homelib:
+        specifier: workspace:*
+        version: link:packages/cli
       prettier:
         specifier: ^3.0.3
         version: 3.0.3
@@ -60,6 +69,9 @@ importers:
       '@project-chip/matter.js':
         specifier: dev
         version: 0.6.1-alpha.0-20231021-a59af0f
+      is-typeof-property:
+        specifier: ^0.2.0
+        version: 0.2.0
       mobx:
         specifier: ^6.10.2
         version: 6.10.2
@@ -69,6 +81,9 @@ importers:
       tslib:
         specifier: ^2.6.2
         version: 2.6.2
+      x-value:
+        specifier: ^0.2.1
+        version: 0.2.1
 
   packages/universal:
     dependencies:
@@ -2518,6 +2533,10 @@ packages:
       which-typed-array: 1.1.11
     dev: true
 
+  /is-typeof-property@0.2.0:
+    resolution: {integrity: sha512-Pz6lkrxOBLTjIWcfLy5a6lcKCQ9rd0EXvzzfWztZkX2qF3scc5Aqz2PBxmBMsqaXRnAevhgeZS1oZ7j+/57teg==}
+    dev: false
+
   /is-weakref@1.0.2:
     resolution: {integrity: sha512-qctsuLZmIQ0+vSSMfoVvyFe2+GSEvnmZ2ezTup1SBse9+twCCeial6EEi3Nc2KFcf6+qz2FBPnjXsk8xhKSaPQ==}
     dependencies:
@@ -3115,7 +3134,6 @@ packages:
 
   /lodash.isequal@4.5.0:
     resolution: {integrity: sha512-pDo3lu8Jhfjqls6GkMgpahsF9kCyayhgykjyLMNFTKWrpVdAQtYyB4muAMWozBB4ig/dtWAmsMxLEI8wuz+DYQ==}
-    dev: true
 
   /lodash.merge@4.6.2:
     resolution: {integrity: sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==}
@@ -4098,6 +4116,13 @@ packages:
       lodash.isequal: 4.5.0
       tslib: 2.6.2
     dev: true
+
+  /x-value@0.2.1:
+    resolution: {integrity: sha512-2dEICNgilCLuc2GLG55Apto2ygY8RyPUe1Fapm+g2mnTZEbtu15PKa4rHC7P90RMfeIVZxTD2zHuawt4SKUMyw==}
+    dependencies:
+      lodash.isequal: 4.5.0
+      tslib: 2.6.2
+    dev: false
 
   /y18n@5.0.8:
     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}

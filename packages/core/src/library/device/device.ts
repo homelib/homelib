@@ -1,6 +1,9 @@
+import type {EndpointNumber, NodeId} from '@project-chip/matter.js/datatype';
 import type {Endpoint} from '@project-chip/matter.js/device';
+import type {Nominal} from 'x-value';
 
 import type {UnknownConfigDeclarations} from '../config.js';
+import type {Scope} from '../scopes/index.js';
 import type {UnknownNamedObject} from '../types.js';
 import {types} from '../types.js';
 
@@ -21,6 +24,10 @@ export abstract class Device<TDeviceEndpoint extends DeviceEndpoint>
 
   readonly options: DeviceOptions;
 
+  _scope: Scope | undefined;
+
+  _key: DeviceKey | undefined;
+
   constructor(
     readonly name: string,
     options: Partial<DeviceOptions> = {},
@@ -38,6 +45,22 @@ export abstract class Device<TDeviceEndpoint extends DeviceEndpoint>
   abstract connect(
     endpoint: Endpoint,
   ): Promise<TDeviceEndpoint> | TDeviceEndpoint;
+
+  _requireScope(): Scope {
+    const scope = this._scope;
+
+    if (!scope) {
+      throw new Error('Device not added to a scope.');
+    }
+
+    return scope;
+  }
+}
+
+export type DeviceKey = Nominal<'device key', string>;
+
+export function DEVICE_KEY(nodeId: NodeId, path: EndpointNumber[]): DeviceKey {
+  return `${nodeId}:${path.join('.')}` as DeviceKey;
 }
 
 export type UnknownDevice = Device<DeviceEndpoint>;

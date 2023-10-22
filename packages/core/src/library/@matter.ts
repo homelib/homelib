@@ -1,12 +1,23 @@
 import type {
   Attribute,
   AttributeClient,
-  ClusterFactory,
+  Attributes,
+  Cluster,
+  Commands,
+  Events,
 } from '@project-chip/matter.js/cluster';
-import type {BitSchema} from '@project-chip/matter.js/schema';
+import type {
+  BitSchema,
+  TypeFromPartialBitSchema,
+} from '@project-chip/matter.js/schema';
 
-export type UnknownCluster =
-  ClusterFactory.Definition<ClusterFactory.PartialDefinition>;
+export type UnknownCluster = Cluster<
+  BitSchema,
+  TypeFromPartialBitSchema<BitSchema>,
+  Attributes,
+  Commands,
+  Events
+>;
 
 export type UnknownAttribute = Attribute<unknown, BitSchema>;
 

@@ -28,5 +28,13 @@
     "typescript",
     "typescriptreact"
   ],
-  "cSpell.words": ["Automations", "homelib", "oclif", "rtsp", "xiaomi"]
+  "cSpell.words": [
+    "Automations",
+    "autorun",
+    "homelib",
+    "oclif",
+    "passcode",
+    "rtsp",
+    "xiaomi"
+  ]
 }

@@ -1,6 +1,5 @@
 import {$constructor, Device, DeviceEndpoint} from '@homelib/core';
 import type {IObservableValue} from '@homelib/core/mobx';
-import {makeObservable} from '@homelib/core/mobx';
 import type {Endpoint} from '@project-chip/matter-node.js/device';
 import {OnOffCluster} from '@project-chip/matter.js/cluster';
 
@@ -21,8 +20,6 @@ export class LightEndpoint extends DeviceEndpoint {
 
   constructor(endpoint: Endpoint) {
     super(endpoint);
-
-    makeObservable(this);
 
     this._on = this.getClusterAttributeObservable(OnOffCluster, 'onOff');
   }

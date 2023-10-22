@@ -25,10 +25,12 @@ export abstract class DeviceEndpoint {
     cluster: UnknownCluster,
     name: string,
   ): IComputedValue<unknown> {
+    const clusterClient = this.endpoint.getClusterClient(cluster)!;
+
     const observableValue = observable.box();
 
-    (cluster.attributes as UnknownAttributeClients)[name].addListener(value =>
-      observableValue.set(value),
+    (clusterClient.attributes as UnknownAttributeClients)[name].addListener(
+      value => observableValue.set(value),
     );
 
     return computed(() => observableValue.get());
