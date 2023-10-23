@@ -18,6 +18,7 @@
     "packages/core/src/library",
     "packages/core/src/mobx",
     "packages/core/src/test",
+    "packages/http/src/library",
     "packages/universal/src/library",
     "packages/xiaomi/src/library",
     "packages/cli/src/program"

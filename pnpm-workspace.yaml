@@ -1,5 +1,6 @@
 packages:
   - packages/core
+  - packages/http
   - packages/universal
   - packages/xiaomi
   - packages/cli
