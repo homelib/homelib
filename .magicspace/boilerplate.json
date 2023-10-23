@@ -29,6 +29,20 @@
         ]
       },
       {
+        "name": "@homelib/http",
+        "projects": [
+          {
+            "name": "library",
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "@homelib/universal",
         "projects": [
           {

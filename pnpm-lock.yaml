@@ -85,6 +85,15 @@ importers:
         specifier: ^0.2.1
         version: 0.2.1
 
+  packages/http:
+    dependencies:
+      '@homelib/core':
+        specifier: workspace:*
+        version: link:../core
+      tslib:
+        specifier: ^2.6.2
+        version: 2.6.2
+
   packages/universal:
     dependencies:
       '@homelib/core':
