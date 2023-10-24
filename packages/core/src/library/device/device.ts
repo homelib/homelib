@@ -3,8 +3,8 @@ import type {Endpoint} from '@project-chip/matter.js/device';
 import type {Nominal} from 'x-value';
 
 import type {UnknownConfigDeclarations} from '../config.js';
-import type {Scope} from '../scopes/index.js';
-import type {UnknownNamedObject} from '../types.js';
+import type {Scope} from '../scope.js';
+import type {NamedObject} from '../types.js';
 import {types} from '../types.js';
 
 import type {DeviceEndpoint} from './device-endpoint.js';
@@ -14,7 +14,7 @@ export type DeviceOptions = {
 };
 
 export abstract class Device<TDeviceEndpoint extends DeviceEndpoint>
-  implements UnknownNamedObject
+  implements NamedObject<string>
 {
   declare [types]: {
     name: string;

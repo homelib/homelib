@@ -22,7 +22,7 @@ const $automation_1 = $automation.build(automation =>
         values: ['day', 'night'],
       },
     })
-    .start(({lights, tv, someTuple}, {mode}) => {
+    .start(({devices: {lights, tv, someTuple}, configs: {mode}}) => {
       type _assert =
         | AssertTrue<IsEqual<typeof lights, LightEndpoint[]>>
         | AssertTrue<IsEqual<typeof tv, TelevisionEndpoint>>
@@ -34,7 +34,7 @@ const $automation_1 = $automation.build(automation =>
           >
         | AssertTrue<IsEqual<typeof mode, 'day' | 'night'>>;
     })
-    .react(({lights, tv, someTuple}, {mode}) => {
+    .react(({devices: {lights, tv, someTuple}, configs: {mode}}) => {
       type _assert =
         | AssertTrue<IsEqual<typeof lights, LightEndpoint[]>>
         | AssertTrue<IsEqual<typeof tv, TelevisionEndpoint>>
@@ -48,19 +48,19 @@ const $automation_1 = $automation.build(automation =>
     }),
 );
 
-$automation_1('Automation 1').bind<typeof home_1>({
+$automation_1('Automation 1').bind<home_1>({
   lights: [$('Balcony')],
   tv: $('Living Room'),
   someTuple: [$('Balcony'), $()],
 });
 
-$automation_1('Automation 1').bind<typeof home_1>({
+$automation_1('Automation 1').bind<home_1>({
   lights: $('Balcony'),
   tv: $('Living Room'),
   someTuple: [$('Balcony'), $()],
 });
 
-$automation_1('Automation 1').bind<typeof home_1>(
+$automation_1('Automation 1').bind<home_1>(
   // @ts-expect-error missing someTuple
   {
     lights: $('Balcony'),
@@ -68,7 +68,7 @@ $automation_1('Automation 1').bind<typeof home_1>(
   },
 );
 
-$automation_1('Automation 1').bind<typeof home_1>({
+$automation_1('Automation 1').bind<home_1>({
   // @ts-expect-error no bedroom in balcony
   lights: $('Balcony', 'Bedroom'),
   // @ts-expect-error no television in balcony
@@ -80,7 +80,7 @@ $automation_1('Automation 1').bind<typeof home_1>({
   ],
 });
 
-$automation_1('Automation 1').bind<typeof home_1>({
+$automation_1('Automation 1').bind<home_1>({
   lights: [
     // @ts-expect-error no bedroom in balcony
     $('Balcony', 'Bedroom'),

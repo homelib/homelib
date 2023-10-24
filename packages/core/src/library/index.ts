@@ -16,3 +16,5 @@ export * from './server.js';
 export * from './errors.js';
 export * from './unlinked-device.js';
 export * from './data-store.js';
+export * from './dashboard/index.js';
+export * from './scope.js';

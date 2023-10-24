@@ -1,4 +1,4 @@
-import {$area, $home, $room, $scope} from '../../library/index.js';
+import {$area, $home, $room} from '../../library/index.js';
 import {$light, $television} from '../@device-cases/index.js';
 
 export const home_1 = $home('Home 1').scopes([
@@ -6,20 +6,18 @@ export const home_1 = $home('Home 1').scopes([
     .scopes([$area('Balcony').devices([$light('Light')])])
     .devices([$television('Television')]),
   $room('Bedroom').scopes([
-    $scope('Level 2').scopes([
-      $scope('Level 3').scopes([
-        $scope('Level 4').scopes([
-          $scope('Level 5').scopes([
-            $scope('Level 6').scopes([
-              $scope('Level 7').devices([$light('Light')]),
+    $area('Level 2').scopes([
+      $area('Level 3').scopes([
+        $area('Level 4').scopes([
+          $area('Level 5').scopes([
+            $area('Level 6').scopes([
+              $area('Level 7').devices([$light('Light')]),
             ]),
           ]),
         ]),
       ]),
     ]),
-    $scope('Duplicate').scopes([
-      $scope('Duplicate').devices([$light('Light')]),
-    ]),
+    $area('Duplicate').scopes([$area('Duplicate').devices([$light('Light')])]),
   ]),
 ]);
 

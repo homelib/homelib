@@ -1,7 +1,7 @@
 import type {NamedObject, UnknownNamedObject} from '../types.js';
 
 export function $constructor<
-  TConstructor extends new (...args: never[]) => UnknownNamedObject,
+  TConstructor extends abstract new (...args: never[]) => UnknownNamedObject,
 >(
   Constructor: TConstructor,
 ): ConstructorParameters<TConstructor> extends [
@@ -11,7 +11,7 @@ export function $constructor<
   ? ExtendedConstructorWithNameParameter<TRestArgs, InstanceType<TConstructor>>
   : never;
 export function $constructor<
-  TConstructor extends new (...args: never[]) => object,
+  TConstructor extends abstract new (...args: never[]) => object,
 >(
   Constructor: TConstructor,
 ): ExtendedConstructor<

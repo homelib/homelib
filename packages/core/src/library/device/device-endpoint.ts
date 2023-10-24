@@ -1,7 +1,7 @@
 import type {Endpoint} from '@project-chip/matter-node.js/device';
 import type {Attribute} from '@project-chip/matter.js/cluster';
-import type {IComputedValue} from 'mobx';
-import {observable, computed} from 'mobx';
+import type {IObservableValue} from 'mobx';
+import {observable} from 'mobx';
 
 import type {UnknownAttributeClients, UnknownCluster} from '../@matter.js';
 
@@ -16,7 +16,7 @@ export abstract class DeviceEndpoint {
   >(
     cluster: TCluster,
     name: TAttributeName,
-  ): IComputedValue<
+  ): IObservableValue<
     TCluster['attributes'][TAttributeName] extends Attribute<infer T, any>
       ? T | undefined
       : never
@@ -24,7 +24,7 @@ export abstract class DeviceEndpoint {
   getClusterAttributeObservable(
     cluster: UnknownCluster,
     name: string,
-  ): IComputedValue<unknown> {
+  ): IObservableValue<unknown> {
     const clusterClient = this.endpoint.getClusterClient(cluster)!;
 
     const observableValue = observable.box();
@@ -33,6 +33,6 @@ export abstract class DeviceEndpoint {
       value => observableValue.set(value),
     );
 
-    return computed(() => observableValue.get());
+    return observableValue;
   }
 }

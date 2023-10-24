@@ -21,7 +21,7 @@ import {
   type UnknownDevice,
 } from './device/index.js';
 import {ExpectedError} from './errors.js';
-import type {Scope} from './scopes/index.js';
+import type {Scope} from './scope.js';
 import {UnlinkedDevice} from './unlinked-device.js';
 
 const DATA_DIR_DEFAULT = resolve('.homelib/data');

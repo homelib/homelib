@@ -1,5 +1,5 @@
 import type {Device, UnknownDevice} from './device/index.js';
-import type {Scope} from './scopes/index.js';
+import type {Scope} from './scope.js';
 import type {types} from './types.js';
 
 export type DeviceQuery<TScope extends Scope, TDevice extends UnknownDevice> = {

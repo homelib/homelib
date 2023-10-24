@@ -24,6 +24,14 @@ export class LightEndpoint extends DeviceEndpoint {
     this._on = this.getClusterAttributeObservable(OnOffCluster, 'onOff');
   }
 
+  async toggle(on = this._on.get() ?? true): Promise<void> {
+    const {endpoint} = this;
+
+    const clusterClient = endpoint.getClusterClient(OnOffCluster)!;
+
+    await clusterClient.attributes.onOff.set(on);
+  }
+
   override dispose(): void {}
 }
 

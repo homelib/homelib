@@ -1,11 +1,10 @@
-import type {AutomationWithScope} from '../automation.js';
-import type {UnknownDevice} from '../device/index.js';
-import type {Plugin} from '../plugin.js';
-import type {NamedTupleToRecord, UnknownNamedObject} from '../types.js';
-import {types} from '../types.js';
-import {$constructor} from '../utils/index.js';
+import type {AutomationWithScope} from './automation.js';
+import type {UnknownDevice} from './device/index.js';
+import type {Plugin} from './plugin.js';
+import type {NamedObject, NamedTupleToRecord} from './types.js';
+import {types} from './types.js';
 
-export class Scope implements UnknownNamedObject {
+export abstract class Scope implements NamedObject<string> {
   declare [types]: {
     name: string;
     scopes: {};
@@ -152,5 +151,3 @@ export class Scope implements UnknownNamedObject {
     }
   }
 }
-
-export const $scope = $constructor(Scope);
