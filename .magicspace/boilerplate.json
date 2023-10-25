@@ -51,7 +51,8 @@
               {
                 "package": "@homelib/core",
                 "project": "library"
-              }
+              },
+              "definitions"
             ]
           }
         ]
