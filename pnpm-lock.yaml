@@ -54,6 +54,9 @@ importers:
       '@homelib/core':
         specifier: workspace:*
         version: link:../core
+      '@homelib/http':
+        specifier: workspace:*
+        version: link:../http
       '@oclif/core':
         specifier: ^3.5.0
         version: 3.5.0

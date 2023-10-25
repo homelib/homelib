@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@homelib/core": "workspace:*",
+    "@homelib/http": "workspace:*",
     "@oclif/core": "^3.5.0",
     "tslib": "^2.6.2"
   }

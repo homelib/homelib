@@ -8,6 +8,9 @@
   "references": [
     {
       "path": "../../../core/src/library"
+    },
+    {
+      "path": "../../../http/src/library"
     }
   ]
 }

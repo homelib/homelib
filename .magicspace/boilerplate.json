@@ -84,6 +84,25 @@
         ]
       },
       {
+        "name": "homelib",
+        "dir": "cli",
+        "projects": [
+          {
+            "name": "program",
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              },
+              {
+                "package": "@homelib/http",
+                "project": "library"
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "@homelib/universal",
         "projects": [
           {
@@ -116,21 +135,6 @@
         "projects": [
           {
             "name": "library",
-            "references": [
-              {
-                "package": "@homelib/core",
-                "project": "library"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "name": "homelib",
-        "dir": "cli",
-        "projects": [
-          {
-            "name": "program",
             "references": [
               {
                 "package": "@homelib/core",
