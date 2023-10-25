@@ -37,11 +37,42 @@
         "name": "@homelib/http",
         "projects": [
           {
+            "name": "definitions",
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              }
+            ]
+          },
+          {
             "name": "library",
             "references": [
               {
                 "package": "@homelib/core",
                 "project": "library"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "@homelib/dashboard",
+        "projects": [
+          {
+            "name": "program",
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              },
+              {
+                "package": "@homelib/core",
+                "project": "ui"
+              },
+              {
+                "package": "@homelib/http",
+                "project": "definitions"
               }
             ]
           }

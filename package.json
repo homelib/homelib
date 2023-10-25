@@ -12,6 +12,7 @@
     "test": "pnpm lint-prettier && pnpm build && pnpm lint && pnpm bare-test",
     "bare-test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "core": "pnpm --filter @homelib/core",
+    "dashboard": "pnpm --filter @homelib/dashboard",
     "http": "pnpm --filter @homelib/http",
     "universal": "pnpm --filter @homelib/universal",
     "xiaomi": "pnpm --filter @homelib/xiaomi",

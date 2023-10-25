@@ -88,6 +88,18 @@ importers:
         specifier: ^0.2.1
         version: 0.2.1
 
+  packages/dashboard:
+    dependencies:
+      '@homelib/core':
+        specifier: workspace:*
+        version: link:../core
+      '@homelib/http':
+        specifier: workspace:*
+        version: link:../http
+      tslib:
+        specifier: ^2.6.2
+        version: 2.6.2
+
   packages/http:
     dependencies:
       '@homelib/core':
