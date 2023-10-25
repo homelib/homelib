@@ -19,6 +19,9 @@
       "path": "packages/universal/src/library"
     },
     {
+      "path": "packages/universal/src/ui"
+    },
+    {
       "path": "packages/xiaomi/src/library"
     },
     {

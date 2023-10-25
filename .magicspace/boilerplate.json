@@ -58,6 +58,19 @@
                 "project": "library"
               }
             ]
+          },
+          {
+            "name": "ui",
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              },
+              {
+                "package": "@homelib/core",
+                "project": "ui"
+              }
+            ]
           }
         ]
       },
