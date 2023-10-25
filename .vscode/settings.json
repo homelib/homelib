@@ -17,6 +17,7 @@
     ".",
     "packages/core/src/library",
     "packages/core/src/mobx",
+    "packages/core/src/ui",
     "packages/core/src/test",
     "packages/http/src/library",
     "packages/universal/src/library",

@@ -12,6 +12,10 @@
     "./mobx": {
       "types": "./bld/mobx/index.d.ts",
       "default": "./bld/mobx/index.js"
+    },
+    "./ui": {
+      "types": "./bld/ui/index.d.ts",
+      "default": "./bld/ui/index.js"
     }
   },
   "dependencies": {
