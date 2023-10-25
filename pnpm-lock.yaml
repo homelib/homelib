@@ -69,6 +69,9 @@ importers:
       '@project-chip/matter.js':
         specifier: dev
         version: 0.6.1-alpha.0-20231021-a59af0f
+      '@remote-object/core':
+        specifier: 0.0.1-alpha.1
+        version: 0.0.1-alpha.1
       is-typeof-property:
         specifier: ^0.2.0
         version: 0.2.0
@@ -884,6 +887,12 @@ packages:
     dependencies:
       bn.js: 5.2.1
       elliptic: 6.5.4
+
+  /@remote-object/core@0.0.1-alpha.1:
+    resolution: {integrity: sha512-DhR0jqvYdlhs1b0hhIhnYtFJYQUpr6EpWSZ3dMhQilNvSFKfahfRIccOIDX9CXXSL+JPq3yHq6TwHVucsjHfLQ==}
+    dependencies:
+      tslib: 2.6.2
+    dev: false
 
   /@sinclair/typebox@0.27.8:
     resolution: {integrity: sha512-+Fj43pSMwJs4KRrH/938Uf+uAELIgVBmQzg/q1YG10djyfA3TnrU8N8XzqCh/okZdszqBQTZf96idMfE5lnwTA==}
