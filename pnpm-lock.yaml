@@ -66,6 +66,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@homelib/x':
+        specifier: workspace:*
+        version: link:../x
       '@project-chip/matter-node.js':
         specifier: dev
         version: 0.6.1-alpha.0-20231021-a59af0f
@@ -87,9 +90,6 @@ importers:
       tslib:
         specifier: ^2.6.2
         version: 2.6.2
-      x-value:
-        specifier: ^0.2.1
-        version: 0.2.1
 
   packages/dashboard:
     dependencies:
@@ -136,6 +136,9 @@ importers:
       '@homelib/core':
         specifier: workspace:*
         version: link:../core
+      '@homelib/x':
+        specifier: workspace:*
+        version: link:../x
       '@types/express':
         specifier: ^4.17.20
         version: 4.17.20
@@ -145,9 +148,6 @@ importers:
       tslib:
         specifier: ^2.6.2
         version: 2.6.2
-      x-value:
-        specifier: ^0.2.1
-        version: 0.2.1
 
   packages/universal:
     dependencies:
@@ -170,6 +170,15 @@ importers:
       react:
         specifier: '18'
         version: 18.2.0
+
+  packages/x:
+    dependencies:
+      tslib:
+        specifier: ^2.6.2
+        version: 2.6.2
+      x-value:
+        specifier: ^0.2.1
+        version: 0.2.1
 
   packages/xiaomi:
     dependencies:
