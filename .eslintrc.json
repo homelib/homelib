@@ -2,6 +2,8 @@
   "root": true,
   "ignorePatterns": [
     "node_modules/",
+    "/packages/x/src/",
+    "/packages/x/bld/",
     "/packages/core/src/",
     "/packages/core/bld/",
     "/packages/http/src/",

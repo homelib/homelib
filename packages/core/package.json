@@ -19,6 +19,7 @@
     }
   },
   "dependencies": {
+    "@homelib/x": "workspace:*",
     "@project-chip/matter-node.js": "dev",
     "@project-chip/matter.js": "dev",
     "@remote-object/core": "0.0.1-alpha.1",

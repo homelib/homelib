@@ -15,6 +15,7 @@
     "dashboard": "pnpm --filter @homelib/dashboard",
     "http": "pnpm --filter @homelib/http",
     "universal": "pnpm --filter @homelib/universal",
+    "x": "pnpm --filter @homelib/x",
     "xiaomi": "pnpm --filter @homelib/xiaomi",
     "homelib": "pnpm --filter homelib"
   },

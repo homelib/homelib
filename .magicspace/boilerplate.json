@@ -13,10 +13,24 @@
     },
     "packages": [
       {
-        "name": "@homelib/core",
+        "name": "@homelib/x",
         "projects": [
           {
             "name": "library"
+          }
+        ]
+      },
+      {
+        "name": "@homelib/core",
+        "projects": [
+          {
+            "name": "library",
+            "references": [
+              {
+                "package": "@homelib/x",
+                "project": "library"
+              }
+            ]
           },
           {
             "name": "mobx",
@@ -40,6 +54,10 @@
             "name": "definitions",
             "references": [
               {
+                "package": "@homelib/x",
+                "project": "library"
+              },
+              {
                 "package": "@homelib/core",
                 "project": "library"
               }
@@ -48,6 +66,10 @@
           {
             "name": "library",
             "references": [
+              {
+                "package": "@homelib/x",
+                "project": "library"
+              },
               {
                 "package": "@homelib/core",
                 "project": "library"

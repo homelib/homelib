@@ -15,6 +15,7 @@
   "typescript.tsdk": "node_modules/typescript/lib",
   "eslint.workingDirectories": [
     ".",
+    "packages/x/src/library",
     "packages/core/src/library",
     "packages/core/src/mobx",
     "packages/core/src/ui",

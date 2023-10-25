@@ -1,6 +1,9 @@
 {
   "references": [
     {
+      "path": "packages/x/src/library"
+    },
+    {
       "path": "packages/core/src/library"
     },
     {
