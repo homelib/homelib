@@ -6,6 +6,8 @@
     "/packages/core/bld/",
     "/packages/http/src/",
     "/packages/http/bld/",
+    "/packages/dashboard/src/",
+    "/packages/dashboard/bld/",
     "/packages/universal/src/",
     "/packages/universal/bld/",
     "/packages/xiaomi/src/",

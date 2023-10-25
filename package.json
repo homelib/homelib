@@ -11,6 +11,7 @@
     "lint-prettier": "prettier --check .",
     "test": "pnpm lint-prettier && pnpm build && pnpm lint",
     "core": "pnpm --filter @homelib/core",
+    "dashboard": "pnpm --filter @homelib/dashboard",
     "http": "pnpm --filter @homelib/http",
     "universal": "pnpm --filter @homelib/universal",
     "xiaomi": "pnpm --filter @homelib/xiaomi",

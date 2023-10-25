@@ -1,4 +1,6 @@
 *
+!/src/definitions/**/*.{ts,tsx}
+!/bld/definitions/**
 !/src/library/**/*.{ts,tsx}
 !/bld/library/**
 *.tsbuildinfo

@@ -13,7 +13,13 @@
       "path": "packages/core/src/test"
     },
     {
+      "path": "packages/http/src/definitions"
+    },
+    {
       "path": "packages/http/src/library"
+    },
+    {
+      "path": "packages/dashboard/src/program"
     },
     {
       "path": "packages/universal/src/library"
