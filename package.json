@@ -20,7 +20,7 @@
   "devDependencies": {
     "@homelib/core": "workspace:*",
     "@homelib/universal": "workspace:*",
-    "@mufan/eslint-plugin": "^0.2.8",
+    "@mufan/eslint-plugin": "^0.2.9",
     "eslint": "^8.52.0",
     "homelib": "workspace:*",
     "prettier": "^3.0.3",

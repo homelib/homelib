@@ -7,6 +7,9 @@
       "path": "packages/core/src/mobx"
     },
     {
+      "path": "packages/core/src/ui"
+    },
+    {
       "path": "packages/core/src/test"
     },
     {

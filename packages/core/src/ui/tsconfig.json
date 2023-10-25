@@ -1,0 +1,16 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": ".",
+    "outDir": "../../bld/ui"
+  },
+  "references": [
+    {
+      "path": "../library"
+    },
+    {
+      "path": "../mobx"
+    }
+  ]
+}

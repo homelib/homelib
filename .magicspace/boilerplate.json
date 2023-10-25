@@ -23,6 +23,11 @@
             "type": "library"
           },
           {
+            "name": "ui",
+            "type": "library",
+            "references": ["library", "mobx"]
+          },
+          {
             "name": "test",
             "references": ["library"]
           }
