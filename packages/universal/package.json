@@ -14,10 +14,14 @@
   },
   "peerDependencies": {
     "@project-chip/matter.js": "0.6",
-    "@project-chip/matter-node.js": "0.6"
+    "@project-chip/matter-node.js": "0.6",
+    "@types/react": "18",
+    "react": "18"
   },
   "devDependencies": {
     "@project-chip/matter.js": "dev",
-    "@project-chip/matter-node.js": "dev"
+    "@project-chip/matter-node.js": "dev",
+    "@types/react": "18",
+    "react": "18"
   }
 }
