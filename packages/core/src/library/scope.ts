@@ -1,3 +1,5 @@
+import type {RemoteObjectInstance} from '@remote-object/core';
+
 import type {AutomationWithScope} from './automation.js';
 import type {UnknownDevice} from './device/index.js';
 import type {Plugin} from './plugin.js';
@@ -151,3 +153,6 @@ export abstract class Scope implements NamedObject<string> {
     }
   }
 }
+
+export type ScopeToRemoteScope<TScope extends Scope> =
+  RemoteObjectInstance<TScope>;

@@ -10,7 +10,7 @@ export abstract class DeviceEndpoint {
 
   abstract dispose(): Promise<void> | void;
 
-  getClusterAttributeObservable<
+  protected getClusterAttributeObservable<
     TCluster extends UnknownCluster,
     TAttributeName extends keyof TCluster['attributes'],
   >(
@@ -21,7 +21,7 @@ export abstract class DeviceEndpoint {
       ? T | undefined
       : never
   >;
-  getClusterAttributeObservable(
+  protected getClusterAttributeObservable(
     cluster: UnknownCluster,
     name: string,
   ): IObservableValue<unknown> {

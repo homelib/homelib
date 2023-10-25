@@ -8,10 +8,7 @@ import type {home_1} from './@scope-cases/index.js';
 const $lightCard = $constructor(
   class LightCard extends Card {
     constructor(name: string) {
-      super(
-        name,
-        fileURLToPath(new URL('react/light-card.jsx', import.meta.url)),
-      );
+      super(name, '@homelib/universal/cards/light-card');
     }
   },
 ).build(card =>

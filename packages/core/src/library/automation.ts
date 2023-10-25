@@ -4,7 +4,7 @@ import type {
 } from './config.js';
 import type {
   UnknownDeviceDeclarations,
-  DeviceDeclarationsToDevices,
+  DeviceDeclarationsToDeviceEndpoints,
   DeviceDeclarationsToDeviceBindings,
 } from './device/index.js';
 import type {DeviceQuery} from './device-query.js';
@@ -77,6 +77,6 @@ export type AutomationWithScope<TScope extends Scope> = Automation & {
 };
 
 export type AutomationCallbackContext<TAutomation extends Automation> = {
-  devices: DeviceDeclarationsToDevices<TAutomation[types]['devices']>;
+  devices: DeviceDeclarationsToDeviceEndpoints<TAutomation[types]['devices']>;
   configs: ConfigDeclarationsToConfigs<TAutomation[types]['configs']>;
 };
