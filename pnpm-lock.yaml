@@ -28,8 +28,8 @@ importers:
         specifier: workspace:*
         version: link:packages/universal
       '@mufan/eslint-plugin':
-        specifier: ^0.2.11
-        version: 0.2.11(eslint@8.52.0)(typescript@5.2.2)
+        specifier: ^0.2.12
+        version: 0.2.12(eslint@8.52.0)(typescript@5.2.2)
       eslint:
         specifier: ^8.52.0
         version: 8.52.0
@@ -1057,8 +1057,8 @@ packages:
       '@jridgewell/resolve-uri': 3.1.1
       '@jridgewell/sourcemap-codec': 1.4.15
 
-  /@mufan/eslint-plugin@0.2.11(eslint@8.52.0)(typescript@5.2.2):
-    resolution: {integrity: sha512-gI02NYgNIrS2uo0s1Sr4yTKUs6MjVxi7lc0c5jkGL1vrILmA3lenlCkKYHCgygMVPS2p1dEEzLcHvDAlKUqy4Q==}
+  /@mufan/eslint-plugin@0.2.12(eslint@8.52.0)(typescript@5.2.2):
+    resolution: {integrity: sha512-hgZhoRXvKg9sjMTPooxu83TddpZxDR9fRvrqK7EdOZvQHFcD4thbGPAhDNiQVNdRkYbtxyWoS57QQoB6DtWCgQ==}
     peerDependencies:
       eslint: '8'
       typescript: '5'
