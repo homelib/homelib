@@ -7,6 +7,15 @@
   "dependencies": {
     "@homelib/core": "workspace:*",
     "@homelib/http": "workspace:*",
+    "@types/react": "^18.2.32",
+    "@types/react-dom": "^18.2.14",
+    "mobx": "^6.10.2",
+    "mobx-react": "^9.0.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "tslib": "^2.6.2"
+  },
+  "devDependencies": {
+    "vite": "^4.5.0"
   }
 }
