@@ -75,6 +75,11 @@
                 "project": "definitions"
               }
             ]
+          },
+          {
+            "name": "configs",
+            "type": "script",
+            "dir": false
           }
         ]
       },

@@ -22,6 +22,9 @@
       "path": "packages/dashboard/src/program"
     },
     {
+      "path": "packages/dashboard"
+    },
+    {
       "path": "packages/universal/src/library"
     },
     {
