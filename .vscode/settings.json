@@ -21,6 +21,7 @@
     "packages/core/src/test",
     "packages/http/src/library",
     "packages/universal/src/library",
+    "packages/universal/src/ui",
     "packages/xiaomi/src/library",
     "packages/cli/src/program"
   ],
