@@ -9,12 +9,12 @@
     "/packages/dashboard/src/",
     "/packages/dashboard/bld/",
     "/packages/dashboard/",
+    "/packages/cli/src/",
+    "/packages/cli/bld/",
     "/packages/universal/src/",
     "/packages/universal/bld/",
     "/packages/xiaomi/src/",
-    "/packages/xiaomi/bld/",
-    "/packages/cli/src/",
-    "/packages/cli/bld/"
+    "/packages/xiaomi/bld/"
   ],
   "extends": ["plugin:@mufan/javascript"],
   "overrides": [

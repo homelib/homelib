@@ -25,6 +25,9 @@
       "path": "packages/dashboard"
     },
     {
+      "path": "packages/cli/src/program"
+    },
+    {
       "path": "packages/universal/src/library"
     },
     {
@@ -32,9 +35,6 @@
     },
     {
       "path": "packages/xiaomi/src/library"
-    },
-    {
-      "path": "packages/cli/src/program"
     }
   ],
   "files": []

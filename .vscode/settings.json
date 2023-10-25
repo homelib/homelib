@@ -23,10 +23,10 @@
     "packages/http/src/library",
     "packages/dashboard/src/program",
     "packages/dashboard",
+    "packages/cli/src/program",
     "packages/universal/src/library",
     "packages/universal/src/ui",
-    "packages/xiaomi/src/library",
-    "packages/cli/src/program"
+    "packages/xiaomi/src/library"
   ],
   "eslint.validate": [
     "javascript",
