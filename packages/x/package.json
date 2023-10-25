@@ -1,5 +1,5 @@
 {
-  "name": "@homelib/http",
+  "name": "@homelib/x",
   "version": "0.0.0",
   "license": "MIT",
   "author": "vilicvane",
@@ -9,8 +9,6 @@
     "default": "./bld/library/index.js"
   },
   "dependencies": {
-    "@homelib/core": "workspace:*",
-    "@homelib/x": "workspace:*",
     "tslib": "^2.6.2"
   }
 }

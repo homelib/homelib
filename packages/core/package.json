@@ -19,6 +19,7 @@
     }
   },
   "dependencies": {
+    "@homelib/x": "workspace:*",
     "tslib": "^2.6.2"
   }
 }

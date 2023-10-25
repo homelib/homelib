@@ -4,10 +4,5 @@
     "composite": true,
     "rootDir": ".",
     "outDir": "../../bld/library"
-  },
-  "references": [
-    {
-      "path": "../../../x/src/library"
-    }
-  ]
+  }
 }
