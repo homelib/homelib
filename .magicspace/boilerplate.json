@@ -69,7 +69,8 @@
               {
                 "package": "@homelib/core",
                 "project": "ui"
-              }
+              },
+              "library"
             ]
           }
         ]

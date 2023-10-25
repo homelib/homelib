@@ -12,6 +12,9 @@
     },
     {
       "path": "../../../core/src/ui"
+    },
+    {
+      "path": "../library"
     }
   ]
 }
