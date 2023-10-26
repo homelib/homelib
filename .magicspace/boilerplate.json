@@ -38,8 +38,7 @@
           },
           {
             "name": "ui",
-            "type": "library",
-            "references": ["library", "mobx"]
+            "type": "library"
           },
           {
             "name": "test",
@@ -86,7 +85,7 @@
             "name": "program",
             "references": [
               {
-                "package": "@homelib/core",
+                "package": "@homelib/x",
                 "project": "library"
               },
               {
@@ -141,7 +140,7 @@
             "name": "ui",
             "references": [
               {
-                "package": "@homelib/core",
+                "package": "@homelib/x",
                 "project": "library"
               },
               {
