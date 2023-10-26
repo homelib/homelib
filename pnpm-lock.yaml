@@ -28,8 +28,8 @@ importers:
         specifier: workspace:*
         version: link:packages/universal
       '@mufan/eslint-plugin':
-        specifier: ^0.2.12
-        version: 0.2.12(eslint@8.52.0)(typescript@5.2.2)
+        specifier: ^0.2.13
+        version: 0.2.13(eslint@8.52.0)(typescript@5.2.2)
       eslint:
         specifier: ^8.52.0
         version: 8.52.0
@@ -99,6 +99,9 @@ importers:
       '@homelib/http':
         specifier: workspace:*
         version: link:../http
+      '@homelib/x':
+        specifier: workspace:*
+        version: link:../x
       '@types/react':
         specifier: ^18.2.32
         version: 18.2.32
@@ -160,6 +163,9 @@ importers:
       '@homelib/core':
         specifier: workspace:*
         version: link:../core
+      '@homelib/x':
+        specifier: workspace:*
+        version: link:../x
       tslib:
         specifier: ^2.6.2
         version: 2.6.2
@@ -1072,8 +1078,8 @@ packages:
       '@jridgewell/resolve-uri': 3.1.1
       '@jridgewell/sourcemap-codec': 1.4.15
 
-  /@mufan/eslint-plugin@0.2.12(eslint@8.52.0)(typescript@5.2.2):
-    resolution: {integrity: sha512-hgZhoRXvKg9sjMTPooxu83TddpZxDR9fRvrqK7EdOZvQHFcD4thbGPAhDNiQVNdRkYbtxyWoS57QQoB6DtWCgQ==}
+  /@mufan/eslint-plugin@0.2.13(eslint@8.52.0)(typescript@5.2.2):
+    resolution: {integrity: sha512-R+PXPG8voZNy6TSjDrZ1UunqTyRIYnWvmQDk3ZidDcays2gZ1hqmYW3ODd6751uUaolqk36VYfq044Yw76+btg==}
     peerDependencies:
       eslint: '8'
       typescript: '5'
