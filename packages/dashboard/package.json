@@ -7,6 +7,7 @@
   "dependencies": {
     "@homelib/core": "workspace:*",
     "@homelib/http": "workspace:*",
+    "@homelib/x": "workspace:*",
     "tslib": "^2.6.2"
   }
 }

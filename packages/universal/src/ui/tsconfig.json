@@ -7,7 +7,7 @@
   },
   "references": [
     {
-      "path": "../../../core/src/library"
+      "path": "../../../x/src/library"
     },
     {
       "path": "../../../core/src/ui"
