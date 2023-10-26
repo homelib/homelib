@@ -2,6 +2,8 @@
   "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
+    "lib": ["DOM", "ESNext"],
+    "jsx": "react",
     "rootDir": ".",
     "outDir": "../../bld/program"
   },

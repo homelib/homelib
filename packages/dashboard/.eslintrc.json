@@ -2,7 +2,7 @@
   "root": true,
   "overrides": [
     {
-      "files": ["**/*.{ts,tsx}"],
+      "files": ["*.ts"],
       "extends": ["plugin:@mufan/typescript", "plugin:@mufan/dev"],
       "parserOptions": {
         "project": "tsconfig.json"
