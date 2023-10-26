@@ -9,6 +9,8 @@
     "@homelib/http": "workspace:*",
     "@types/react": "^18.2.32",
     "@types/react-dom": "^18.2.14",
+    "boring-router": "^0.5.20",
+    "boring-router-react": "^0.5.20",
     "mobx": "^6.10.2",
     "mobx-react": "^9.0.1",
     "react": "^18.2.0",

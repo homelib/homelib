@@ -105,6 +105,12 @@ importers:
       '@types/react-dom':
         specifier: ^18.2.14
         version: 18.2.14
+      boring-router:
+        specifier: ^0.5.20
+        version: 0.5.20(mobx@6.10.2)
+      boring-router-react:
+        specifier: ^0.5.20
+        version: 0.5.20(boring-router@0.5.20)(mobx@6.10.2)(react-dom@18.2.0)(react@18.2.0)
       mobx:
         specifier: ^6.10.2
         version: 6.10.2
@@ -1824,6 +1830,39 @@ packages:
       - supports-color
     dev: false
 
+  /boring-router-react@0.5.20(boring-router@0.5.20)(mobx@6.10.2)(react-dom@18.2.0)(react@18.2.0):
+    resolution: {integrity: sha512-WJR8kTVXAervhPYcOWt+680t5GO1D2QXVbHXJzjPVYJLHP4wR8VZXZJscDDNyGvutQqkiURpKJT6tfhDecNNMA==}
+    peerDependencies:
+      boring-router: '0.5'
+      mobx: '6'
+      react: '18'
+    dependencies:
+      boring-router: 0.5.20(mobx@6.10.2)
+      classnames: 2.3.2
+      debug: 4.3.4(supports-color@8.1.1)
+      mobx: 6.10.2
+      mobx-react-lite: 3.4.3(mobx@6.10.2)(react-dom@18.2.0)(react@18.2.0)
+      react: 18.2.0
+      tslang: 0.1.27
+      tslib: 2.6.2
+    transitivePeerDependencies:
+      - react-dom
+      - react-native
+      - supports-color
+    dev: false
+
+  /boring-router@0.5.20(mobx@6.10.2):
+    resolution: {integrity: sha512-NAZxtgA+eVpxSG7kvjtimXgJVSbk3QMjSm9fZy3dymV0PAJQNAiNafW6HYtfeYSV7fUJDdc92kCSVVePhsiCbw==}
+    peerDependencies:
+      mobx: '6'
+    dependencies:
+      hyphenate: 0.2.5
+      lodash: 4.17.21
+      mobx: 6.10.2
+      tslang: 0.1.27
+      tslib: 2.6.2
+    dev: false
+
   /brace-expansion@1.1.11:
     resolution: {integrity: sha512-iCuPHDFgrHX7H2vEI/5xpz07zSHB00TpugqhmYtVmMO6518mCuRMoOYFldEBl0g187ufozdaHgWKcYFb61qGiA==}
     dependencies:
@@ -1931,6 +1970,10 @@ packages:
 
   /cjs-module-lexer@1.2.3:
     resolution: {integrity: sha512-0TNiGstbQmCFwt4akjjBg5pLRTSyj/PkWQ1ZoO2zntmg9yLqSRxwEa4iCfQLGjqhiqBfOJa7W/E8wfGrTDmlZQ==}
+    dev: false
+
+  /classnames@2.3.2:
+    resolution: {integrity: sha512-CSbhY4cFEJRe6/GQzIk5qXZ4Jeg5pcsP7b5peFSDpffpe1cqjASH/n9UTjBwOp6XpMSTwQ8Za2K5V02ueA7Tmw==}
     dev: false
 
   /clean-stack@3.0.1:
@@ -3043,7 +3086,6 @@ packages:
 
   /hyphenate@0.2.5:
     resolution: {integrity: sha512-mSY0+dVLWFq7iIUgiID3EWo5S8rLnZa595mcuWiN8di91n6eL+WS8HKmcpiZZIX7iElri0a/2hOYpwzldsY4gQ==}
-    dev: true
 
   /iconv-lite@0.4.24:
     resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
@@ -3898,7 +3940,6 @@ packages:
 
   /lodash@4.17.21:
     resolution: {integrity: sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg==}
-    dev: true
 
   /loose-envify@1.4.0:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
@@ -4020,6 +4061,24 @@ packages:
     resolution: {integrity: sha512-eL79dXrE1q9dBbDCLg7xfn/vl7MS4F1gvJAgjJrQli/jbQWdUttuVawphqpffoIYfRdq78LHx6GP4bU/EQ2ATA==}
     engines: {node: '>=16 || 14 >=14.17'}
     dev: true
+
+  /mobx-react-lite@3.4.3(mobx@6.10.2)(react-dom@18.2.0)(react@18.2.0):
+    resolution: {integrity: sha512-NkJREyFTSUXR772Qaai51BnE1voWx56LOL80xG7qkZr6vo8vEaLF3sz1JNUVh+rxmUzxYaqOhfuxTfqUh0FXUg==}
+    peerDependencies:
+      mobx: ^6.1.0
+      react: ^16.8.0 || ^17 || ^18
+      react-dom: '*'
+      react-native: '*'
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+      react-native:
+        optional: true
+    dependencies:
+      mobx: 6.10.2
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
+    dev: false
 
   /mobx-react-lite@4.0.5(mobx@6.10.2)(react-dom@18.2.0)(react@18.2.0):
     resolution: {integrity: sha512-StfB2wxE8imKj1f6T8WWPf4lVMx3cYH9Iy60bbKXEs21+HQ4tvvfIBZfSmMXgQAefi8xYEwQIz4GN9s0d2h7dg==}
