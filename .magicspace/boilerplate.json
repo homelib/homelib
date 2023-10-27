@@ -38,7 +38,8 @@
           },
           {
             "name": "ui",
-            "type": "library"
+            "type": "library",
+            "references": ["library"]
           },
           {
             "name": "test",

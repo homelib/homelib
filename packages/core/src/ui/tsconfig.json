@@ -4,5 +4,10 @@
     "composite": true,
     "rootDir": ".",
     "outDir": "../../bld/ui"
-  }
+  },
+  "references": [
+    {
+      "path": "../library"
+    }
+  ]
 }
