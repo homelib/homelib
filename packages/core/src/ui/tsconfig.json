@@ -7,6 +7,9 @@
   },
   "references": [
     {
+      "path": "../../../x/src/library"
+    },
+    {
       "path": "../library"
     }
   ]
