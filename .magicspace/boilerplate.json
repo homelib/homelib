@@ -39,7 +39,13 @@
           {
             "name": "ui",
             "type": "library",
-            "references": ["library"]
+            "references": [
+              {
+                "package": "@homelib/x",
+                "project": "library"
+              },
+              "library"
+            ]
           },
           {
             "name": "test",
