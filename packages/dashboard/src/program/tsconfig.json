@@ -13,7 +13,7 @@
       "path": "../../../x/src/browser"
     },
     {
-      "path": "../../../core/src/ui"
+      "path": "../../../core/src/browser"
     },
     {
       "path": "../../../http/src/definitions"

@@ -16,7 +16,7 @@
       "path": "packages/core/src/mobx"
     },
     {
-      "path": "packages/core/src/ui"
+      "path": "packages/core/src/browser"
     },
     {
       "path": "packages/core/src/test"
@@ -40,7 +40,7 @@
       "path": "packages/universal/src/library"
     },
     {
-      "path": "packages/universal/src/ui"
+      "path": "packages/universal/src/browser"
     },
     {
       "path": "packages/xiaomi/src/library"

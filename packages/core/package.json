@@ -13,9 +13,9 @@
       "types": "./bld/mobx/index.d.ts",
       "default": "./bld/mobx/index.js"
     },
-    "./ui": {
-      "types": "./bld/ui/index.d.ts",
-      "default": "./bld/ui/index.js"
+    "./browser": {
+      "types": "./bld/browser/index.d.ts",
+      "default": "./bld/browser/index.js"
     }
   },
   "dependencies": {
