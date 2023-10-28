@@ -3,15 +3,9 @@
   "compilerOptions": {
     "composite": true,
     "rootDir": ".",
-    "outDir": "../../bld/ui"
+    "outDir": "../../bld/browser"
   },
   "references": [
-    {
-      "path": "../../../x/src/library"
-    },
-    {
-      "path": "../../../x/src/browser"
-    },
     {
       "path": "../library"
     }

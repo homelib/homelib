@@ -1,4 +1,8 @@
 *
 !/src/library/**/*.{ts,tsx}
 !/bld/library/**
+!/src/node/**/*.{ts,tsx}
+!/bld/node/**
+!/src/browser/**/*.{ts,tsx}
+!/bld/browser/**
 *.tsbuildinfo

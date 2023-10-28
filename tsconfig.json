@@ -4,6 +4,12 @@
       "path": "packages/x/src/library"
     },
     {
+      "path": "packages/x/src/node"
+    },
+    {
+      "path": "packages/x/src/browser"
+    },
+    {
       "path": "packages/core/src/library"
     },
     {

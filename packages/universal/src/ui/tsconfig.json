@@ -11,6 +11,9 @@
       "path": "../../../x/src/library"
     },
     {
+      "path": "../../../x/src/browser"
+    },
+    {
       "path": "../../../core/src/ui"
     },
     {

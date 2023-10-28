@@ -5,8 +5,18 @@
   "author": "vilicvane",
   "type": "module",
   "exports": {
-    "types": "./bld/library/index.d.ts",
-    "default": "./bld/library/index.js"
+    ".": {
+      "types": "./bld/library/index.d.ts",
+      "default": "./bld/library/index.js"
+    },
+    "./node": {
+      "types": "./bld/node/index.d.ts",
+      "default": "./bld/node/index.js"
+    },
+    "./browser": {
+      "types": "./bld/browser/index.d.ts",
+      "default": "./bld/browser/index.js"
+    }
   },
   "dependencies": {
     "tslib": "^2.6.2",

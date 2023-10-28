@@ -9,6 +9,9 @@
   "references": [
     {
       "path": "../../../x/src/library"
+    },
+    {
+      "path": "../../../x/src/node"
     }
   ]
 }
