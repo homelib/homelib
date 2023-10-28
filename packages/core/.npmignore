@@ -3,6 +3,6 @@
 !/bld/library/**
 !/src/mobx/**/*.{ts,tsx}
 !/bld/mobx/**
-!/src/ui/**/*.{ts,tsx}
-!/bld/ui/**
+!/src/browser/**/*.{ts,tsx}
+!/bld/browser/**
 *.tsbuildinfo

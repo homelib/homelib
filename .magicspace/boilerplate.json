@@ -51,7 +51,7 @@
             "type": "library"
           },
           {
-            "name": "ui",
+            "name": "browser",
             "type": "library",
             "references": [
               {
@@ -119,7 +119,7 @@
               },
               {
                 "package": "@homelib/core",
-                "project": "ui"
+                "project": "browser"
               },
               {
                 "package": "@homelib/http",
@@ -166,7 +166,7 @@
             ]
           },
           {
-            "name": "ui",
+            "name": "browser",
             "references": [
               {
                 "package": "@homelib/x",
@@ -178,7 +178,7 @@
               },
               {
                 "package": "@homelib/core",
-                "project": "ui"
+                "project": "browser"
               },
               "library"
             ]

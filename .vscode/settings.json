@@ -23,7 +23,7 @@
     "packages/x/src/browser",
     "packages/core/src/library",
     "packages/core/src/mobx",
-    "packages/core/src/ui",
+    "packages/core/src/browser",
     "packages/core/src/test",
     "packages/http/src/definitions",
     "packages/http/src/library",
@@ -31,7 +31,7 @@
     "packages/dashboard",
     "packages/cli/src/program",
     "packages/universal/src/library",
-    "packages/universal/src/ui",
+    "packages/universal/src/browser",
     "packages/xiaomi/src/library"
   ],
   "eslint.validate": [
