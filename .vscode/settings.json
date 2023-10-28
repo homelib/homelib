@@ -7,6 +7,9 @@
   },
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.rulers": [80],
+  "files.associations": {
+    "boilerplate.json": "jsonc"
+  },
   "files.eol": "\n",
   "files.insertFinalNewline": true,
   "files.trimTrailingWhitespace": true,
@@ -16,6 +19,8 @@
   "eslint.workingDirectories": [
     ".",
     "packages/x/src/library",
+    "packages/x/src/node",
+    "packages/x/src/browser",
     "packages/core/src/library",
     "packages/core/src/mobx",
     "packages/core/src/ui",
