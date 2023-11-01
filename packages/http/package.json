@@ -11,7 +11,7 @@
   "dependencies": {
     "@homelib/core": "workspace:*",
     "@homelib/x": "workspace:*",
-    "entrance-decorator": "^0.2.6",
+    "entrance-decorator": "^0.4.0",
     "tslib": "^2.6.2"
   }
 }
