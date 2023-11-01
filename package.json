@@ -7,7 +7,7 @@
   "scripts": {
     "3": "pnpm install && pnpm dedupe && pnpm install",
     "build": "rimraf --glob packages/*/{.bld,bld} && tsc --build",
-    "lint": "eslint --no-error-on-unmatched-pattern . && run-in-every eslint-project --parallel --echo -- eslint --no-error-on-unmatched-pattern .",
+    "lint": "eslint --no-error-on-unmatched-pattern --report-unused-disable-directives . && run-in-every eslint-project --parallel --echo -- eslint --no-error-on-unmatched-pattern --report-unused-disable-directives .",
     "lint-prettier": "prettier --check .",
     "test": "pnpm lint-prettier && pnpm build && pnpm lint && pnpm bare-test",
     "bare-test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",

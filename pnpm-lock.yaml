@@ -152,8 +152,8 @@ importers:
         specifier: ^4.17.20
         version: 4.17.20
       entrance-decorator:
-        specifier: ^0.2.6
-        version: 0.2.6
+        specifier: ^0.4.0
+        version: 0.4.0
       express:
         specifier: ^4.18.2
         version: 4.18.2
@@ -2293,8 +2293,8 @@ packages:
       tapable: 2.2.1
     dev: true
 
-  /entrance-decorator@0.2.6:
-    resolution: {integrity: sha512-/pirnKXOe2ySmmiz9mdjlCPue9lCDAXLPWg6sEm0MG2S+NgKnNpV+ygfr1SEP80Yr6/lQX7MSqdhWLunXhRb9g==}
+  /entrance-decorator@0.4.0:
+    resolution: {integrity: sha512-tGNUrF3OfWmsg6qBV9ppceVo2ocmpg9+N9dcz9PBSLNVByQ5fT9OjrcZlVtNMyqSgZEOW5Ry4SsLgv3+iOZWbA==}
     dependencies:
       tslib: 2.6.2
     dev: false
