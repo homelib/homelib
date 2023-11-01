@@ -151,6 +151,9 @@ importers:
       '@types/express':
         specifier: ^4.17.20
         version: 4.17.20
+      entrance-decorator:
+        specifier: ^0.2.6
+        version: 0.2.6
       express:
         specifier: ^4.18.2
         version: 4.18.2
@@ -2289,6 +2292,12 @@ packages:
       graceful-fs: 4.2.11
       tapable: 2.2.1
     dev: true
+
+  /entrance-decorator@0.2.6:
+    resolution: {integrity: sha512-/pirnKXOe2ySmmiz9mdjlCPue9lCDAXLPWg6sEm0MG2S+NgKnNpV+ygfr1SEP80Yr6/lQX7MSqdhWLunXhRb9g==}
+    dependencies:
+      tslib: 2.6.2
+    dev: false
 
   /error-ex@1.3.2:
     resolution: {integrity: sha512-7dFHNmqeFSEt2ZBsCriorKnn3Z2pj+fd9kmI6QoWw4//DL+icEBfc0U7qJCisqrTsKTjw4fNFy2pW9OqStD84g==}
