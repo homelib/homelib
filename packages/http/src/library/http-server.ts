@@ -1,6 +1,6 @@
 import Express from 'express';
 
-import {API} from '../definitions/index.js';
+import {APIRoutes} from './@routes/index.js';
 
 export class HTTPServer {
   readonly app: Express.Express = Express();
@@ -8,12 +8,18 @@ export class HTTPServer {
   constructor() {
     const {app} = this;
 
-    for (const [key, route] of Object.entries(API)) {
-      const [path, router] = item;
+    for (const [key, route] of Object.entries(APIRoutes)) {
+      if (!key.startsWith('route_')) {
+        continue;
+      }
 
-      app.use(path, router);
+      route(app);
     }
   }
 
-  listen() {}
+  listen(port: number): void {
+    this.app.listen(port, () => {
+      console.info('api-server-serve', {port});
+    });
+  }
 }

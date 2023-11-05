@@ -13,4 +13,4 @@ declare global {
   type XDataTypes = x.JSONTypes;
 }
 
-export const xData = x.json.extend<UsingXData>();
+export const xData = x.extendedJSONValue.extend<UsingXData>();

@@ -1,4 +1,4 @@
-import * as x from 'x-value';
+import {x} from '@homelib/x';
 
 import {define} from '../@definition.js';
 

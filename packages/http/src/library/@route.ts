@@ -44,7 +44,7 @@ export function route(
           ...(typeof xBodyHeader === 'string'
             ? JSON.parse(xBodyHeader)
             : undefined),
-          ...(Object.getPrototypeOf(body) === Object.prototype
+          ...(body && Object.getPrototypeOf(body) === Object.prototype
             ? body
             : undefined),
         };
@@ -81,7 +81,7 @@ export function route(
           }
 
           response.json({
-            error: {
+            throw: {
               name: 'InvalidRequestError',
               message,
             },
@@ -125,7 +125,7 @@ export function route(
             });
 
             response.json({
-              error: {
+              throw: {
                 name: error.name,
                 message: error.message,
               },
@@ -139,7 +139,7 @@ export function route(
             console.error(error);
 
             response.status(500).json({
-              error: UNKNOWN_ERROR,
+              throw: UNKNOWN_ERROR,
             });
           }
 
@@ -163,14 +163,14 @@ export function route(
           });
 
           response.status(500).json({
-            error: UNKNOWN_ERROR,
+            throw: UNKNOWN_ERROR,
           });
 
           return;
         }
 
         response.json({
-          value: ret,
+          return: ret,
         });
       });
     },

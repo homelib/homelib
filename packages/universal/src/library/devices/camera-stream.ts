@@ -1,4 +1,4 @@
-import {$constructor, Device, DeviceEndpoint, types} from '@homelib/core';
+import {$constructor, Device, DeviceEndpoint} from '@homelib/core';
 
 export type CameraStreamOptions = {
   source: string;

@@ -16,20 +16,20 @@ export class ServeCommand extends Command {
 
     process.on('SIGINT', () => process.exit());
 
-    await server.start();
+    // await server.start();
 
-    const light = server.getDeviceEndpoint(
-      ['Living Room', 'Balcony'],
-      'Light',
-    ) as LightEndpoint;
+    // const light = server.getDeviceEndpoint(
+    //   ['Living Room', 'Balcony'],
+    //   'Light',
+    // ) as LightEndpoint;
 
-    autorun(() => {
-      console.log('light', {on: light.on});
-    });
+    // autorun(() => {
+    //   console.log('light', {on: light.turnedOn});
+    // });
 
     const httpServer = new HTTPServer();
 
-    httpServer.listen();
+    httpServer.listen(10047);
 
     // await server.link(
     //   scope._getDevice(['Living Room', 'Balcony'], 'Light')!,

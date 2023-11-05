@@ -11,6 +11,7 @@
     "lint-prettier": "prettier --check .",
     "test": "pnpm lint-prettier && pnpm build && pnpm lint && pnpm bare-test",
     "bare-test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
+    "cli": "node --enable-source-maps packages/cli/bin/run.js",
     "core": "pnpm --filter @homelib/core",
     "dashboard": "pnpm --filter @homelib/dashboard",
     "http": "pnpm --filter @homelib/http",

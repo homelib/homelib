@@ -1,7 +1,8 @@
+import type {types} from '@homelib/x';
+
 import type {
   DeviceCard,
   DeviceDeclarationToRemoteDevices,
-  types,
 } from '../library/index.js';
 
 import type {Scope} from './scope.js';

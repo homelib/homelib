@@ -1,4 +1,4 @@
-import type * as x from 'x-value';
+import type {x} from '@homelib/x';
 
 export type IDefinition = {
   path: string;
