@@ -1,11 +1,10 @@
+import type {NamedObject, x} from '@homelib/x';
+import {types} from '@homelib/x';
 import type {EndpointNumber, NodeId} from '@project-chip/matter.js/datatype';
 import type {Endpoint} from '@project-chip/matter.js/device';
-import type {Nominal} from 'x-value';
 
 import type {UnknownConfigDeclarations} from '../config.js';
 import type {Scope} from '../scope.js';
-import type {NamedObject} from '../types.js';
-import {types} from '../types.js';
 
 import type {DeviceEndpoint} from './device-endpoint.js';
 
@@ -57,7 +56,7 @@ export abstract class Device<TDeviceEndpoint extends DeviceEndpoint>
   }
 }
 
-export type DeviceKey = Nominal<'device key', string>;
+export type DeviceKey = x.Nominal<'device key', string>;
 
 export function DEVICE_KEY(nodeId: NodeId, path: EndpointNumber[]): DeviceKey {
   return `${nodeId}:${path.join('.')}` as DeviceKey;

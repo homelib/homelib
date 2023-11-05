@@ -1,4 +1,4 @@
-import type {NamedObject, UnknownNamedObject} from '../types.js';
+import type {NamedObject, UnknownNamedObject} from '@homelib/x';
 
 export function $constructor<
   TConstructor extends abstract new (...args: never[]) => UnknownNamedObject,

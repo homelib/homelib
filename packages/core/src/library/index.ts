@@ -11,7 +11,7 @@ export * from './automation.js';
 export * from './config.js';
 export * from './device-query.js';
 export * from './utils/index.js';
-export * from './types.js';
+export * from '../../../x/src/library/types.js';
 export * from './server.js';
 export * from './errors.js';
 export * from './unlinked-device.js';

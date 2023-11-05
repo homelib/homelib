@@ -1,5 +1,6 @@
 import {Server} from '@homelib/core';
 import {autorun} from '@homelib/core/mobx';
+import {HTTPServer} from '@homelib/http';
 import type {LightEndpoint} from '@homelib/universal';
 import {Command} from '@oclif/core';
 
@@ -25,6 +26,10 @@ export class ServeCommand extends Command {
     autorun(() => {
       console.log('light', {on: light.on});
     });
+
+    const httpServer = new HTTPServer();
+
+    httpServer.listen();
 
     // await server.link(
     //   scope._getDevice(['Living Room', 'Balcony'], 'Light')!,

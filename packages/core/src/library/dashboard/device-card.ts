@@ -1,14 +1,15 @@
+import type {NamedObject} from '@homelib/x';
+import {types} from '@homelib/x';
+
 import type {UnknownConfigDeclarations} from '../config.js';
 import type {
   DeviceDeclarationsToDeviceBindings,
   UnknownDeviceDeclarations,
 } from '../device/index.js';
 import type {Scope} from '../scope.js';
-import type {NamedObject} from '../types.js';
-import {types} from '../types.js';
 import {$constructor} from '../utils/index.js';
 
-export abstract class Card implements NamedObject<string> {
+export abstract class DeviceCard implements NamedObject<string> {
   declare [types]: {
     name: string;
     scope: Scope;

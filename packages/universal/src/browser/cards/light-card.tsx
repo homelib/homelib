@@ -1,4 +1,4 @@
-import type {DeviceCardProps} from '@homelib/core/ui';
+import type {DeviceCardProps} from '@homelib/core/browser';
 import type {ReactElement} from 'react';
 import React from 'react';
 

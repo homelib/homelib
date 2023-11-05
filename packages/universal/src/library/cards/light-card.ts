@@ -1,9 +1,9 @@
-import {$constructor, Card} from '@homelib/core';
+import {$constructor, DeviceCard} from '@homelib/core';
 
 import {Light} from '../devices/index.js';
 
 export const $lightCard = $constructor(
-  class LightCard extends Card {
+  class LightCard extends DeviceCard {
     constructor(name: string) {
       super(name, '@homelib/universal/cards/light-card');
     }

@@ -1,16 +1,17 @@
+import type {NamedObject} from '@homelib/x';
+import {types} from '@homelib/x';
+
 import type {
-  UnknownConfigDeclarations,
   ConfigDeclarationsToConfigs,
+  UnknownConfigDeclarations,
 } from './config.js';
 import type {
-  UnknownDeviceDeclarations,
-  DeviceDeclarationsToDeviceEndpoints,
   DeviceDeclarationsToDeviceBindings,
+  DeviceDeclarationsToDeviceEndpoints,
+  UnknownDeviceDeclarations,
 } from './device/index.js';
 import type {DeviceQuery} from './device-query.js';
 import type {Scope} from './scope.js';
-import type {NamedObject} from './types.js';
-import {types} from './types.js';
 import {$constructor} from './utils/index.js';
 
 export abstract class Automation implements NamedObject<string> {

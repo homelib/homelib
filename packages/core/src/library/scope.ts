@@ -1,10 +1,9 @@
-import type {RemoteObjectInstance} from '@remote-object/core';
+import type {NamedObject, NamedTupleToRecord} from '@homelib/x';
+import {types} from '@homelib/x';
 
 import type {AutomationWithScope} from './automation.js';
 import type {UnknownDevice} from './device/index.js';
 import type {Plugin} from './plugin.js';
-import type {NamedObject, NamedTupleToRecord} from './types.js';
-import {types} from './types.js';
 
 export abstract class Scope implements NamedObject<string> {
   declare [types]: {
@@ -153,6 +152,3 @@ export abstract class Scope implements NamedObject<string> {
     }
   }
 }
-
-export type ScopeToRemoteScope<TScope extends Scope> =
-  RemoteObjectInstance<TScope>;

@@ -12,19 +12,19 @@ export class Light extends Device<LightEndpoint> {
 }
 
 export class LightEndpoint extends DeviceEndpoint {
-  private _on: IObservableValue<boolean | undefined>;
+  private _turnedOn: IObservableValue<boolean | undefined>;
 
-  get on(): boolean | undefined {
-    return this._on.get();
+  get turnedOn(): boolean | undefined {
+    return this._turnedOn.get();
   }
 
   constructor(endpoint: Endpoint) {
     super(endpoint);
 
-    this._on = this.getClusterAttributeObservable(OnOffCluster, 'onOff');
+    this._turnedOn = this.getClusterAttributeObservable(OnOffCluster, 'onOff');
   }
 
-  async toggle(on = this._on.get() ?? true): Promise<void> {
+  async toggle(on = this._turnedOn.get() ?? true): Promise<void> {
     const {endpoint} = this;
 
     const clusterClient = endpoint.getClusterClient(OnOffCluster)!;

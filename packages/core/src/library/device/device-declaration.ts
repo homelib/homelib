@@ -102,7 +102,7 @@ export type DeviceEndpointToRemoteDevice<
 export type DeviceDeclarationToRemoteDevice<
   TDeclaration extends DeviceDeclaration,
 > = TDeclaration extends DeviceConstructor<infer TDeviceEndpoint>
-  ? TDeviceEndpoint
+  ? DeviceEndpointToRemoteDevice<TDeviceEndpoint>
   : TDeclaration extends readonly UnknownDeviceConstructor[]
   ? {
       [TIndex in keyof TDeclaration]: TDeclaration[TIndex] extends DeviceConstructor<
