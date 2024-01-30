@@ -96,28 +96,30 @@ export class Server {
 
     await matterServer.start();
 
-    for (const [key, [scopePath, deviceName]] of Object.entries(
-      data.devices,
-    ) as [DeviceKey, DeviceScopePathAndName][]) {
-      const device = this.scope._getDevice(scopePath, deviceName);
+    void (async () => {
+      for (const [key, [scopePath, deviceName]] of Object.entries(
+        data.devices,
+      ) as [DeviceKey, DeviceScopePathAndName][]) {
+        const device = this.scope._getDevice(scopePath, deviceName);
 
-      if (device) {
-        device._key = key;
-        deviceMap.set(key, device);
-      }
-    }
-
-    if (commissioningController.isCommissioned()) {
-      const nodes = await commissioningController.connect();
-
-      for (const node of nodes) {
-        const {nodeId} = node;
-
-        for (const [path, endpoint] of iterateNodeEndpoints(node)) {
-          await this.handleDeviceEndpointConnect(endpoint, nodeId, path);
+        if (device) {
+          device._key = key;
+          deviceMap.set(key, device);
         }
       }
-    }
+
+      if (commissioningController.isCommissioned()) {
+        const nodes = await commissioningController.connect();
+
+        for (const node of nodes) {
+          const {nodeId} = node;
+
+          for (const [path, endpoint] of iterateNodeEndpoints(node)) {
+            await this.handleDeviceEndpointConnect(endpoint, nodeId, path);
+          }
+        }
+      }
+    })();
   }
 
   getDeviceEndpoint(

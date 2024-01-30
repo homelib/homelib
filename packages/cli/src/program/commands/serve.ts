@@ -1,7 +1,4 @@
-import {Server} from '@homelib/core';
-import {autorun} from '@homelib/core/mobx';
 import {HTTPServer} from '@homelib/http';
-import type {LightEndpoint} from '@homelib/universal';
 import {Command} from '@oclif/core';
 
 import {ScopeArg} from '../@oclif/index.js';
@@ -11,8 +8,6 @@ export class ServeCommand extends Command {
     const {
       args: {scope},
     } = await this.parse(ServeCommand);
-
-    const server = new Server(scope);
 
     process.on('SIGINT', () => process.exit());
 
@@ -27,7 +22,7 @@ export class ServeCommand extends Command {
     //   console.log('light', {on: light.turnedOn});
     // });
 
-    const httpServer = new HTTPServer();
+    const httpServer = await HTTPServer.create(scope, {password: '12345678'});
 
     httpServer.listen(10047);
 

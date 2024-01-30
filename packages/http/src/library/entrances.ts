@@ -1,5 +1,7 @@
 import {AsyncLocalStorage} from 'async_hooks';
 
+import type {Scope} from '@homelib/core';
+import {Server} from '@homelib/core';
 import type {UpEntrances as UpEntrances_} from 'entrance-decorator';
 import {entrance} from 'entrance-decorator';
 
@@ -8,11 +10,21 @@ export type EntrancesOptions = {
 };
 
 export class Entrances {
-  constructor(readonly options: EntrancesOptions) {}
+  constructor(
+    readonly scope: Scope,
+    readonly options: EntrancesOptions,
+  ) {}
 
-  /* eslint-disable @mufan/explicit-return-type */
+  /* eslint-disable @typescript-eslint/explicit-function-return-type */
 
-  /* eslint-enable @mufan/explicit-return-type */
+  @entrance
+  get server() {
+    const server = new Server(this.scope);
+
+    return server.start().then(() => server);
+  }
+
+  /* eslint-enable @typescript-eslint/explicit-function-return-type */
 }
 
 export type UpEntrances = UpEntrances_<Entrances, '*', never>;

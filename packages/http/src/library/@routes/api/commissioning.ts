@@ -4,8 +4,9 @@ import {API} from '../../../definitions/index.js';
 import {route} from '../../@route.js';
 import type {UpEntrances} from '../../entrances.js';
 
-export function route_ping(app: Express, _entrances: UpEntrances): void {
-  route(app, API.ping).processor(() => {
+export function route_commissioning(app: Express, {server}: UpEntrances): void {
+  route(app, API.commission).processor(async ({pairingCode}) => {
+    await server.commission(pairingCode);
     return {};
   });
 }
