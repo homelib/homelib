@@ -1,4 +1,4 @@
-import {DeviceEndpoint, $constructor, Device} from '../../library/index.js';
+import {$constructor, Device, DeviceEndpoint} from '../../library/index.js';
 
 export class Light extends Device<LightEndpoint> {
   readonly type = 'light';

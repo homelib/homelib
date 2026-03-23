@@ -1,6 +1,6 @@
 import type {types} from '@homelib/x';
 
-import type {Device, UnknownDevice} from './device/index.js';
+import type {UnknownDevice} from './device/index.js';
 import type {Scope} from './scope.js';
 
 export type DeviceQuery<TScope extends Scope, TDevice extends UnknownDevice> = {
@@ -8,7 +8,7 @@ export type DeviceQuery<TScope extends Scope, TDevice extends UnknownDevice> = {
     scope: TScope;
     device: TDevice;
   };
-};
+} & string[];
 
 export type UnknownDeviceQuery = DeviceQuery<Scope, UnknownDevice>;
 
@@ -58,7 +58,7 @@ export function $<TScope extends Scope, TDevice extends UnknownDevice>(
   >
 ): DeviceQuery<TScope, TDevice>;
 export function $(...queries: string[]): UnknownDeviceQuery {
-  throw new Error('Not implemented');
+  return queries as UnknownDeviceQuery;
 }
 
 export type NextQueryForDevice<
