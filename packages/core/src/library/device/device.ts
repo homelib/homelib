@@ -1,20 +1,14 @@
 import type {NamedObject, x} from '@homelib/x';
 import {types} from '@homelib/x';
-import type {EndpointNumber, NodeId} from '@project-chip/matter.js/datatype';
-import type {Endpoint} from '@project-chip/matter.js/device';
 
 import type {UnknownConfigDeclarations} from '../config.js';
 import type {Scope} from '../scope.js';
-
-import type {DeviceEndpoint} from './device-endpoint.js';
 
 export type DeviceOptions = {
   configs: UnknownConfigDeclarations;
 };
 
-export abstract class Device<TDeviceEndpoint extends DeviceEndpoint>
-  implements NamedObject<string>
-{
+export abstract class Device implements NamedObject<string> {
   declare [types]: {
     name: string;
   };
@@ -41,10 +35,6 @@ export abstract class Device<TDeviceEndpoint extends DeviceEndpoint>
     return this;
   }
 
-  abstract connect(
-    endpoint: Endpoint,
-  ): Promise<TDeviceEndpoint> | TDeviceEndpoint;
-
   _requireScope(): Scope {
     const scope = this._scope;
 
@@ -58,13 +48,4 @@ export abstract class Device<TDeviceEndpoint extends DeviceEndpoint>
 
 export type DeviceKey = x.Nominal<'device key', string>;
 
-export function DEVICE_KEY(nodeId: NodeId, path: EndpointNumber[]): DeviceKey {
-  return `${nodeId}:${path.join('.')}` as DeviceKey;
-}
-
-export type UnknownDevice = Device<DeviceEndpoint>;
-
-export type DeviceConstructor<TDeviceEndpoint extends DeviceEndpoint> =
-  typeof Device<TDeviceEndpoint>;
-
-export type UnknownDeviceConstructor = typeof Device<DeviceEndpoint>;
+export type DeviceConstructor = typeof Device;

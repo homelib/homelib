@@ -1,15 +1,5 @@
-import type {Endpoint} from '@project-chip/matter.js/device';
+import {Device} from './device/index.js';
 
-import {Device, DeviceEndpoint} from './device/index.js';
-
-export class UnlinkedDevice extends Device<UnlinkedDeviceEndpoint> {
+export class UnlinkedDevice extends Device {
   readonly type = '@homelib/core/unlinked-device';
-
-  override connect(endpoint: Endpoint): UnlinkedDeviceEndpoint {
-    return new UnlinkedDeviceEndpoint(endpoint);
-  }
-}
-
-export class UnlinkedDeviceEndpoint extends DeviceEndpoint {
-  override dispose(): void {}
 }
