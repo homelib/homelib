@@ -24,6 +24,6 @@
     "is-typeof-property": "^0.2.0",
     "mobx": "^6.10.2",
     "tslang": "^0.1.27",
-    "tslib": "^2.6.2"
+    "tslib": "^2.8.1"
   }
 }
