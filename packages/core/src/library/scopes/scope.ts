@@ -1,6 +1,4 @@
 import {Scope} from '../scope.js';
 import {$constructor} from '../utils/index.js';
 
-export class Area extends Scope {}
-
-export const $area = $constructor(Area);
+export const $scope = $constructor(Scope);

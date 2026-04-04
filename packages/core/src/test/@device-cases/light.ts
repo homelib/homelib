@@ -12,6 +12,10 @@ export class LightEndpoint extends DeviceEndpoint {
   override dispose(): void {
     throw new Error('Method not implemented.');
   }
+
+  set colorTemperature(value: number) {
+    // Set color temperature logic here
+  }
 }
 
 export const $light = $constructor(Light);

@@ -25,5 +25,10 @@
     "mobx": "^6.10.2",
     "tslang": "^0.1.27",
     "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/ms": "^2.1.0",
+    "mobx-utils": "^6.1.1",
+    "ms": "^2.1.3"
   }
 }
