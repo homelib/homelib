@@ -2,7 +2,6 @@ import type {AssertTrue, IsEqual} from 'tslang';
 
 import {$, $automation} from '../library/index.js';
 
-import type {LightEndpoint, TelevisionEndpoint} from './@device-cases/index.js';
 import {Light, Television} from './@device-cases/index.js';
 import type {home_1} from './@scope-cases/index.js';
 
@@ -24,24 +23,24 @@ const $automation_1 = $automation.build(automation =>
     })
     .start(({devices: {lights, tv, someTuple}, configs: {mode}}) => {
       type _assert =
-        | AssertTrue<IsEqual<typeof lights, LightEndpoint[]>>
-        | AssertTrue<IsEqual<typeof tv, TelevisionEndpoint>>
+        | AssertTrue<IsEqual<typeof lights, Light[]>>
+        | AssertTrue<IsEqual<typeof tv, Television>>
         | AssertTrue<
             IsEqual<
               typeof someTuple,
-              readonly [LightEndpoint, TelevisionEndpoint]
+              readonly [Light, Television]
             >
           >
         | AssertTrue<IsEqual<typeof mode, 'day' | 'night'>>;
     })
     .react(({devices: {lights, tv, someTuple}, configs: {mode}}) => {
       type _assert =
-        | AssertTrue<IsEqual<typeof lights, LightEndpoint[]>>
-        | AssertTrue<IsEqual<typeof tv, TelevisionEndpoint>>
+        | AssertTrue<IsEqual<typeof lights, Light[]>>
+        | AssertTrue<IsEqual<typeof tv, Television>>
         | AssertTrue<
             IsEqual<
               typeof someTuple,
-              readonly [LightEndpoint, TelevisionEndpoint]
+              readonly [Light, Television]
             >
           >
         | AssertTrue<IsEqual<typeof mode, 'day' | 'night'>>;

@@ -38,23 +38,14 @@ export function $<
   const TQ3 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2]>,
   const TQ4 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2, TQ3]>,
 >(q1: TQ1, q2: TQ2, q3: TQ3, q4: TQ4): DeviceQuery<TScope, TDevice>;
-export function $<
-  TScope extends Scope,
-  TDevice extends Device,
-  const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
-  const TQ2 extends NextQueryForDevice<TScope, TDevice, [TQ1]>,
-  const TQ3 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2]>,
-  const TQ4 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2, TQ3]>,
-  const TQ5 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2, TQ3, TQ4]>,
->(q1: TQ1, q2: TQ2, q3: TQ3, q4: TQ4, q5: TQ5): DeviceQuery<TScope, TDevice>;
 export function $<TDevice extends Device, TScope extends Scope>(
   ...args: ScopeTreeForDevice<TScope, TDevice> extends never ? never : []
 ): DeviceQuery<TScope, TDevice>;
 export function $<TScope extends Scope, TDevice extends Device>(
   ...queries: Extract<
     ScopeToQueriesForDevice<TScope, TDevice>,
-    // at least 6 queries to match
-    [string, string, string, string, string, string, ...string[]]
+    // at least 5 queries to match
+    [string, string, string, string, string, ...string[]]
   >
 ): DeviceQuery<TScope, TDevice>;
 export function $(...queries: string[]): UnknownDeviceQuery {
@@ -79,8 +70,8 @@ export type ScopeTreeForDevice<TScope extends Scope, TDevice extends Device> = {
       ? TScopeDevice extends never
         ? never
         : TScopeDevice extends TDevice
-        ? true
-        : never
+          ? true
+          : never
       : never
     : Pick<
         TTree,
@@ -97,11 +88,11 @@ type NextQuery<
   ? TQueries extends []
     ? RecursiveSubScopeNames<TScopeTree>
     : TQueries extends [
-        infer TQuery extends string,
-        ...infer TRestQueries extends string[],
-      ]
-    ? NextQuery<RecursiveSubScope<TScopeTree, TQuery>, TRestQueries>
-    : never
+          infer TQuery extends string,
+          ...infer TRestQueries extends string[],
+        ]
+      ? NextQuery<RecursiveSubScope<TScopeTree, TQuery>, TRestQueries>
+      : never
   : never;
 
 type RecursiveSubScope<
@@ -144,8 +135,8 @@ type ScopeTreeToQueries<TScopeTree> =
         ? keyof TSubTree extends never
           ? never
           : ScopeTreeToQueries<TSubTree> extends infer TSubQueries extends
-              string[]
-          ? [TName, ...TSubQueries] | TSubQueries
-          : never
+                string[]
+            ? [TName, ...TSubQueries] | TSubQueries
+            : never
         : never;
     }[keyof TScopeTree];

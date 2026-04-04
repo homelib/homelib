@@ -1,23 +1,17 @@
-import {$constructor, Device, DeviceEndpoint} from '@homelib/core';
+import {$constructor, Device} from '@homelib/core';
 
 export type CameraStreamOptions = {
   source: string;
 };
 
-export class CameraStream extends Device<CameraStreamEndpoint> {
+export class CameraStream extends Device {
   readonly type = '@homelib/universal/camera-stream';
 
   constructor(name: string, options: CameraStreamOptions) {
     super(name, {});
   }
 
-  override connect(): CameraStreamEndpoint {
-    throw new Error('Method not implemented.');
-  }
 }
 
-export class CameraStreamEndpoint extends DeviceEndpoint {
-  dispose(): void {}
-}
 
 export const $cameraStream = $constructor(CameraStream);
