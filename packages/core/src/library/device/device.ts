@@ -1,14 +1,18 @@
-import type {NamedObject, x} from '@homelib/x';
+import type {NamedObject} from '@homelib/x';
 import {types} from '@homelib/x';
 
 import type {UnknownConfigDeclarations} from '../config.js';
 import type {Scope} from '../scope.js';
 
+import type {DeviceEndpoint} from './device-endpoint.js';
+
 export type DeviceOptions = {
   configs: UnknownConfigDeclarations;
 };
 
-export abstract class Device implements NamedObject<string> {
+export abstract class Device<
+  TDeviceEndpoint extends DeviceEndpoint,
+> implements NamedObject<string> {
   declare [types]: {
     name: string;
   };
@@ -18,8 +22,6 @@ export abstract class Device implements NamedObject<string> {
   readonly options: DeviceOptions;
 
   _scope: Scope | undefined;
-
-  _key: DeviceKey | undefined;
 
   constructor(
     readonly name: string,
@@ -35,6 +37,8 @@ export abstract class Device implements NamedObject<string> {
     return this;
   }
 
+  abstract connect(): Promise<TDeviceEndpoint> | TDeviceEndpoint;
+
   _requireScope(): Scope {
     const scope = this._scope;
 
@@ -46,6 +50,9 @@ export abstract class Device implements NamedObject<string> {
   }
 }
 
-export type DeviceKey = x.Nominal<'device key', string>;
+export type UnknownDevice = Device<DeviceEndpoint>;
 
-export type DeviceConstructor = typeof Device;
+export type DeviceConstructor<TDeviceEndpoint extends DeviceEndpoint> =
+  typeof Device<TDeviceEndpoint>;
+
+export type UnknownDeviceConstructor = typeof Device<DeviceEndpoint>;

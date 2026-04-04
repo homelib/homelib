@@ -2,7 +2,7 @@ import type {NamedObject, NamedTupleToRecord} from '@homelib/x';
 import {types} from '@homelib/x';
 
 import type {AutomationWithScope} from './automation.js';
-import type {Device} from './device/index.js';
+import type {UnknownDevice} from './device/index.js';
 import type {Plugin} from './plugin.js';
 
 export abstract class Scope implements NamedObject<string> {
@@ -18,7 +18,7 @@ export abstract class Scope implements NamedObject<string> {
 
   private scopeMap = new Map<string, Scope>();
 
-  private deviceMap = new Map<string, Device>();
+  private deviceMap = new Map<string, UnknownDevice>();
 
   constructor(
     name: string,
@@ -84,14 +84,14 @@ export abstract class Scope implements NamedObject<string> {
     return this;
   }
 
-  devices<const TDevices extends readonly Device[]>(
+  devices<const TDevices extends readonly UnknownDevice[]>(
     devices: TDevices,
   ): this & {
     [types]: {
       devices: NamedTupleToRecord<TDevices>;
     };
   };
-  devices(devices: Device[]): this {
+  devices(devices: UnknownDevice[]): this {
     const {deviceMap} = this;
 
     for (const device of devices) {
@@ -121,7 +121,10 @@ export abstract class Scope implements NamedObject<string> {
     return this;
   }
 
-  _getDevice(scopePath: string[], deviceName: string): Device | undefined {
+  _getDevice(
+    scopePath: string[],
+    deviceName: string,
+  ): UnknownDevice | undefined {
     const {deviceMap, scopeMap} = this;
 
     if (scopePath.length === 0) {
@@ -139,7 +142,7 @@ export abstract class Scope implements NamedObject<string> {
     return scope._getDevice(restScopePath, deviceName);
   }
 
-  *_iterateAllDevices(): IterableIterator<Device> {
+  *_iterateAllDevices(): IterableIterator<UnknownDevice> {
     for (const [, device] of this.deviceMap) {
       yield device;
     }

@@ -1,47 +1,47 @@
 import type {types} from '@homelib/x';
 
-import type {Device} from './device/index.js';
+import type {UnknownDevice} from './device/index.js';
 import type {Scope} from './scope.js';
 
-export type DeviceQuery<TScope extends Scope, TDevice extends Device> = {
+export type DeviceQuery<TScope extends Scope, TDevice extends UnknownDevice> = {
   [types]: {
     scope: TScope;
     device: TDevice;
   };
 } & string[];
 
-export type UnknownDeviceQuery = DeviceQuery<Scope, Device>;
+export type UnknownDeviceQuery = DeviceQuery<Scope, UnknownDevice>;
 
 export function $<
   TScope extends Scope,
-  TDevice extends Device,
+  TDevice extends UnknownDevice,
   const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
 >(q1: TQ1): DeviceQuery<TScope, TDevice>;
 export function $<
   TScope extends Scope,
-  TDevice extends Device,
+  TDevice extends UnknownDevice,
   const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
   const TQ2 extends NextQueryForDevice<TScope, TDevice, [TQ1]>,
 >(q1: TQ1, q2: TQ2): DeviceQuery<TScope, TDevice>;
 export function $<
   TScope extends Scope,
-  TDevice extends Device,
+  TDevice extends UnknownDevice,
   const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
   const TQ2 extends NextQueryForDevice<TScope, TDevice, [TQ1]>,
   const TQ3 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2]>,
 >(q1: TQ1, q2: TQ2, q3: TQ3): DeviceQuery<TScope, TDevice>;
 export function $<
   TScope extends Scope,
-  TDevice extends Device,
+  TDevice extends UnknownDevice,
   const TQ1 extends NextQueryForDevice<TScope, TDevice, []>,
   const TQ2 extends NextQueryForDevice<TScope, TDevice, [TQ1]>,
   const TQ3 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2]>,
   const TQ4 extends NextQueryForDevice<TScope, TDevice, [TQ1, TQ2, TQ3]>,
 >(q1: TQ1, q2: TQ2, q3: TQ3, q4: TQ4): DeviceQuery<TScope, TDevice>;
-export function $<TDevice extends Device, TScope extends Scope>(
+export function $<TDevice extends UnknownDevice, TScope extends Scope>(
   ...args: ScopeTreeForDevice<TScope, TDevice> extends never ? never : []
 ): DeviceQuery<TScope, TDevice>;
-export function $<TScope extends Scope, TDevice extends Device>(
+export function $<TScope extends Scope, TDevice extends UnknownDevice>(
   ...queries: Extract<
     ScopeToQueriesForDevice<TScope, TDevice>,
     // at least 5 queries to match
@@ -54,11 +54,14 @@ export function $(...queries: string[]): UnknownDeviceQuery {
 
 export type NextQueryForDevice<
   TScope extends Scope,
-  TDevice extends Device,
+  TDevice extends UnknownDevice,
   TQueries extends string[],
 > = NextQuery<ScopeTreeForDevice<TScope, TDevice>, TQueries>;
 
-export type ScopeTreeForDevice<TScope extends Scope, TDevice extends Device> = {
+export type ScopeTreeForDevice<
+  TScope extends Scope,
+  TDevice extends UnknownDevice,
+> = {
   [TName in keyof TScope[types]['scopes']]: ScopeTreeForDevice<
     Extract<TScope[types]['scopes'][TName], Scope>,
     TDevice
@@ -124,7 +127,7 @@ type RecursiveSubScopeNames<TScopeTree> = TScopeTree extends object
  */
 type ScopeToQueriesForDevice<
   TScope extends Scope,
-  TDevice extends Device,
+  TDevice extends UnknownDevice,
 > = ScopeTreeToQueries<ScopeTreeForDevice<TScope, TDevice>>;
 
 type ScopeTreeToQueries<TScopeTree> =
