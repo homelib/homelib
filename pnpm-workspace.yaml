@@ -6,3 +6,8 @@ packages:
   - packages/cli
   - packages/universal
   - packages/xiaomi
+overrides:
+  '@mufan/eslint-plugin': link:../../../.local/share/pnpm/global/5/node_modules/@mufan/eslint-plugin
+  eslint-plugin: link:../../../.local/share/pnpm/global/5/node_modules/@mufan/eslint-plugin
+publicHoistPattern:
+  - '*eslint-plugin*'
