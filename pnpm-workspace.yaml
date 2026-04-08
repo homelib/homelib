@@ -6,3 +6,5 @@ packages:
   - packages/cli
   - packages/universal
   - packages/xiaomi
+publicHoistPattern:
+  - '*eslint-plugin*'
