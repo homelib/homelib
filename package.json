@@ -23,7 +23,7 @@
   "devDependencies": {
     "@homelib/core": "workspace:*",
     "@homelib/universal": "workspace:*",
-    "@mufan/eslint-plugin": "file:../../mufancom/code/packages/eslint-plugin",
+    "@mufan/eslint-plugin": "^0.3.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.5.2",
     "cross-env": "^10.1.0",
