@@ -1,6 +1,8 @@
 *
 !/src/definitions/**/*.{ts,tsx}
 !/bld/definitions/**
+/bld/definitions/**/*.test.js
 !/src/library/**/*.{ts,tsx}
 !/bld/library/**
+/bld/library/**/*.test.js
 *.tsbuildinfo

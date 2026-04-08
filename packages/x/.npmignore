@@ -1,8 +1,11 @@
 *
 !/src/library/**/*.{ts,tsx}
 !/bld/library/**
+/bld/library/**/*.test.js
 !/src/node/**/*.{ts,tsx}
 !/bld/node/**
+/bld/node/**/*.test.js
 !/src/browser/**/*.{ts,tsx}
 !/bld/browser/**
+/bld/browser/**/*.test.js
 *.tsbuildinfo

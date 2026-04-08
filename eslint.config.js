@@ -133,7 +133,7 @@ export default defineConfig([
   {
     files: ['packages/dashboard/src/program/**/*.{ts,tsx}'],
     plugins: {'@mufan': mufan},
-    extends: [configs.typescript],
+    extends: [configs.typescript, configs.react],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -143,7 +143,7 @@ export default defineConfig([
   },
   // packages/dashboard
   {
-    files: ['packages/dashboard/**/*.{ts,tsx}'],
+    files: ['packages/dashboard/*.ts'],
     plugins: {'@mufan': mufan},
     extends: [configs.typescript, configs.dev],
     languageOptions: {
