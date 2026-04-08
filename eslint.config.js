@@ -3,13 +3,13 @@ import {defineConfig, globalIgnores} from 'eslint/config';
 
 export default defineConfig([
   globalIgnores([
-    '/packages/x/bld/',
-    '/packages/core/bld/',
-    '/packages/http/bld/',
-    '/packages/dashboard/bld/',
-    '/packages/cli/bld/',
-    '/packages/universal/bld/',
-    '/packages/xiaomi/bld/',
+    'packages/x/bld/',
+    'packages/core/bld/',
+    'packages/http/bld/',
+    'packages/dashboard/bld/',
+    'packages/cli/bld/',
+    'packages/universal/bld/',
+    'packages/xiaomi/bld/',
   ]),
   {
     files: ['**/*.{js,mjs,cjs}'],
