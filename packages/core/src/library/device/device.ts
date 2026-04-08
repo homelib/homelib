@@ -1,5 +1,5 @@
 import type {NamedObject} from '@homelib/x';
-import {types} from '@homelib/x';
+import {types, x} from '@homelib/x';
 
 import type {UnknownConfigDeclarations} from '../config.js';
 import type {Scope} from '../scope.js';
@@ -15,9 +15,10 @@ export abstract class Device<
 > implements NamedObject<string> {
   declare [types]: {
     name: string;
+    endpoint: TDeviceEndpoint;
   };
 
-  abstract readonly type: string;
+  abstract get type(): string;
 
   readonly options: DeviceOptions;
 
@@ -36,8 +37,6 @@ export abstract class Device<
     this.options.configs = configs;
     return this;
   }
-
-  abstract connect(): Promise<TDeviceEndpoint> | TDeviceEndpoint;
 
   _requireScope(): Scope {
     const scope = this._scope;

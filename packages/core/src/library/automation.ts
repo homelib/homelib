@@ -58,6 +58,13 @@ export abstract class Automation implements NamedObject<string> {
     throw new Error('Not implemented');
   }
 
+  schedule(
+    cronExpression: string | string[],
+    callback: (context: AutomationCallbackContext<this>) => void,
+  ): this {
+    throw new Error('Not implemented');
+  }
+
   bind<TScope extends Scope>(
     devices: DeviceDeclarationsToDeviceBindings<this[types]['devices'], TScope>,
   ): this & {

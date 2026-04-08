@@ -10,10 +10,6 @@ export class CameraStream extends Device<CameraStreamEndpoint> {
   constructor(name: string, options: CameraStreamOptions) {
     super(name, {});
   }
-
-  override connect(): CameraStreamEndpoint | Promise<CameraStreamEndpoint> {
-    throw new Error('Method not implemented.');
-  }
 }
 
 export class CameraStreamEndpoint extends DeviceEndpoint {

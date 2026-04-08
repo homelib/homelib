@@ -4,6 +4,10 @@
 
 Just another awesome magic.
 
+## Immediate Design Decisions
+
+- [ ] How to support different protocols for the same `Device`? Or do we?
+
 ## License
 
 MIT License.
