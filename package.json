@@ -20,7 +20,7 @@
     "homelib": "pnpm --filter homelib"
   },
   "devDependencies": {
-    "@mufan/eslint-plugin": "^0.2.19",
+    "@mufan/eslint-plugin": "^0.3.0",
     "@types/jest": "^30.0.0",
     "cross-env": "^10.1.0",
     "eslint": "^10.2.0",
