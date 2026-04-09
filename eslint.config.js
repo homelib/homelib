@@ -69,6 +69,10 @@ export default defineConfig([
       },
     },
   },
+  {
+    files: ['packages/core/src/library/**/*.test.{ts,tsx}'],
+    extends: [configs.dev],
+  },
   // packages/core/src/mobx
   {
     files: ['packages/core/src/mobx/**/*.{ts,tsx}'],

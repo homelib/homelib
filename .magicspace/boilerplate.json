@@ -34,6 +34,7 @@
         "projects": [
           {
             "name": "library",
+            "test": true,
             "references": [
               {
                 "package": "@homelib/x",
