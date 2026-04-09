@@ -7,7 +7,6 @@
     "author": "vilicvane",
     "defaultBranch": "master",
     "packageManager": "pnpm",
-    "type": "module",
     "badges": {
       "discord": "https://discord.gg/wEVn2qcf8h"
     },
