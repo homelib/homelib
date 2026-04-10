@@ -19,7 +19,7 @@
     }
   },
   "dependencies": {
-    "@homelib/x": "workspace:*",
+    "@homelib/x": "*",
     "@remote-object/core": "0.0.1-alpha.1",
     "is-typeof-property": "^0.2.0",
     "ix": "^7.0.0",

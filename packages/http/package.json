@@ -9,8 +9,8 @@
     "default": "./bld/library/index.js"
   },
   "dependencies": {
-    "@homelib/core": "workspace:*",
-    "@homelib/x": "workspace:*",
+    "@homelib/core": "*",
+    "@homelib/x": "*",
     "@types/express": "^4.17.20",
     "@types/ms": "^2.1.0",
     "entrance-decorator": "^0.4.0",

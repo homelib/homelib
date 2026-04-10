@@ -12,8 +12,8 @@
     "cli": "node ./bin/run.js"
   },
   "dependencies": {
-    "@homelib/core": "workspace:*",
-    "@homelib/http": "workspace:*",
+    "@homelib/core": "*",
+    "@homelib/http": "*",
     "@oclif/core": "^3.5.0",
     "tslib": "^2.8.1"
   }

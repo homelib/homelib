@@ -6,7 +6,7 @@
     "license": "MIT",
     "author": "vilicvane",
     "defaultBranch": "master",
-    "packageManager": "pnpm",
+    "packageManager": "npm",
     "badges": {
       "discord": "https://discord.gg/wEVn2qcf8h"
     },

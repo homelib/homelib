@@ -5,9 +5,9 @@
   "author": "vilicvane",
   "type": "module",
   "dependencies": {
-    "@homelib/core": "workspace:*",
-    "@homelib/http": "workspace:*",
-    "@homelib/x": "workspace:*",
+    "@homelib/core": "*",
+    "@homelib/http": "*",
+    "@homelib/x": "*",
     "@types/react": "^18.2.32",
     "@types/react-dom": "^18.2.14",
     "boring-router": "^0.5.20",
