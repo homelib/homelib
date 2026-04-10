@@ -9,7 +9,7 @@
     "default": "./bld/library/index.js"
   },
   "dependencies": {
-    "@homelib/core": "workspace:*",
+    "@homelib/core": "*",
     "tslib": "^2.8.1"
   }
 }

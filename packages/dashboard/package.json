@@ -5,9 +5,9 @@
   "author": "vilicvane",
   "type": "module",
   "dependencies": {
-    "@homelib/core": "workspace:*",
-    "@homelib/http": "workspace:*",
-    "@homelib/x": "workspace:*",
+    "@homelib/core": "*",
+    "@homelib/http": "*",
+    "@homelib/x": "*",
     "tslib": "^2.8.1"
   }
 }

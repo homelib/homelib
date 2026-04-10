@@ -19,7 +19,7 @@
     }
   },
   "dependencies": {
-    "@homelib/x": "workspace:*",
+    "@homelib/x": "*",
     "tslib": "^2.8.1"
   }
 }
