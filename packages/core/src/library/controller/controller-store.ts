@@ -2,7 +2,7 @@ import {readFile} from 'node:fs/promises';
 
 import {x} from '@homelib/x';
 
-import {DeviceId, DevicePath} from '../x/index.js';
+import {DeviceId, DeviceName,  ScopePath} from '../x/index.js';
 
 export class ControllerStore {
   private constructor(
@@ -17,11 +17,16 @@ export class ControllerStore {
 
     return new ControllerStore(path, data);
   }
+
+  findDevice(id: DeviceId): DeviceDataItem | undefined {
+    return this.data.devices.find(deviceDataItem => deviceDataItem.id === id);
+  }
 }
 
 const DeviceDataItem = x.object({
-  path: DevicePath,
   id: DeviceId,
+  name: DeviceName,
+  path: ScopePath,
 });
 
 type DeviceDataItem = x.TypeOf<typeof DeviceDataItem>;

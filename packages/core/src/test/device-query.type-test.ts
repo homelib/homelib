@@ -6,6 +6,11 @@ import type {home_1} from './@scope-cases/index.js';
 
 $() satisfies DeviceQuery<home_1, Light>;
 
+$('Living Room', 'Light') satisfies DeviceQuery<home_1, Light>;
+
+// @ts-expect-error path should move on
+$('Living Room', 'Light', 'Light') satisfies DeviceQuery<home_1, Light>;
+
 $('Living Room') satisfies DeviceQuery<home_1, Light>;
 
 $('Living Room', 'Balcony') satisfies DeviceQuery<home_1, Light>;

@@ -1,14 +1,17 @@
 import type {types} from '@homelib/x';
+import type {OmitValueWithType} from 'tslang';
 
 import type {UnknownDevice} from './device/index.js';
 import type {Scope} from './scope.js';
 
-export type DeviceQuery<TScope extends Scope, TDevice extends UnknownDevice> = {
-  [types]: {
+export class DeviceQuery<TScope extends Scope, TDevice extends UnknownDevice> {
+  declare [types]: {
     scope: TScope;
     device: TDevice;
   };
-} & string[];
+
+  constructor(readonly queries: string[]) {}
+}
 
 export type UnknownDeviceQuery = DeviceQuery<Scope, UnknownDevice>;
 
@@ -41,83 +44,44 @@ export function $<
 export function $<TDevice extends UnknownDevice, TScope extends Scope>(
   ...args: ScopeTreeForDevice<TScope, TDevice> extends never ? never : []
 ): DeviceQuery<TScope, TDevice>;
-export function $<TScope extends Scope, TDevice extends UnknownDevice>(
-  ...queries: Extract<
+export function $<
+  TScope extends Scope,
+  TDevice extends UnknownDevice,
+  TQueries extends Extract<
     ScopeToQueriesForDevice<TScope, TDevice>,
     // at least 5 queries to match
     [string, string, string, string, string, ...string[]]
-  >
-): DeviceQuery<TScope, TDevice>;
+  >,
+>(...queries: TQueries): DeviceQuery<TScope, TDevice>;
 export function $(...queries: string[]): UnknownDeviceQuery {
-  return queries as UnknownDeviceQuery;
+  return new DeviceQuery(queries);
 }
 
 export type NextQueryForDevice<
   TScope extends Scope,
-  TDevice extends UnknownDevice,
-  TQueries extends string[],
+  TDevice,
+  TQueries,
 > = NextQuery<ScopeTreeForDevice<TScope, TDevice>, TQueries>;
 
-export type ScopeTreeForDevice<
-  TScope extends Scope,
-  TDevice extends UnknownDevice,
-> = {
-  [TName in keyof TScope[types]['scopes']]: ScopeTreeForDevice<
-    Extract<TScope[types]['scopes'][TName], Scope>,
-    TDevice
-  >;
-} extends infer TTree
-  ? TTree[keyof TTree] extends never
-    ? // no sub scope with specified device, check current scope
-      TScope[types]['devices'][keyof TScope[types]['devices']] extends infer TScopeDevice
-      ? TScopeDevice extends never
-        ? never
-        : TScopeDevice extends TDevice
-          ? true
-          : never
-      : never
-    : Pick<
-        TTree,
-        {
-          [TName in keyof TTree]: TTree[TName] extends never ? never : TName;
-        }[keyof TTree]
-      >
-  : never;
-
-type NextQuery<
-  TScopeTree,
-  TQueries extends string[],
-> = TScopeTree extends object // distribute over union
-  ? TQueries extends []
+type NextQuery<TScopeTree, TQueries> = TScopeTree extends true
+  ? never
+  : TQueries extends []
     ? RecursiveSubScopeNames<TScopeTree>
-    : TQueries extends [
-          infer TQuery extends string,
-          ...infer TRestQueries extends string[],
-        ]
+    : TQueries extends [infer TQuery, ...infer TRestQueries]
       ? NextQuery<RecursiveSubScope<TScopeTree, TQuery>, TRestQueries>
-      : never
-  : never;
+      : never;
 
-type RecursiveSubScope<
-  TScopeTree,
-  TQuery extends string,
-> = TScopeTree extends object
-  ? {
-      [TName in keyof TScopeTree]:
-        | (TQuery extends TName ? TScopeTree[TQuery] : never)
-        | RecursiveSubScope<TScopeTree[TName], TQuery>;
-    }[keyof TScopeTree]
-  : never;
-
-type RecursiveSubScopeNames<TScopeTree> = TScopeTree extends object
-  ?
+type RecursiveSubScopeNames<TScopeTree> = TScopeTree extends true
+  ? never
+  :
       | (keyof TScopeTree & string)
-      | {
-          [TName in keyof TScopeTree]: RecursiveSubScopeNames<
-            TScopeTree[TName]
-          >;
-        }[keyof TScopeTree]
-  : never;
+      | RecursiveSubScopeNames<TScopeTree[keyof TScopeTree]>;
+
+type RecursiveSubScope<TScopeTree, TQuery> = TScopeTree extends true
+  ? never
+  :
+      | (TQuery extends keyof TScopeTree ? TScopeTree[TQuery] : never)
+      | RecursiveSubScope<TScopeTree[keyof TScopeTree], TQuery>;
 
 /**
  * Type checking works but, intellisense doesn't work well with this solution,
@@ -143,3 +107,22 @@ type ScopeTreeToQueries<TScopeTree> =
             : never
         : never;
     }[keyof TScopeTree];
+
+export type ScopeTreeForDevice<TScope extends Scope, TDevice> =
+  OmitValueWithType<
+    {
+      [TName in keyof TScope[types]['scopes']]: ScopeTreeForDevice<
+        Extract<TScope[types]['scopes'][TName], Scope>,
+        TDevice
+      >;
+    } & {
+      [TName in keyof TScope[types]['devices']]: TScope[types]['devices'][TName] extends TDevice
+        ? true
+        : never;
+    },
+    never
+  > extends infer TTree
+    ? keyof TTree extends never
+      ? never
+      : TTree
+    : never;

@@ -1,7 +1,15 @@
 import {$constructor, Device, DeviceEndpoint} from '../../library/index.js';
 
+import type {Switch} from './switch.js';
+
 export class Light extends Device<LightEndpoint> {
   readonly type = 'light';
+
+  switches<TSwitches extends Switch[]>(
+    switches: TSwitches,
+  ): [this, ...TSwitches] {
+    return [this, ...switches];
+  }
 }
 
 export class LightEndpoint extends DeviceEndpoint {

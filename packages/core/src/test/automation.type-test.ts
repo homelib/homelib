@@ -50,7 +50,7 @@ const $automation_1 = $automation.build(automation =>
 
 $automation_1('Automation 1').bind<home_1>({
   lights: [$('Balcony')],
-  tv: $('Living Room'),
+  tv: $('Television'),
   someTuple: [$('Balcony'), $()],
 });
 
@@ -64,15 +64,15 @@ $automation_1('Automation 1').bind<home_1>(
   // @ts-expect-error missing someTuple
   {
     lights: $('Balcony'),
-    tv: $('Living Room'),
+    tv: $('Living Room', 'Television'),
   },
 );
 
 $automation_1('Automation 1').bind<home_1>({
   // @ts-expect-error no bedroom in balcony
   lights: $('Balcony', 'Bedroom'),
-  // @ts-expect-error no television in balcony
-  tv: $('Balcony'),
+  // @ts-expect-error no television in level 2
+  tv: $('Level 2'),
   someTuple: [
     // @ts-expect-error no bedroom in balcony
     $('Balcony', 'Bedroom'),
@@ -85,6 +85,7 @@ $automation_1('Automation 1').bind<home_1>({
     // @ts-expect-error no bedroom in balcony
     $('Balcony', 'Bedroom'),
   ],
-  tv: $('Living Room'),
+  // @ts-expect-error no television in bedroom
+  tv: $('Bedroom'),
   someTuple: [$('Balcony'), $()],
 });

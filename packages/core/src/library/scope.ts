@@ -4,6 +4,7 @@ import {types} from '@homelib/x';
 import type {AutomationWithScope} from './automation.js';
 import type {UnknownDevice} from './device/index.js';
 import type {Plugin} from './plugin.js';
+import type {DeviceName, ScopeName, ScopePath} from './x/index.js';
 
 export abstract class Scope implements NamedObject<string> {
   declare [types]: {
@@ -12,22 +13,22 @@ export abstract class Scope implements NamedObject<string> {
     devices: {};
   };
 
-  readonly name: this[types]['name'];
+  readonly name: ScopeName;
 
   _parent: Scope | undefined;
 
-  private scopeMap = new Map<string, Scope>();
+  private scopeMap = new Map<ScopeName, Scope>();
 
-  private deviceMap = new Map<string, UnknownDevice>();
+  private deviceMap = new Map<DeviceName, UnknownDevice>();
 
   constructor(
     name: string,
     readonly root = false,
   ) {
-    this.name = name;
+    this.name = name as ScopeName;
   }
 
-  get _path(): string[] {
+  get _path(): ScopePath {
     const {name, root, _parent: parent} = this;
 
     if (root) {
@@ -122,8 +123,8 @@ export abstract class Scope implements NamedObject<string> {
   }
 
   _getDevice(
-    scopePath: string[],
-    deviceName: string,
+    scopePath: ScopePath,
+    deviceName: DeviceName,
   ): UnknownDevice | undefined {
     const {deviceMap, scopeMap} = this;
 

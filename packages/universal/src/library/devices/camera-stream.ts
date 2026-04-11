@@ -1,3 +1,4 @@
+import type {DeviceName} from '@homelib/core';
 import {$constructor, Device, DeviceEndpoint} from '@homelib/core';
 
 export type CameraStreamOptions = {
@@ -8,7 +9,7 @@ export class CameraStream extends Device<CameraStreamEndpoint> {
   readonly type = '@homelib/universal/camera-stream';
 
   constructor(name: string, options: CameraStreamOptions) {
-    super(name, {});
+    super(name as DeviceName, {});
   }
 }
 

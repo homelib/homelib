@@ -33,21 +33,22 @@ export function $multiple<TConstructor extends UnknownDeviceConstructor>(
 
 export type DeviceDeclarationToDeviceEndpoint<
   TDeclaration extends DeviceDeclaration,
-> = TDeclaration extends DeviceConstructor<infer TDeviceEndpoint>
-  ? TDeviceEndpoint
-  : TDeclaration extends readonly UnknownDeviceConstructor[]
-  ? {
-      [TIndex in keyof TDeclaration]: TDeclaration[TIndex] extends DeviceConstructor<
-        infer TDeviceEndpoint
-      >
-        ? TDeviceEndpoint
+> =
+  TDeclaration extends DeviceConstructor<infer TDeviceEndpoint>
+    ? TDeviceEndpoint
+    : TDeclaration extends readonly UnknownDeviceConstructor[]
+      ? {
+          [TIndex in keyof TDeclaration]: TDeclaration[TIndex] extends DeviceConstructor<
+            infer TDeviceEndpoint
+          >
+            ? TDeviceEndpoint
+            : never;
+        }
+      : TDeclaration extends DeviceMultipleDeclaration<
+            DeviceConstructor<infer TDeviceEndpoint>
+          >
+        ? TDeviceEndpoint[]
         : never;
-    }
-  : TDeclaration extends DeviceMultipleDeclaration<
-      DeviceConstructor<infer TDeviceEndpoint>
-    >
-  ? TDeviceEndpoint[]
-  : never;
 
 export type DeviceDeclarationsToDeviceEndpoints<
   TDeclarations extends UnknownDeviceDeclarations,
@@ -68,22 +69,22 @@ export type DeviceDeclarationToDeviceBinding<
 > = TDeclaration extends UnknownDeviceConstructor
   ? DeviceToDeviceBinding<TScope, InstanceType<TDeclaration>>
   : TDeclaration extends readonly UnknownDeviceConstructor[]
-  ? {
-      [TIndex in keyof TDeclaration]: DeviceToDeviceBinding<
-        TScope,
-        InstanceType<
-          Extract<TDeclaration[TIndex], new (...args: never[]) => object>
-        >
-      >;
-    }
-  : TDeclaration extends DeviceMultipleDeclaration<infer TDeviceConstructor>
-  ? DeviceToDeviceBinding<
-      TScope,
-      InstanceType<TDeviceConstructor>
-    > extends infer TBinding
-    ? TBinding | TBinding[]
-    : never
-  : never;
+    ? {
+        [TIndex in keyof TDeclaration]: DeviceToDeviceBinding<
+          TScope,
+          InstanceType<
+            Extract<TDeclaration[TIndex], new (...args: never[]) => object>
+          >
+        >;
+      }
+    : TDeclaration extends DeviceMultipleDeclaration<infer TDeviceConstructor>
+      ? DeviceToDeviceBinding<
+          TScope,
+          InstanceType<TDeviceConstructor>
+        > extends infer TBinding
+        ? TBinding | TBinding[]
+        : never
+      : never;
 
 export type DeviceDeclarationsToDeviceBindings<
   TDeclarations extends UnknownDeviceDeclarations,
@@ -101,21 +102,22 @@ export type DeviceEndpointToRemoteDevice<
 
 export type DeviceDeclarationToRemoteDevice<
   TDeclaration extends DeviceDeclaration,
-> = TDeclaration extends DeviceConstructor<infer TDeviceEndpoint>
-  ? DeviceEndpointToRemoteDevice<TDeviceEndpoint>
-  : TDeclaration extends readonly UnknownDeviceConstructor[]
-  ? {
-      [TIndex in keyof TDeclaration]: TDeclaration[TIndex] extends DeviceConstructor<
-        infer TDeviceEndpoint
-      >
-        ? DeviceEndpointToRemoteDevice<TDeviceEndpoint>
+> =
+  TDeclaration extends DeviceConstructor<infer TDeviceEndpoint>
+    ? DeviceEndpointToRemoteDevice<TDeviceEndpoint>
+    : TDeclaration extends readonly UnknownDeviceConstructor[]
+      ? {
+          [TIndex in keyof TDeclaration]: TDeclaration[TIndex] extends DeviceConstructor<
+            infer TDeviceEndpoint
+          >
+            ? DeviceEndpointToRemoteDevice<TDeviceEndpoint>
+            : never;
+        }
+      : TDeclaration extends DeviceMultipleDeclaration<
+            DeviceConstructor<infer TDeviceEndpoint>
+          >
+        ? DeviceEndpointToRemoteDevice<TDeviceEndpoint>[]
         : never;
-    }
-  : TDeclaration extends DeviceMultipleDeclaration<
-      DeviceConstructor<infer TDeviceEndpoint>
-    >
-  ? DeviceEndpointToRemoteDevice<TDeviceEndpoint>[]
-  : never;
 
 export type DeviceDeclarationToRemoteDevices<
   TDeclarations extends UnknownDeviceDeclarations,

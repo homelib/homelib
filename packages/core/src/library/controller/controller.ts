@@ -22,6 +22,14 @@ export class Controller {
       firstDeviceEndpointIterable,
       ...restDeviceEndpointIterables,
     )) {
+      const deviceDataItem = this.store.findDevice(deviceEndpoint.id);
+
+      if (deviceDataItem) {
+        const device = this.scope._getDevice(
+          deviceDataItem.path,
+          deviceDataItem.name,
+        );
+      }
     }
   }
 }

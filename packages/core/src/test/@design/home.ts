@@ -1,6 +1,11 @@
 import type {types} from '@homelib/x';
+import type {AssertFalse, AssertTrue, IsEqual} from 'tslang';
 
-import type {DeviceDeclarationToDeviceEndpoint} from '../../library/index.js';
+import type {
+  DeviceDeclarationToDeviceEndpoint,
+  NextQueryForDevice,
+  ScopeTreeForDevice,
+} from '../../library/index.js';
 import {
   $,
   $area,
@@ -9,10 +14,12 @@ import {
   $room,
   $scope,
 } from '../../library/index.js';
+import type {Light} from '../@device-cases/index.js';
 import {
   $ambientLightSensor,
   $feeder,
   $light,
+  $switch,
   Feeder,
 } from '../@device-cases/index.js';
 
@@ -32,7 +39,10 @@ const $feederAutomation = $feederAutomation1.schedule(
 const home = $home('新家')
   .scopes([
     $room('客厅').scopes([
-      $area('工作区').devices([$light('主灯'), $light('台灯')]),
+      $area('工作区').devices([
+        ...$light('主灯').switches([$switch('开关')]),
+        $light('台灯'),
+      ]),
       $area('餐厅'),
     ]),
     $room('卧室').scopes([$area('阳台')]),
@@ -50,7 +60,7 @@ const home = $home('新家')
   ])
   .automations([
     $ambientLightAutomation.bind({
-      lights: $(),
+      lights: [$('客厅', '台灯'), $('客厅', '主灯')],
       ambientLightSensor: $(),
     }),
     $feederAutomation.bind({
@@ -62,3 +72,15 @@ const home = $home('新家')
 //     light: $('客厅', '主灯'),
 //   }),
 // ]);
+
+type home = typeof home;
+
+type HomeTree = ScopeTreeForDevice<home, Light>;
+
+type QNext1 = NextQueryForDevice<home, Light, ['客厅']>;
+
+type QNext2 = NextQueryForDevice<home, Light, ['客厅', '主灯']>;
+
+type _assert =
+  | AssertFalse<IsEqual<QNext2, '主灯' | '台灯'>>
+  | AssertTrue<IsEqual<QNext2, never>>;

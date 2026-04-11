@@ -10,7 +10,7 @@ import {Credential, credential_name} from './credential.js';
 const TIMESTAMP_TOLERANCE = ms('1m');
 
 export class PasswordCredential extends Credential {
-  protected declare [credential_name]: 'password';
+  declare protected [credential_name]: 'password';
 
   static fromHash(hash: string, timestamp: number): PasswordCredential {
     const {

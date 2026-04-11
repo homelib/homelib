@@ -3,6 +3,7 @@ import {types, x} from '@homelib/x';
 
 import type {UnknownConfigDeclarations} from '../config.js';
 import type {Scope} from '../scope.js';
+import type {DeviceName} from '../x/index.js';
 
 import type {DeviceEndpoint} from './device-endpoint.js';
 
@@ -25,7 +26,7 @@ export abstract class Device<
   _scope: Scope | undefined;
 
   constructor(
-    readonly name: string,
+    readonly name: DeviceName,
     options: Partial<DeviceOptions> = {},
   ) {
     const {configs = {}} = options;
