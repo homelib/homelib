@@ -61,7 +61,7 @@ export type DeviceDeclarationsToDeviceEndpoints<
 export type DeviceToDeviceBinding<
   TScope extends Scope,
   TDevice extends UnknownDevice,
-> = TDevice | DeviceQuery<TScope, TDevice>;
+> = DeviceQuery<TScope, TDevice>;
 
 export type DeviceDeclarationToDeviceBinding<
   TDeclaration extends DeviceDeclaration,

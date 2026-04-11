@@ -1,15 +1,26 @@
-import {$constructor, Device, DeviceEndpoint} from '../../library/index.js';
+import {
+  $automation,
+  $constructor,
+  Device,
+  DeviceEndpoint,
+} from '../../library/index.js';
 
-import type {Switch} from './switch.js';
+import {Switch} from './switch.js';
+
+// const $lightSwitch = $automation('light switch').devices({
+//   lights
+// });
 
 export class Light extends Device<LightEndpoint> {
   readonly type = 'light';
 
-  switches<TSwitches extends Switch[]>(
-    switches: TSwitches,
-  ): [this, ...TSwitches] {
-    return [this, ...switches];
-  }
+  // switches<TSwitches extends Switch[]>(
+  //   switches: TSwitches,
+  // ): [this, ...TSwitches] {
+  //   this.automations([]);
+
+  //   return [this, ...switches];
+  // }
 }
 
 export class LightEndpoint extends DeviceEndpoint {
@@ -23,3 +34,18 @@ export class LightEndpoint extends DeviceEndpoint {
 }
 
 export const $light = $constructor(Light);
+
+export const $lightSwitchAutomation = $automation.build(automation =>
+  automation
+    .devices({
+      lights: {
+        class: Light,
+        multiple: true,
+      },
+      switches: {
+        class: Switch,
+        multiple: true,
+      },
+    })
+    .start(({devices: {lights, switches}}) => {}),
+);

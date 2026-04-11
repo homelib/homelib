@@ -1,5 +1,8 @@
 import type {NamedObject} from '@homelib/x';
 import {types} from '@homelib/x';
+import type {CronExpression} from 'cron-parser';
+import {CronExpressionParser} from 'cron-parser';
+import {computed} from 'mobx';
 
 import type {
   ConfigDeclarationsToConfigs,
@@ -8,11 +11,13 @@ import type {
 import type {
   DeviceDeclarationsToDeviceBindings,
   DeviceDeclarationsToDeviceEndpoints,
+  UnknownDevice,
   UnknownDeviceDeclarations,
 } from './device/index.js';
 import type {DeviceQuery} from './device-query.js';
 import type {Scope} from './scope.js';
 import {$constructor} from './utils/index.js';
+import type {AutomationName} from './x/index.js';
 
 export abstract class Automation implements NamedObject<string> {
   declare [types]: {
@@ -22,10 +27,28 @@ export abstract class Automation implements NamedObject<string> {
     configs: {};
   };
 
-  readonly name: this[types]['name'];
+  readonly name: AutomationName;
+
+  _scope: Scope | undefined;
+
+  private starts: ((context: AutomationCallbackContext<Automation>) => void)[] =
+    [];
+
+  private reacts: ((context: AutomationCallbackContext<Automation>) => void)[] =
+    [];
+
+  private schedules: {
+    crons: CronExpression[];
+    callbacks: ((context: AutomationCallbackContext<Automation>) => void)[];
+    lastRanAt?: Date;
+  }[] = [];
+
+  private bindings:
+    | Record<string, DeviceQuery<Scope, UnknownDevice>[]>
+    | undefined;
 
   constructor(name: string) {
-    this.name = name;
+    this.name = name as AutomationName;
   }
 
   devices<const TDeviceDeclarations extends UnknownDeviceDeclarations>(
@@ -51,18 +74,28 @@ export abstract class Automation implements NamedObject<string> {
   }
 
   start(callback: (context: AutomationCallbackContext<this>) => void): this {
-    throw new Error('Not implemented');
+    this.starts.push(callback);
+
+    return this;
   }
 
   react(callback: (context: AutomationCallbackContext<this>) => void): this {
-    throw new Error('Not implemented');
+    this.reacts.push(callback);
+
+    return this;
   }
 
   schedule(
     cronExpression: string | string[],
     callback: (context: AutomationCallbackContext<this>) => void,
   ): this {
-    throw new Error('Not implemented');
+    const crons = (
+      Array.isArray(cronExpression) ? cronExpression : [cronExpression]
+    ).map(cronExpression => CronExpressionParser.parse(cronExpression));
+
+    this.schedules.push({crons, callbacks: [callback]});
+
+    return this;
   }
 
   bind<TScope extends Scope>(
@@ -71,8 +104,43 @@ export abstract class Automation implements NamedObject<string> {
     [types]: {
       scope: TScope;
     };
-  } {
-    throw new Error('Not implemented');
+  };
+  bind(devices: Record<string, unknown>): this {
+    this.bindings = Object.fromEntries(
+      Object.entries(devices).map(([key, value]) => [
+        key,
+        Array.isArray(value) ? value : [value],
+      ]),
+    );
+
+    return this;
+  }
+
+  _up(): void {
+    const devices = computed(() => {
+      const scope = this._requireScope();
+      const bindings = this._requireBindings();
+    });
+  }
+
+  _requireScope(): Scope {
+    const scope = this._scope;
+
+    if (!scope) {
+      throw new Error('Automation not added to a scope.');
+    }
+
+    return scope;
+  }
+
+  _requireBindings(): Record<string, DeviceQuery<Scope, UnknownDevice>[]> {
+    const bindings = this.bindings;
+
+    if (!bindings) {
+      throw new Error('Automation not bound to devices.');
+    }
+
+    return bindings;
   }
 }
 

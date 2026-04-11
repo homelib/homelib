@@ -1,10 +1,15 @@
 import type {NamedObject, NamedTupleToRecord} from '@homelib/x';
 import {types} from '@homelib/x';
 
-import type {AutomationWithScope} from './automation.js';
+import type {Automation, AutomationWithScope} from './automation.js';
 import type {UnknownDevice} from './device/index.js';
 import type {Plugin} from './plugin.js';
-import type {DeviceName, ScopeName, ScopePath} from './x/index.js';
+import type {
+  AutomationName,
+  DeviceName,
+  ScopeName,
+  ScopePath,
+} from './x/index.js';
 
 export abstract class Scope implements NamedObject<string> {
   declare [types]: {
@@ -20,6 +25,8 @@ export abstract class Scope implements NamedObject<string> {
   private scopeMap = new Map<ScopeName, Scope>();
 
   private deviceMap = new Map<DeviceName, UnknownDevice>();
+
+  private automationMap = new Map<AutomationName, Automation>();
 
   constructor(
     name: string,
@@ -119,7 +126,27 @@ export abstract class Scope implements NamedObject<string> {
   }
 
   automations(automations: AutomationWithScope<this>[]): this {
+    const {automationMap} = this;
+
+    for (const automation of automations) {
+      const {name} = automation;
+
+      if (automationMap.has(name)) {
+        throw new Error(
+          `Automation with name ${JSON.stringify(name)} already exists.`,
+        );
+      }
+
+      automationMap.set(name, automation);
+    }
+
     return this;
+  }
+
+  _up(): void {
+    for (const scope of this.scopeMap.values()) {
+      scope._up();
+    }
   }
 
   _getDevice(
@@ -141,6 +168,55 @@ export abstract class Scope implements NamedObject<string> {
     }
 
     return scope._getDevice(restScopePath, deviceName);
+  }
+
+  _queryDevices(queries: string[]): UnknownDevice[] {
+    type QueryNode = Scope | UnknownDevice;
+
+    const collectDevices = (scope: Scope): UnknownDevice[] => [
+      ...scope.deviceMap.values(),
+      ...[...scope.scopeMap.values()].flatMap(collectDevices),
+    ];
+
+    const collectMatchedNodes = (scope: Scope, query: string): QueryNode[] => {
+      const matchedNodes: QueryNode[] = [];
+
+      const matchedScope = scope.scopeMap.get(query as ScopeName);
+
+      if (matchedScope) {
+        matchedNodes.push(matchedScope);
+      }
+
+      const matchedDevice = scope.deviceMap.get(query as DeviceName);
+
+      if (matchedDevice) {
+        matchedNodes.push(matchedDevice);
+      }
+
+      for (const childScope of scope.scopeMap.values()) {
+        matchedNodes.push(...collectMatchedNodes(childScope, query));
+      }
+
+      return matchedNodes;
+    };
+
+    const collectDevicesFromNode = (node: QueryNode): UnknownDevice[] =>
+      node instanceof Scope ? collectDevices(node) : [node];
+
+    let nodes: QueryNode[] = [this];
+
+    for (const query of queries) {
+      nodes = nodes.flatMap(node =>
+        node instanceof Scope ? collectMatchedNodes(node, query) : [],
+      );
+    }
+
+    const devices =
+      queries.length === 0
+        ? collectDevices(this)
+        : nodes.flatMap(collectDevicesFromNode);
+
+    return [...new Set(devices)];
   }
 
   *_iterateAllDevices(): IterableIterator<UnknownDevice> {
