@@ -1,5 +1,7 @@
+import {autorun} from 'mobx';
+
 import {$automation} from '../../../library/index.js';
-import {AmbientLightSensor, Light} from '../../@device-cases/index.js';
+import {AmbientLightSensor, Light} from '../../@devices/index.js';
 
 export const $ambientLightAutomation = $automation.build(automation =>
   automation
@@ -20,11 +22,13 @@ export const $ambientLightAutomation = $automation.build(automation =>
     //     // Initialization logic here
     //   },
     // )
-    .react(({devices: {lights, ambientLightSensor}, configs: {timezone}}) => {
-      const colorTemperature = ambientLightSensor.colorTemperature$;
+    .automate(({devices: {lights, ambientLightSensor}, configs: {timezone}}) =>
+      autorun(() => {
+        const colorTemperature = ambientLightSensor.colorTemperature$;
 
-      for (const light of lights) {
-        light.colorTemperature = colorTemperature;
-      }
-    }),
+        for (const light of lights) {
+          light.colorTemperature = colorTemperature;
+        }
+      }),
+    ),
 );

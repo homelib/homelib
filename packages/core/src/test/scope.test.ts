@@ -1,8 +1,9 @@
-import {home_1} from './@scope-cases/index.js';
+import {DeviceQuery} from '../library/index.js';
 
-function formatDevices(queries: string[]): string[] {
-  return home_1
-    ._queryDevices(queries)
+import {home_1} from './@scopes/index.js';
+
+function formatDevices(query: string[]): string[] {
+  return [...home_1._queryDevices(new DeviceQuery(query))]
     .map(device => `${device._requireScope()._path.join('/')}:${device.name}`)
     .sort();
 }

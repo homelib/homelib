@@ -47,5 +47,5 @@ export const $lightSwitchAutomation = $automation.build(automation =>
         multiple: true,
       },
     })
-    .start(({devices: {lights, switches}}) => {}),
+    .automate(({devices: {lights, switches}}) => () => {}),
 );

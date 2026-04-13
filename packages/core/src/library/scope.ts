@@ -3,6 +3,7 @@ import {types} from '@homelib/x';
 
 import type {Automation, AutomationWithScope} from './automation.js';
 import type {UnknownDevice} from './device/index.js';
+import type {DeviceQuery} from './device-query.js';
 import type {Plugin} from './plugin.js';
 import type {
   AutomationName,
@@ -170,53 +171,55 @@ export abstract class Scope implements NamedObject<string> {
     return scope._getDevice(restScopePath, deviceName);
   }
 
-  _queryDevices(queries: string[]): UnknownDevice[] {
-    type QueryNode = Scope | UnknownDevice;
+  *_queryDevices(
+    query:
+      | DeviceQuery<Scope, UnknownDevice>
+      | DeviceQuery<Scope, UnknownDevice>[],
+  ): IterableIterator<UnknownDevice> {
+    const queries = Array.isArray(query) ? query : [query];
 
-    const collectDevices = (scope: Scope): UnknownDevice[] => [
-      ...scope.deviceMap.values(),
-      ...[...scope.scopeMap.values()].flatMap(collectDevices),
-    ];
+    const visitedDeviceSet = new Set<UnknownDevice>();
 
-    const collectMatchedNodes = (scope: Scope, query: string): QueryNode[] => {
-      const matchedNodes: QueryNode[] = [];
+    for (const query of queries) {
+      yield* iterateQueries(this, query.segments);
+    }
 
-      const matchedScope = scope.scopeMap.get(query as ScopeName);
+    function* iterateQueries(
+      scope: Scope,
+      query: string[],
+    ): IterableIterator<UnknownDevice> {
+      if (query.length === 0) {
+        for (const device of scope._iterateAllDevices()) {
+          if (!visitedDeviceSet.has(device)) {
+            visitedDeviceSet.add(device);
+            yield device;
+          }
+        }
 
-      if (matchedScope) {
-        matchedNodes.push(matchedScope);
+        return;
       }
 
-      const matchedDevice = scope.deviceMap.get(query as DeviceName);
+      const [querySegment, ...restQuery] = query;
 
-      if (matchedDevice) {
-        matchedNodes.push(matchedDevice);
+      const matchedScope = scope.scopeMap.get(querySegment as ScopeName);
+
+      if (matchedScope) {
+        yield* iterateQueries(matchedScope, restQuery);
+      }
+
+      if (restQuery.length === 0) {
+        const matchedDevice = scope.deviceMap.get(querySegment as DeviceName);
+
+        if (matchedDevice && !visitedDeviceSet.has(matchedDevice)) {
+          visitedDeviceSet.add(matchedDevice);
+          yield matchedDevice;
+        }
       }
 
       for (const childScope of scope.scopeMap.values()) {
-        matchedNodes.push(...collectMatchedNodes(childScope, query));
+        yield* iterateQueries(childScope, query);
       }
-
-      return matchedNodes;
-    };
-
-    const collectDevicesFromNode = (node: QueryNode): UnknownDevice[] =>
-      node instanceof Scope ? collectDevices(node) : [node];
-
-    let nodes: QueryNode[] = [this];
-
-    for (const query of queries) {
-      nodes = nodes.flatMap(node =>
-        node instanceof Scope ? collectMatchedNodes(node, query) : [],
-      );
     }
-
-    const devices =
-      queries.length === 0
-        ? collectDevices(this)
-        : nodes.flatMap(collectDevicesFromNode);
-
-    return [...new Set(devices)];
   }
 
   *_iterateAllDevices(): IterableIterator<UnknownDevice> {

@@ -10,7 +10,7 @@ export class DeviceQuery<TScope extends Scope, TDevice extends UnknownDevice> {
     device: TDevice;
   };
 
-  constructor(readonly queries: string[]) {}
+  constructor(readonly segments: string[]) {}
 }
 
 export type UnknownDeviceQuery = DeviceQuery<Scope, UnknownDevice>;
@@ -47,14 +47,14 @@ export function $<TDevice extends UnknownDevice, TScope extends Scope>(
 export function $<
   TScope extends Scope,
   TDevice extends UnknownDevice,
-  TQueries extends Extract<
+  TQuery extends Extract<
     ScopeToQueriesForDevice<TScope, TDevice>,
     // at least 5 queries to match
     [string, string, string, string, string, ...string[]]
   >,
->(...queries: TQueries): DeviceQuery<TScope, TDevice>;
-export function $(...queries: string[]): UnknownDeviceQuery {
-  return new DeviceQuery(queries);
+>(...queries: TQuery): DeviceQuery<TScope, TDevice>;
+export function $(...query: string[]): UnknownDeviceQuery {
+  return new DeviceQuery(query);
 }
 
 export type NextQueryForDevice<

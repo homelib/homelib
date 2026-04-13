@@ -1,5 +1,6 @@
 import type {NamedObject} from '@homelib/x';
 import {types, x} from '@homelib/x';
+import {makeObservable, observable} from 'mobx';
 
 import type {UnknownConfigDeclarations} from '../config.js';
 import type {Scope} from '../scope.js';
@@ -24,6 +25,8 @@ export abstract class Device<
   readonly options: DeviceOptions;
 
   _scope: Scope | undefined;
+
+  @observable.ref accessor _endpoint: TDeviceEndpoint | undefined;
 
   constructor(
     readonly name: DeviceName,

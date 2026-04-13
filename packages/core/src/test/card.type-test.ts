@@ -2,8 +2,8 @@ import {fileURLToPath} from 'url';
 
 import {$, $constructor, DeviceCard} from '../library/index.js';
 
-import {Light, Television} from './@device-cases/index.js';
-import type {home_1} from './@scope-cases/index.js';
+import {Light, Television} from './@devices/index.js';
+import type {home_1} from './@scopes/index.js';
 
 const $lightCard = $constructor(
   class LightCard extends DeviceCard {

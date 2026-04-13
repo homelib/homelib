@@ -13,10 +13,15 @@ export class Controller {
   ) {}
 
   async start(): Promise<void> {
+    const deviceProviders = this.deviceProviders;
+
+    if (deviceProviders.length === 0) {
+      console.warn('No device providers found, cannot start controller.');
+      return;
+    }
+
     const [firstDeviceEndpointIterable, ...restDeviceEndpointIterables] =
-      this.deviceProviders.map(deviceProvider =>
-        deviceProvider.iterateEndpoints(),
-      );
+      deviceProviders.map(deviceProvider => deviceProvider.iterateEndpoints());
 
     for await (const deviceEndpoint of ix.AsyncIterable.merge(
       firstDeviceEndpointIterable,
@@ -24,12 +29,32 @@ export class Controller {
     )) {
       const deviceDataItem = this.store.findDevice(deviceEndpoint.id);
 
-      if (deviceDataItem) {
-        const device = this.scope._getDevice(
-          deviceDataItem.path,
-          deviceDataItem.name,
+      if (!deviceDataItem) {
+        console.warn(
+          `Device ${deviceEndpoint.constructor.name} ${deviceEndpoint.id} not found in store, skipping...`,
         );
+        continue;
       }
+
+      const device = this.scope._getDevice(
+        deviceDataItem.path,
+        deviceDataItem.name,
+      );
+
+      if (!device) {
+        console.warn(
+          `Device ${deviceEndpoint.constructor.name} ${deviceEndpoint.id} not found in scope, skipping...`,
+        );
+        continue;
+      }
+
+      device._endpoint = deviceEndpoint;
+
+      deviceEndpoint.once('dispose', () => {
+        if (device._endpoint === deviceEndpoint) {
+          device._endpoint = undefined;
+        }
+      });
     }
   }
 }

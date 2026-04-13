@@ -1,9 +1,23 @@
-import {$area, $home, $room} from '../../library/index.js';
-import {$light, $television} from '../@device-cases/index.js';
+import {$, $area, $home, $room} from '../../library/index.js';
+import {
+  $light,
+  $lightSwitchAutomation,
+  $switch,
+  $television,
+} from '../@devices/index.js';
 
 export const home_1 = $home('Home 1').scopes([
   $room('Living Room')
-    .scopes([$area('Balcony').devices([$light('Light')])])
+    .scopes([
+      $area('Balcony')
+        .devices([$light('Light'), $switch('Light Switch')])
+        .automations([
+          $lightSwitchAutomation('Light Switch Automation').bind({
+            lights: $(),
+            switches: $(),
+          }),
+        ]),
+    ])
     .devices([$television('Television')]),
   $room('Bedroom').scopes([
     $area('Level 2').scopes([

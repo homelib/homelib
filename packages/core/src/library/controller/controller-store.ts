@@ -2,37 +2,44 @@ import {readFile} from 'node:fs/promises';
 
 import {x} from '@homelib/x';
 
-import {DeviceId, DeviceName,  ScopePath} from '../x/index.js';
+import {DeviceId, DeviceName, ScopePath} from '../x/index.js';
 
 export class ControllerStore {
-  private constructor(
+  constructor(
     readonly path: string,
-    private data: Data,
+    private data: ControllerStore.Data,
   ) {}
 
   static async initialize(path: string): Promise<ControllerStore> {
-    const json = await readFile(path, 'utf8');
-
-    const data = Data.decode(x.json, json);
+    const data = await readFile(path, 'utf8').then(
+      json => ControllerStore.Data.decode(x.json, json),
+      () => {
+        return {
+          devices: [],
+        };
+      },
+    );
 
     return new ControllerStore(path, data);
   }
 
-  findDevice(id: DeviceId): DeviceDataItem | undefined {
+  findDevice(id: DeviceId): ControllerStore.DeviceDataItem | undefined {
     return this.data.devices.find(deviceDataItem => deviceDataItem.id === id);
   }
 }
 
-const DeviceDataItem = x.object({
-  id: DeviceId,
-  name: DeviceName,
-  path: ScopePath,
-});
+export namespace ControllerStore {
+  export const DeviceDataItem = x.object({
+    id: DeviceId,
+    name: DeviceName,
+    path: ScopePath,
+  });
 
-type DeviceDataItem = x.TypeOf<typeof DeviceDataItem>;
+  export type DeviceDataItem = x.TypeOf<typeof DeviceDataItem>;
 
-const Data = x.object({
-  devices: x.array(DeviceDataItem),
-});
+  export const Data = x.object({
+    devices: x.array(DeviceDataItem),
+  });
 
-type Data = x.TypeOf<typeof Data>;
+  export type Data = x.TypeOf<typeof Data>;
+}

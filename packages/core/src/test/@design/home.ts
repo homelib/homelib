@@ -14,7 +14,7 @@ import {
   $room,
   $scope,
 } from '../../library/index.js';
-import type {Light} from '../@device-cases/index.js';
+import type {Light} from '../@devices/index.js';
 import {
   $ambientLightSensor,
   $feeder,
@@ -22,17 +22,13 @@ import {
   $lightSwitchAutomation,
   $switch,
   Feeder,
-} from '../@device-cases/index.js';
+} from '../@devices/index.js';
 
 import {$ambientLightAutomation} from './@automations/index.js';
 
-const feederAutomation = $automation('喂食器自动化')
-  .devices({
-    feeder: Feeder,
-  })
-  .schedule('0 8 * * *', ({devices: {feeder}}) => {
-    feeder.feed();
-  });
+const feederAutomation = $automation('喂食器自动化').devices({
+  feeder: Feeder,
+});
 
 const home = $home('新家')
   .scopes([

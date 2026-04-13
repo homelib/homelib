@@ -1,8 +1,8 @@
 import type {DeviceQuery} from '../library/index.js';
 import {$} from '../library/index.js';
 
-import type {Light, Television} from './@device-cases/index.js';
-import type {home_1} from './@scope-cases/index.js';
+import type {Light, Television} from './@devices/index.js';
+import type {home_1} from './@scopes/index.js';
 
 $() satisfies DeviceQuery<home_1, Light>;
 

@@ -2,7 +2,7 @@ import type {NamedObject} from '@homelib/x';
 import {types} from '@homelib/x';
 import type {CronExpression} from 'cron-parser';
 import {CronExpressionParser} from 'cron-parser';
-import {computed} from 'mobx';
+import {autorun, computed, reaction} from 'mobx';
 
 import type {
   ConfigDeclarationsToConfigs,
@@ -11,6 +11,7 @@ import type {
 import type {
   DeviceDeclarationsToDeviceBindings,
   DeviceDeclarationsToDeviceEndpoints,
+  DeviceEndpoint,
   UnknownDevice,
   UnknownDeviceDeclarations,
 } from './device/index.js';
@@ -18,6 +19,10 @@ import type {DeviceQuery} from './device-query.js';
 import type {Scope} from './scope.js';
 import {$constructor} from './utils/index.js';
 import type {AutomationName} from './x/index.js';
+
+export type AutomationAutomateCallback<TAutomation extends Automation> = (
+  context: AutomationCallbackContext<TAutomation>,
+) => () => void;
 
 export abstract class Automation implements NamedObject<string> {
   declare [types]: {
@@ -31,17 +36,9 @@ export abstract class Automation implements NamedObject<string> {
 
   _scope: Scope | undefined;
 
-  private starts: ((context: AutomationCallbackContext<Automation>) => void)[] =
-    [];
+  private callbacks: AutomationAutomateCallback<Automation>[] = [];
 
-  private reacts: ((context: AutomationCallbackContext<Automation>) => void)[] =
-    [];
-
-  private schedules: {
-    crons: CronExpression[];
-    callbacks: ((context: AutomationCallbackContext<Automation>) => void)[];
-    lastRanAt?: Date;
-  }[] = [];
+  private deviceDeclarations: UnknownDeviceDeclarations | undefined;
 
   private bindings:
     | Record<string, DeviceQuery<Scope, UnknownDevice>[]>
@@ -59,6 +56,8 @@ export abstract class Automation implements NamedObject<string> {
     };
   };
   devices(devices: UnknownDeviceDeclarations): this {
+    this.deviceDeclarations = devices;
+
     return this;
   }
 
@@ -73,27 +72,8 @@ export abstract class Automation implements NamedObject<string> {
     return this;
   }
 
-  start(callback: (context: AutomationCallbackContext<this>) => void): this {
-    this.starts.push(callback);
-
-    return this;
-  }
-
-  react(callback: (context: AutomationCallbackContext<this>) => void): this {
-    this.reacts.push(callback);
-
-    return this;
-  }
-
-  schedule(
-    cronExpression: string | string[],
-    callback: (context: AutomationCallbackContext<this>) => void,
-  ): this {
-    const crons = (
-      Array.isArray(cronExpression) ? cronExpression : [cronExpression]
-    ).map(cronExpression => CronExpressionParser.parse(cronExpression));
-
-    this.schedules.push({crons, callbacks: [callback]});
+  automate(callback: AutomationAutomateCallback<this>): this {
+    this.callbacks.push(callback);
 
     return this;
   }
@@ -117,10 +97,90 @@ export abstract class Automation implements NamedObject<string> {
   }
 
   _up(): void {
-    const devices = computed(() => {
-      const scope = this._requireScope();
-      const bindings = this._requireBindings();
-    });
+    const scope = this._requireScope();
+    const declarations = this._requireDeviceDeclarations();
+    const bindings = this._requireDeviceBindings();
+
+    const deviceMap = new Map<string, UnknownDevice | UnknownDevice[]>();
+
+    for (const [key, declaration] of Object.entries(declarations)) {
+      const deviceIterator = scope._queryDevices(bindings[key]);
+
+      if (typeof declaration === 'function') {
+        for (const device of deviceIterator) {
+          if (device instanceof declaration) {
+            deviceMap.set(key, device);
+            break;
+          }
+        }
+      } else if (Array.isArray(declaration)) {
+        const devices: UnknownDevice[] = new Array(declaration.length);
+
+        let remaining = declaration.length;
+
+        for (const device of deviceIterator) {
+          const index = declaration.findIndex(
+            DeviceClass =>
+              typeof DeviceClass === 'function' &&
+              device instanceof DeviceClass,
+          );
+
+          if (index < 0 || devices[index]) {
+            continue;
+          }
+
+          devices[index] = device;
+
+          if (--remaining === 0) {
+            break;
+          }
+        }
+
+        deviceMap.set(key, devices);
+      } else if ('class' in declaration && declaration.multiple) {
+        const {class: DeviceClass, multiple} = declaration;
+
+        console.assert(multiple);
+
+        const devices = Array.from(deviceIterator).filter(
+          device => device instanceof DeviceClass,
+        );
+
+        deviceMap.set(key, devices);
+      } else {
+        throw new Error(
+          `Invalid device declaration for key ${JSON.stringify(key)} under scope ${JSON.stringify(scope._path)}.`,
+        );
+      }
+    }
+
+    let disposers: (() => void)[] = [];
+
+    reaction(
+      () =>
+        Object.fromEntries(
+          deviceMap
+            .entries()
+            .map(([key, deviceOrDevices]) => [
+              key,
+              Array.isArray(deviceOrDevices)
+                ? deviceOrDevices.map(device => device._endpoint)
+                : deviceOrDevices._endpoint,
+            ]),
+        ),
+      endpoints => {
+        for (const dispose of disposers) {
+          dispose();
+        }
+
+        disposers = this.callbacks.map(callback =>
+          callback({
+            devices: endpoints,
+            configs: undefined!,
+          }),
+        );
+      },
+    );
   }
 
   _requireScope(): Scope {
@@ -133,7 +193,20 @@ export abstract class Automation implements NamedObject<string> {
     return scope;
   }
 
-  _requireBindings(): Record<string, DeviceQuery<Scope, UnknownDevice>[]> {
+  _requireDeviceDeclarations(): UnknownDeviceDeclarations {
+    const deviceDeclarations = this.deviceDeclarations;
+
+    if (!deviceDeclarations) {
+      throw new Error('Automation has no device declarations.');
+    }
+
+    return deviceDeclarations;
+  }
+
+  _requireDeviceBindings(): Record<
+    string,
+    DeviceQuery<Scope, UnknownDevice>[]
+  > {
     const bindings = this.bindings;
 
     if (!bindings) {
