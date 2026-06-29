@@ -1,0 +1,8 @@
+{
+  "references": [
+    {
+      "path": "packages/core/src/library"
+    }
+  ],
+  "files": []
+}

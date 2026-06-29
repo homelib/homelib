@@ -1,0 +1,21 @@
+{
+  "$schema": "boilerplate.schema.json",
+  "boilerplate": "@mufan/code-boilerplates/typescript",
+  "options": {
+    "name": "homelib-packages",
+    "license": "MIT",
+    "author": "vilicvane",
+    "defaultBranch": "master",
+    "packageManager": "npm",
+    "packages": [
+      {
+        "name": "@homelib/core",
+        "projects": [
+          {
+            "name": "library"
+          }
+        ]
+      }
+    ]
+  }
+}

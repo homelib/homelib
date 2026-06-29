@@ -1,0 +1,25 @@
+{
+  "name": "homelib-packages",
+  "private": true,
+  "license": "MIT",
+  "author": "vilicvane",
+  "type": "module",
+  "scripts": {
+    "3": "npm install && npm dedupe && npm install",
+    "build": "rimraf packages/core/bld && tsc --build",
+    "lint": "eslint --no-error-on-unmatched-pattern --report-unused-disable-directives .",
+    "lint-prettier": "prettier --check .",
+    "test": "npm run lint-prettier && npm run build && npm run lint",
+    "core": "npm run --workspace @homelib/core"
+  },
+  "workspaces": [
+    "packages/core"
+  ],
+  "devDependencies": {
+    "@mufan/eslint-plugin": "^0.3.0",
+    "eslint": "^10.6.0",
+    "prettier": "^3.9.3",
+    "rimraf": "^6.1.3",
+    "typescript": "^6.0.3"
+  }
+}
