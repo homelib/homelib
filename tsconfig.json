@@ -2,6 +2,9 @@
   "references": [
     {
       "path": "packages/core/src/library"
+    },
+    {
+      "path": "packages/xiaomi/src/library"
     }
   ],
   "files": []
