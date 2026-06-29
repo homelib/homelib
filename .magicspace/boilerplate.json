@@ -12,7 +12,8 @@
         "name": "@homelib/core",
         "projects": [
           {
-            "name": "library"
+            "name": "library",
+            "test": true
           }
         ]
       }
