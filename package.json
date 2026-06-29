@@ -6,15 +6,17 @@
   "type": "module",
   "scripts": {
     "3": "npm install && npm dedupe && npm install",
-    "build": "rimraf packages/core/bld && tsc --build",
+    "build": "rimraf --glob packages/*/bld && tsc --build",
     "lint": "eslint --no-error-on-unmatched-pattern --report-unused-disable-directives .",
     "lint-prettier": "prettier --check .",
     "bare-test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "test": "npm run lint-prettier && npm run build && npm run lint && npm run bare-test",
-    "core": "npm run --workspace @homelib/core"
+    "core": "npm run --workspace @homelib/core",
+    "xiaomi": "npm run --workspace @homelib/xiaomi"
   },
   "workspaces": [
-    "packages/core"
+    "packages/core",
+    "packages/xiaomi"
   ],
   "devDependencies": {
     "@mufan/eslint-plugin": "^0.3.0",

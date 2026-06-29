@@ -2,7 +2,7 @@ import mufan, {configs} from '@mufan/eslint-plugin';
 import {defineConfig, globalIgnores} from 'eslint/config';
 
 export default defineConfig([
-  globalIgnores(['packages/core/bld/']),
+  globalIgnores(['packages/core/bld/', 'packages/xiaomi/bld/']),
   {
     files: ['**/*.{js,mjs,cjs}'],
     plugins: {'@mufan': mufan},
@@ -27,6 +27,22 @@ export default defineConfig([
   },
   {
     files: ['packages/core/src/library/**/*.test.{ts,tsx}'],
+    extends: [configs.dev],
+  },
+  // packages/xiaomi/src/library
+  {
+    files: ['packages/xiaomi/src/library/**/*.{ts,tsx}'],
+    plugins: {'@mufan': mufan},
+    extends: [configs.typescript],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
+    files: ['packages/xiaomi/src/library/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
   },
 ]);

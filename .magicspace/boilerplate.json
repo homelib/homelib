@@ -16,6 +16,21 @@
             "test": true
           }
         ]
+      },
+      {
+        "name": "@homelib/xiaomi",
+        "projects": [
+          {
+            "name": "library",
+            "test": true,
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              }
+            ]
+          }
+        ]
       }
     ]
   }
