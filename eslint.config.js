@@ -25,4 +25,8 @@ export default defineConfig([
       },
     },
   },
+  {
+    files: ['packages/core/src/library/**/*.test.{ts,tsx}'],
+    extends: [configs.dev],
+  },
 ]);
