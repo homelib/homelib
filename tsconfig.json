@@ -5,6 +5,9 @@
     },
     {
       "path": "packages/xiaomi/src/library"
+    },
+    {
+      "path": "packages/xiaomi/src/experiments"
     }
   ],
   "files": []
