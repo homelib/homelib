@@ -3,11 +3,14 @@
   "compilerOptions": {
     "composite": true,
     "rootDir": ".",
-    "outDir": "../../bld/experiments"
+    "outDir": "../../bld/program"
   },
   "references": [
     {
-      "path": "../library"
+      "path": "../../../core/src/library"
+    },
+    {
+      "path": "../../../xiaomi/src/library"
     }
   ]
 }

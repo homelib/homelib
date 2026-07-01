@@ -29,6 +29,28 @@
                 "project": "library"
               }
             ]
+          },
+          {
+            "name": "experiments",
+            "references": ["library"]
+          }
+        ]
+      },
+      {
+        "name": "@homelib/playground",
+        "projects": [
+          {
+            "name": "program",
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              },
+              {
+                "package": "@homelib/xiaomi",
+                "project": "library"
+              }
+            ]
           }
         ]
       }
