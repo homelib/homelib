@@ -5,6 +5,12 @@
     },
     {
       "path": "packages/xiaomi/src/library"
+    },
+    {
+      "path": "packages/xiaomi/src/experiments"
+    },
+    {
+      "path": "packages/playground/src/program"
     }
   ],
   "files": []
