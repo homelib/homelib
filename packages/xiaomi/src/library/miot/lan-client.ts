@@ -120,15 +120,18 @@ export class XiaomiLanClient {
   async subscribe(timeoutMs: number = 5_000): Promise<boolean> {
     if (this.subscribed) return true;
 
-    const result = await this.callApi({
-      method: 'miIO.sub',
-      params: {
-        version: '2.0',
-        did: String(randomInt(0, 0x7fffffff)),
-        update_ts: Math.floor(Date.now() / 1000),
-        sub_method: '.',
+    const result = await this.callApi(
+      {
+        method: 'miIO.sub',
+        params: {
+          version: '2.0',
+          did: String(randomInt(0, 0x7fffffff)),
+          update_ts: Math.floor(Date.now() / 1000),
+          sub_method: '.',
+        },
       },
-    }, timeoutMs);
+      timeoutMs,
+    );
 
     if (result && typeof result === 'object') {
       this.subscribed = true;

@@ -17,21 +17,19 @@
  *   - CN cloud server (central gateway only supported in mainland China)
  */
 
-import {XiaomiHttpClient, calcGroupId} from '../library/http-client.js';
-import {OAUTH2_CLIENT_ID} from '../library/constants.js';
-import {XiaomiCertManager} from '../library/cert-manager.js';
+import {OAUTH2_CLIENT_ID,XiaomiCertManager,XiaomiHttpClient,XiaomiLocalMqttClient, calcGroupId} from '../library/index.js';
 import {
-  discoverGatewaysWithFallback,
   type GatewayInfo,
-} from '../library/mdns-discovery.js';
-import {XiaomiLocalMqttClient} from '../library/local-mqtt-client.js';
+  discoverGatewaysWithFallback,
+} from '../library/index.js';
+
 import {
-  ensureAccessToken,
+  CACHE_DIR,
   TARGET_DID,
   TARGET_NAME,
-  TARGET_SIID,
   TARGET_PIID,
-  sleep,
+  TARGET_SIID,
+  ensureAccessToken,sleep
 } from './shared.js';
 
 async function main(): Promise<void> {
@@ -138,7 +136,7 @@ async function main(): Promise<void> {
   const certManager = new XiaomiCertManager(certDir, uid, 'cn');
 
   console.log('检查用户证书...');
-  const virtualDid = BigInt('0x' + uuid.slice(0, 16)).toString();
+  const virtualDid = BigInt(`0x${  uuid.slice(0, 16)}`).toString();
   await certManager.ensureUserCert(virtualDid, async (csr: string) => {
     console.log('  请求云端签发证书...');
     const cert = await http.getCentralCert(csr);
@@ -236,7 +234,6 @@ async function main(): Promise<void> {
 
 // Need join from path
 import {join} from 'node:path';
-import {CACHE_DIR} from './shared.js';
 
 main().catch(err => {
   console.error('失败:', err);

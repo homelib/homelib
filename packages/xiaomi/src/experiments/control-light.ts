@@ -16,20 +16,18 @@
  *   node packages/xiaomi/bld/experiments/control-light.js
  */
 
-import {createServer, type Server} from 'node:http';
 import {randomBytes} from 'node:crypto';
-import {writeFileSync, readFileSync, existsSync, mkdirSync} from 'node:fs';
-import {join, dirname} from 'node:path';
+import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {type Server, createServer} from 'node:http';
+import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {
-  XiaomiOAuthClient,
-  generateUuid,
   type AuthInfo,
-} from '../library/oauth-client.js';
-import {XiaomiHttpClient, type DeviceInfo} from '../library/http-client.js';
-import {XiaomiMqttCloudClient} from '../library/mqtt-client.js';
-import {OAUTH2_CLIENT_ID, type CloudServer} from '../library/constants.js';
+  type CloudServer,
+  type DeviceInfo,OAUTH2_CLIENT_ID, XiaomiHttpClient,XiaomiOAuthClient, generateUuid
+} from '../library/index.js';
+import {XiaomiMqttCloudClient} from '../library/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = join(__dirname, '.cache');
@@ -40,7 +38,7 @@ const REDIRECT_PORT = 8123;
 const REDIRECT_HOST = 'homeassistant.local';
 const REDIRECT_URL = `http://${REDIRECT_HOST}:${REDIRECT_PORT}`;
 
-interface ExperimentOptions {
+type ExperimentOptions = {
   cloudServer?: CloudServer;
   /** Skip OAuth if cached tokens are still valid. */
   useCache?: boolean;

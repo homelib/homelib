@@ -2,7 +2,7 @@
  * Quick test: LAN direct control of the fan (dmaker.fan.p5c).
  */
 
-import { XiaomiLanClient } from '../library/lan-client.js';
+import {XiaomiLanClient} from '../library/index.js';
 
 async function main(): Promise<void> {
   const lan = new XiaomiLanClient({
@@ -69,4 +69,7 @@ async function main(): Promise<void> {
   console.log('Done.');
 }
 
-main().catch(err => { console.error('Failed:', err); process.exit(1); });
+main().catch(err => {
+  console.error('Failed:', err);
+  process.exit(1);
+});

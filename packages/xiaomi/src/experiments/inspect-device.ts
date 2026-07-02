@@ -2,13 +2,12 @@
  * Inspect a device's spec and properties.
  */
 
-import {readFileSync, existsSync} from 'node:fs';
-import {join, dirname} from 'node:path';
+import {existsSync, readFileSync} from 'node:fs';
+import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-import {XiaomiHttpClient} from '../library/http-client.js';
-import {XiaomiOAuthClient, type AuthInfo} from '../library/oauth-client.js';
-import {OAUTH2_CLIENT_ID, type CloudServer} from '../library/constants.js';
+import {type AuthInfo, type CloudServer,OAUTH2_CLIENT_ID, XiaomiOAuthClient} from '../library/index.js';
+import {XiaomiHttpClient} from '../library/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = join(__dirname, '.cache');
@@ -52,7 +51,7 @@ async function main(): Promise<void> {
       console.log(`Parent device: ${parent.name} (${parent.did})`);
       console.log(`  model: ${parent.model}`);
       console.log(`  urn: ${parent.urn}`);
-      console.log(`  sub_devices:`, Object.keys(parent.sub_devices ?? {}));
+      console.log('  sub_devices:', Object.keys(parent.sub_devices ?? {}));
 
       if (parent.sub_devices) {
         for (const [subKey, subDev] of Object.entries(parent.sub_devices)) {

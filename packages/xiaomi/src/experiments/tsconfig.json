@@ -3,7 +3,8 @@
   "compilerOptions": {
     "composite": true,
     "rootDir": ".",
-    "outDir": "../../bld/experiments"
+    "outDir": "../../bld/experiments",
+    "types": ["node"]
   },
   "references": [
     {

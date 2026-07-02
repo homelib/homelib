@@ -15,15 +15,14 @@
  *   - Does NOT work with BLE Mesh, ZigBee, or sub-devices of a gateway
  */
 
-import {XiaomiHttpClient} from '../library/http-client.js';
-import {OAUTH2_CLIENT_ID} from '../library/constants.js';
-import {XiaomiLanClient} from '../library/lan-client.js';
+import {OAUTH2_CLIENT_ID,XiaomiHttpClient,XiaomiLanClient} from '../library/index.js';
+
 import {
-  ensureAccessToken,
   TARGET_DID,
   TARGET_NAME,
-  TARGET_SIID,
   TARGET_PIID,
+  TARGET_SIID,
+  ensureAccessToken,
   sleep,
 } from './shared.js';
 

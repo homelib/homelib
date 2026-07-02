@@ -2,7 +2,7 @@
  * Quick test: LAN direct control of the 大灯 (WiFi device).
  */
 
-import { XiaomiLanClient } from '../library/lan-client.js';
+import {XiaomiLanClient} from '../library/index.js';
 
 async function main(): Promise<void> {
   const lan = new XiaomiLanClient({
@@ -59,4 +59,7 @@ async function main(): Promise<void> {
   console.log('Done.');
 }
 
-main().catch(err => { console.error('Failed:', err); process.exit(1); });
+main().catch(err => {
+  console.error('Failed:', err);
+  process.exit(1);
+});
