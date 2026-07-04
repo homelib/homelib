@@ -139,62 +139,81 @@ export class XiaomiLanClient {
     return this.subscribed;
   }
 
-  /** Get a device property. */
+  /**
+   * Get multiple device properties in one request.
+   * @param params Array of `{did, siid, piid}`.
+   */
+  async getProps(
+    params: Array<{did: string; siid: number; piid: number}>,
+    timeoutMs: number = 10_000,
+  ): Promise<unknown[]> {
+    const result = await this.callApi(
+      {
+        method: 'get_properties',
+        params,
+      },
+      timeoutMs,
+    );
+
+    if (
+      result &&
+      typeof result === 'object' &&
+      'result' in result &&
+      Array.isArray((result as Record<string, unknown>).result)
+    ) {
+      return (result as Record<string, unknown[]>).result;
+    }
+    return [];
+  }
+
+  /**
+   * Set multiple device properties in one request.
+   * @param params Array of `{did, siid, piid, value}`.
+   */
+  async setProps(
+    params: Array<{did: string; siid: number; piid: number; value: unknown}>,
+    timeoutMs: number = 10_000,
+  ): Promise<unknown[]> {
+    const result = await this.callApi(
+      {
+        method: 'set_properties',
+        params,
+      },
+      timeoutMs,
+    );
+
+    if (
+      result &&
+      typeof result === 'object' &&
+      'result' in result &&
+      Array.isArray((result as Record<string, unknown>).result)
+    ) {
+      return (result as Record<string, unknown[]>).result;
+    }
+    return [];
+  }
+
+  /** Convenience: get a single property value. */
   async getProp(
     did: string,
     siid: number,
     piid: number,
     timeoutMs: number = 10_000,
   ): Promise<unknown> {
-    const result = await this.callApi(
-      {
-        method: 'get_properties',
-        params: [{did, siid, piid}],
-      },
-      timeoutMs,
-    );
-
-    if (
-      result &&
-      typeof result === 'object' &&
-      'result' in result &&
-      Array.isArray((result as Record<string, unknown>).result) &&
-      (result as Record<string, unknown[]>).result.length > 0
-    ) {
-      return (result as Record<string, unknown[]>).result[0];
-    }
-    return null;
+    const results = await this.getProps([{did, siid, piid}], timeoutMs);
+    return results[0] ?? null;
   }
 
-  /** Set a device property. */
+  /** Convenience: set a single property. */
   async setProp(
     did: string,
     siid: number,
     piid: number,
     value: unknown,
     timeoutMs: number = 10_000,
-  ): Promise<Record<string, unknown>> {
-    const result = await this.callApi(
-      {
-        method: 'set_properties',
-        params: [{did, siid, piid, value}],
-      },
-      timeoutMs,
-    );
-
-    if (
-      result &&
-      typeof result === 'object' &&
-      'result' in result &&
-      Array.isArray((result as Record<string, unknown>).result) &&
-      (result as Record<string, unknown[]>).result.length > 0
-    ) {
-      return (result as Record<string, unknown[]>).result[0] as Record<
-        string,
-        unknown
-      >;
-    }
-    return {code: -1, message: 'Invalid result'};
+  ): Promise<unknown> {
+    const results = await this.setProps([{did, siid, piid, value}], timeoutMs);
+    return results[0] ?? null;
   }
 
   /** Call a device action. */

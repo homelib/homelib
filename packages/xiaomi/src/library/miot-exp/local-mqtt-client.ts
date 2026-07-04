@@ -220,38 +220,21 @@ export class XiaomiLocalMqttClient {
     this.connected = false;
   }
 
-  /** Get a device property. */
-  async getProp(
-    did: string,
-    siid: number,
-    piid: number,
+  /**
+   * Get multiple device properties in one request.
+   * @param params Array of `{did, siid, piid}`.
+   */
+  async getProps(
+    params: Array<{did: string; siid: number; piid: number}>,
     timeoutMs: number = 10_000,
-  ): Promise<unknown> {
-    const result = await this.request(
-      'proxy/get',
-      JSON.stringify({did, siid, piid}),
-      timeoutMs,
-    );
-    if (result && typeof result === 'object' && 'value' in result) {
-      return (result as Record<string, unknown>).value;
-    }
-    return null;
-  }
-
-  /** Set a device property. */
-  async setProp(
-    did: string,
-    siid: number,
-    piid: number,
-    value: unknown,
-    timeoutMs: number = 10_000,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<unknown[]> {
+    const rpcId = this.nextId();
     const payload = {
-      did,
+      did: params[0]?.did,
       rpc: {
-        id: this.nextId(),
-        method: 'set_properties',
-        params: [{did, siid, piid, value}],
+        id: rpcId,
+        method: 'get_properties',
+        params,
       },
     };
     const result = await this.request(
@@ -261,18 +244,69 @@ export class XiaomiLocalMqttClient {
     );
     if (result && typeof result === 'object') {
       const obj = result as Record<string, unknown>;
-      if (
-        'result' in obj &&
-        Array.isArray(obj.result) &&
-        obj.result.length > 0
-      ) {
-        return obj.result[0] as Record<string, unknown>;
-      }
-      if ('error' in obj) {
-        return obj.error as Record<string, unknown>;
+      if ('result' in obj && Array.isArray(obj.result)) {
+        return obj.result as unknown[];
       }
     }
-    return {code: -1, message: 'Invalid result'};
+    return [];
+  }
+
+  /**
+   * Set multiple device properties in one request.
+   * @param params Array of `{did, siid, piid, value}`.
+   */
+  async setProps(
+    params: Array<{did: string; siid: number; piid: number; value: unknown}>,
+    timeoutMs: number = 10_000,
+  ): Promise<unknown[]> {
+    const rpcId = this.nextId();
+    const payload = {
+      did: params[0]?.did,
+      rpc: {
+        id: rpcId,
+        method: 'set_properties',
+        params,
+      },
+    };
+    const result = await this.request(
+      'proxy/rpcReq',
+      JSON.stringify(payload),
+      timeoutMs,
+    );
+    if (result && typeof result === 'object') {
+      const obj = result as Record<string, unknown>;
+      if ('result' in obj && Array.isArray(obj.result)) {
+        return obj.result as unknown[];
+      }
+    }
+    return [];
+  }
+
+  /** Convenience: get a single property value. */
+  async getProp(
+    did: string,
+    siid: number,
+    piid: number,
+    timeoutMs: number = 10_000,
+  ): Promise<unknown> {
+    const results = await this.getProps([{did, siid, piid}], timeoutMs);
+    const first = results[0];
+    if (first && typeof first === 'object' && 'value' in first) {
+      return (first as Record<string, unknown>).value;
+    }
+    return null;
+  }
+
+  /** Convenience: set a single property. */
+  async setProp(
+    did: string,
+    siid: number,
+    piid: number,
+    value: unknown,
+    timeoutMs: number = 10_000,
+  ): Promise<unknown> {
+    const results = await this.setProps([{did, siid, piid, value}], timeoutMs);
+    return results[0] ?? null;
   }
 
   /** Call a device action. */
