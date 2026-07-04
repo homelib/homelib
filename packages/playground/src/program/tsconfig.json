@@ -11,6 +11,9 @@
       "path": "../../../core/src/library"
     },
     {
+      "path": "../../../core/src/web"
+    },
+    {
       "path": "../../../xiaomi/src/library"
     }
   ]
