@@ -3,8 +3,11 @@
   "compilerOptions": {
     "composite": true,
     "types": ["jest"],
+    "jsx": "react",
+    "useDefineForClassFields": true,
+    "lib": ["ESNext", "DOM"],
     "rootDir": ".",
-    "outDir": "../../bld/web"
+    "outDir": "../../.bld/web"
   },
   "references": [
     {
