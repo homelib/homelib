@@ -4,6 +4,9 @@
       "path": "packages/core/src/library"
     },
     {
+      "path": "packages/core/src/web"
+    },
+    {
       "path": "packages/xiaomi/src/library"
     },
     {
