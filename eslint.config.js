@@ -33,6 +33,22 @@ export default defineConfig([
     files: ['packages/core/src/library/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
   },
+  // packages/core/src/web
+  {
+    files: ['packages/core/src/web/**/*.{ts,tsx}'],
+    plugins: {'@mufan': mufan},
+    extends: [configs.typescript],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
+    files: ['packages/core/src/web/**/*.test.{ts,tsx}'],
+    extends: [configs.dev],
+  },
   // packages/xiaomi/src/library
   {
     files: ['packages/xiaomi/src/library/**/*.{ts,tsx}'],
