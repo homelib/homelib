@@ -17,6 +17,7 @@
           },
           {
             "name": "web",
+            "noEmit": true,
             "test": true,
             "references": ["library"]
           }
