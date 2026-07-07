@@ -3,7 +3,7 @@ import {BrowserRouterPlugin} from 'routra/browser';
 
 export const router = routra({
   default: true,
-  bindDevices: true,
+  devices: true,
 });
 
 router.$use(
