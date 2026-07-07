@@ -17,6 +17,7 @@ import {Column, FitContainer} from '../../@layout.js';
 
 import {HomeDevice} from './@home-device.js';
 import {HomeScope} from './@home-scope.js';
+import {ProtocolDevicesColumn} from './@protocol-devices.js';
 
 const LeftColumn = styled(Column)`
   flex: 1;
@@ -24,7 +25,7 @@ const LeftColumn = styled(Column)`
   padding: 10px;
 `;
 
-const RightColumn = styled(Column)`
+const RightColumn = styled(ProtocolDevicesColumn)`
   flex: 1;
 `;
 
@@ -55,7 +56,7 @@ export function DevicesView(): ReactElement {
           </HomeScope>
         </HomeScope>
       </LeftColumn>
-      <RightColumn>2</RightColumn>
+      <RightColumn />
     </FitContainer>
   );
 }

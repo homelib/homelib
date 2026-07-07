@@ -13,8 +13,6 @@ export const Container = styled.div`
   display: flex;
   align-items: center;
 
-  transition: background 0.2s;
-
   cursor: default;
 
   &:hover {
@@ -55,8 +53,6 @@ const IconContainer = styled.div`
 
   color: var(--color-icon-decorative);
 
-  transition: color 0.2s;
-
   ${Container}:hover & {
     color: var(--color-icon-active);
   }
@@ -78,8 +74,6 @@ const Name = styled.div`
   flex: 1;
 
   color: var(--color-text-secondary);
-
-  transition: color 0.2s;
 
   ${Container}:hover & {
     color: var(--color-text-primary);
@@ -181,8 +175,6 @@ const BadgeIndicator = styled.div`
   background: var(--color-icon-decorative);
   color: var(--color-on-accent);
 
-  transition: background 0.2s;
-
   ${IndicatorContainer}.bind & {
     background: var(--color-icon-highlight);
   }
@@ -195,8 +187,6 @@ const DotIndicator = styled.div`
   border-radius: 50%;
 
   background: var(--color-icon-decorative);
-
-  transition: background 0.2s;
 
   ${IndicatorContainer}.bind & {
     background: var(--color-icon-highlight);

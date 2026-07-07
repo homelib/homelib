@@ -12,12 +12,15 @@ export const GlobalStyle = createGlobalStyle`
     --color-icon-active: #999;
     --color-icon-highlight: var(--color-accent);
 
-    --color-surface-hover: #f5f5f5;
+    --color-surface-hover: #eee;
     --color-surface-highlight: #ffedbf;
 
     --color-layout-border: #ddd;
 
+    --color-list-header-background: #f9f9f9;
     --color-list-separator: #eee;
+
+    --font-weight-bold: 600;
   }
 
   *,
@@ -26,6 +29,8 @@ export const GlobalStyle = createGlobalStyle`
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s;
   }
 
   html,

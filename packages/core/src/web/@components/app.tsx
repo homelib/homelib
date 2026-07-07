@@ -56,7 +56,7 @@ const NavLink = styled(Link)`
   }
 
   &.active {
-    font-weight: 600;
+    font-weight: var(--font-weight-bold);
 
     &::after {
       width: 100%;

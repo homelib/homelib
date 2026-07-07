@@ -19,7 +19,7 @@ const Header = styled.div`
   display: flex;
   align-items: center;
 
-  font-weight: 600;
+  font-weight: var(--font-weight-bold);
 
   border-bottom: 1px dashed var(--color-list-separator);
 `;
