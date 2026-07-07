@@ -1,4 +1,5 @@
 import classNames from 'classnames';
+import {Link2Off} from 'lucide-react';
 import type {ReactElement, ReactNode} from 'react';
 import React, {useContext} from 'react';
 import styled from 'styled-components';
@@ -98,6 +99,10 @@ const IndicatorContainer = styled.div`
   align-items: center;
   justify-content: center;
 
+  &.bind {
+    cursor: pointer;
+  }
+
   > svg {
     width: 14px;
   }
@@ -114,12 +119,30 @@ const DotIndicator = styled.div`
   ${IndicatorContainer}.bind & {
     background: var(--color-icon-highlight);
   }
+
+  ${IndicatorContainer}.bind:hover & {
+    display: none;
+  }
+`;
+
+const UnbindIcon = styled(Link2Off)`
+  display: none;
+
+  color: var(--color-unbind);
+
+  ${IndicatorContainer}.bind:hover & {
+    display: block;
+  }
 `;
 
 function Indicator({bind}: {bind: boolean}): ReactElement {
   return (
-    <IndicatorContainer className={classNames({bind})}>
+    <IndicatorContainer
+      className={classNames({bind})}
+      title={bind ? 'Unbind' : undefined}
+    >
       <DotIndicator />
+      {bind && <UnbindIcon />}
     </IndicatorContainer>
   );
 }

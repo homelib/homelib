@@ -20,6 +20,8 @@ export const GlobalStyle = createGlobalStyle`
     --color-list-header-background: #f9f9f9;
     --color-list-separator: #eee;
 
+    --color-unbind: #ff383c;
+
     --font-weight-bold: 600;
   }
 
