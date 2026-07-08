@@ -29,6 +29,10 @@ const Icon = styled.div`
 
   color: var(--color-icon-decorative);
 
+  ${Container}:hover & {
+    color: var(--color-icon-active);
+  }
+
   > svg {
     width: 14px;
     height: 14px;
@@ -37,6 +41,10 @@ const Icon = styled.div`
 
 const Name = styled.div`
   color: var(--color-text-secondary);
+
+  ${Container}:hover & {
+    color: var(--color-text-primary);
+  }
 `;
 
 export function ProtocolScope({
