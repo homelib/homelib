@@ -1,14 +1,4 @@
-import type {LucideIcon} from 'lucide-react';
-import {
-  DoorClosedLocked,
-  Folder,
-  HousePlug,
-  Lightbulb,
-  Link2,
-  Link2Off,
-  Tv,
-  Wind,
-} from 'lucide-react';
+import * as Lucide from 'lucide-react';
 import type {ReactElement} from 'react';
 import React from 'react';
 import styled from 'styled-components';
@@ -34,23 +24,27 @@ export function DevicesView(): ReactElement {
     <FitContainer>
       <LeftColumn>
         <HomeScope name="Home 1" leaf={false}>
-          <HomeDevice icon={<DoorClosedLocked />} bind={true} selected={false}>
+          <HomeDevice
+            icon={<Lucide.DoorClosedLocked />}
+            linked={true}
+            selected={false}
+          >
             Door lock
           </HomeDevice>
           <HomeScope name="Living room" leaf={true}>
-            <HomeDevice icon={<Lightbulb />} bind={0} selected={false}>
+            <HomeDevice icon={<Lucide.Lightbulb />} linked={0} selected={false}>
               Lights
             </HomeDevice>
-            <HomeDevice icon={<Lightbulb />} bind={2} selected={false}>
+            <HomeDevice icon={<Lucide.Lightbulb />} linked={2} selected={false}>
               Lights
             </HomeDevice>
-            <HomeDevice icon={<Lightbulb />} bind={2} selected={true}>
+            <HomeDevice icon={<Lucide.Lightbulb />} linked={2} selected={true}>
               Lights
             </HomeDevice>
-            <HomeDevice icon={<Wind />} bind={false} selected={false}>
+            <HomeDevice icon={<Lucide.Wind />} linked={false} selected={false}>
               Fan
             </HomeDevice>
-            <HomeDevice icon={<Wind />} bind={true} selected={false}>
+            <HomeDevice icon={<Lucide.Wind />} linked={true} selected={false}>
               Fan
             </HomeDevice>
           </HomeScope>

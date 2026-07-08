@@ -1,5 +1,5 @@
 import classNames from 'classnames';
-import {Link2} from 'lucide-react';
+import * as Lucide from 'lucide-react';
 import type {DragEvent, ReactElement, ReactNode} from 'react';
 import React, {useCallback, useState} from 'react';
 import styled from 'styled-components';
@@ -90,12 +90,12 @@ const Name = styled.div`
 
 export function HomeDevice({
   icon,
-  bind,
+  linked,
   selected,
   children,
 }: {
   icon: ReactNode;
-  bind: boolean | number;
+  linked: boolean | number;
   selected: boolean;
   children: ReactNode;
 }): ReactElement {
@@ -139,7 +139,7 @@ export function HomeDevice({
     >
       <IconContainer>{icon}</IconContainer>
       <Name>{children}</Name>
-      <Indicator bind={bind} dragover={dragover} />
+      <Indicator linked={linked} dragover={dragover} />
     </Container>
   );
 }
@@ -175,7 +175,7 @@ const BadgeIndicator = styled.div`
   background: var(--color-icon-decorative);
   color: var(--color-on-accent);
 
-  ${IndicatorContainer}.bind & {
+  ${IndicatorContainer}.linked & {
     background: var(--color-icon-highlight);
   }
 `;
@@ -188,35 +188,35 @@ const DotIndicator = styled.div`
 
   background: var(--color-icon-decorative);
 
-  ${IndicatorContainer}.bind & {
+  ${IndicatorContainer}.linked & {
     background: var(--color-icon-highlight);
   }
 `;
 
 function Indicator({
-  bind,
+  linked,
   dragover,
 }: {
-  bind: boolean | number;
+  linked: boolean | number;
   dragover: boolean;
 }): ReactElement {
   if (dragover) {
     return (
       <IndicatorContainer className="dragover">
-        <Link2 />
+        <Lucide.Link2 />
       </IndicatorContainer>
     );
   }
 
-  if (typeof bind === 'number') {
+  if (typeof linked === 'number') {
     return (
-      <IndicatorContainer className={classNames({bind: bind > 0})}>
-        <BadgeIndicator>{bind}</BadgeIndicator>
+      <IndicatorContainer className={classNames({linked: linked > 0})}>
+        <BadgeIndicator>{linked}</BadgeIndicator>
       </IndicatorContainer>
     );
   } else {
     return (
-      <IndicatorContainer className={classNames({bind})}>
+      <IndicatorContainer className={classNames({linked})}>
         <DotIndicator />
       </IndicatorContainer>
     );

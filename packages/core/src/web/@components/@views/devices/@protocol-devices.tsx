@@ -1,4 +1,4 @@
-import {Lightbulb} from 'lucide-react';
+import * as Lucide from 'lucide-react';
 import type {ReactElement} from 'react';
 import React from 'react';
 import styled from 'styled-components';
@@ -47,28 +47,28 @@ export function ProtocolDevicesColumn({
       </Header>
       <ProtocolDevicesGroup name="Home 1 - MIoT">
         <ProtocolScope name="Living room">
-          <ProtocolDevice icon={<Lightbulb />} bind={true} highlight={true}>
+          <ProtocolDevice icon={<Lucide.Lightbulb />} linked={true} highlight={true}>
             Some light
           </ProtocolDevice>
           <ProtocolScope name="Desk">
-            <ProtocolDevice icon={<Lightbulb />} bind={false} highlight={false}>
+            <ProtocolDevice icon={<Lucide.Lightbulb />} linked={false} highlight={false}>
               Some light
             </ProtocolDevice>
           </ProtocolScope>
         </ProtocolScope>
       </ProtocolDevicesGroup>
       <ProtocolDevicesGroup name="Home 1 - Matter">
-        <ProtocolDevice icon={<Lightbulb />} bind={true} highlight={false}>
+        <ProtocolDevice icon={<Lucide.Lightbulb />} linked={true} highlight={false}>
           Some light
         </ProtocolDevice>
       </ProtocolDevicesGroup>
       <ProtocolDevicesGroup name="Home 2 - MIoT">
-        <ProtocolDevice icon={<Lightbulb />} bind={false} highlight={false}>
+        <ProtocolDevice icon={<Lucide.Lightbulb />} linked={false} highlight={false}>
           Some light
         </ProtocolDevice>
       </ProtocolDevicesGroup>
       <ProtocolDevicesGroup name="Home 3 - Matter">
-        <ProtocolDevice icon={<Lightbulb />} bind={false} highlight={false}>
+        <ProtocolDevice icon={<Lucide.Lightbulb />} linked={false} highlight={false}>
           Some light
         </ProtocolDevice>
       </ProtocolDevicesGroup>

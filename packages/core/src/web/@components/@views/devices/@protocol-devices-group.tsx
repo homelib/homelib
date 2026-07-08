@@ -1,5 +1,5 @@
 import classNames from 'classnames';
-import {HousePlug} from 'lucide-react';
+import * as Lucide from 'lucide-react';
 import type {ReactElement, ReactNode} from 'react';
 import React, {useState} from 'react';
 import styled from 'styled-components';
@@ -76,7 +76,7 @@ const HeaderCounts = styled.div`
   font-size: 13px;
 `;
 
-const HeaderBindCount = styled.div`
+const HeaderLinkCount = styled.div`
   color: var(--color-accent);
 `;
 
@@ -113,11 +113,11 @@ export function ProtocolDevicesGroup({
     <Container className={classNames({expanded})}>
       <Header onClick={() => setExpanded(!expanded)}>
         <HeaderIcon>
-          <HousePlug />
+          <Lucide.HousePlug />
         </HeaderIcon>
         <HeaderText>{name}</HeaderText>
         <HeaderCounts>
-          <HeaderBindCount>10</HeaderBindCount>
+          <HeaderLinkCount>10</HeaderLinkCount>
           <HeaderCountsSeparator />
           <HeaderTotalCount>10</HeaderTotalCount>
         </HeaderCounts>

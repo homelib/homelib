@@ -1,4 +1,4 @@
-import {Folder} from 'lucide-react';
+import * as Lucide from 'lucide-react';
 import type {ReactElement, ReactNode} from 'react';
 import React, {createContext, useContext} from 'react';
 import styled from 'styled-components';
@@ -60,7 +60,7 @@ export function ProtocolScope({
     <Container>
       <Header style={{'--depth': depth} as React.CSSProperties}>
         <Icon>
-          <Folder />
+          <Lucide.Folder />
         </Icon>
         <Name>{name}</Name>
       </Header>

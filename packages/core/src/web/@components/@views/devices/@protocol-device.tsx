@@ -1,5 +1,5 @@
 import classNames from 'classnames';
-import {Link2Off} from 'lucide-react';
+import * as Lucide from 'lucide-react';
 import type {ReactElement, ReactNode} from 'react';
 import React, {useContext} from 'react';
 import styled from 'styled-components';
@@ -68,12 +68,12 @@ const Name = styled.div`
 export function ProtocolDevice({
   icon,
   children,
-  bind,
+  linked,
   highlight,
 }: {
   icon: ReactNode;
   children: ReactNode;
-  bind: boolean;
+  linked: boolean;
   highlight: boolean;
 }): ReactElement {
   const depth = useContext(ProtocolScopeDepthContext);
@@ -86,7 +86,7 @@ export function ProtocolDevice({
     >
       <Icon>{icon}</Icon>
       <Name>{children}</Name>
-      <Indicator bind={bind} />
+      <Indicator linked={linked} />
     </Container>
   );
 }
@@ -99,7 +99,7 @@ const IndicatorContainer = styled.div`
   align-items: center;
   justify-content: center;
 
-  &.bind {
+  &.linked {
     cursor: pointer;
   }
 
@@ -116,33 +116,33 @@ const DotIndicator = styled.div`
 
   background: var(--color-icon-decorative);
 
-  ${IndicatorContainer}.bind & {
+  ${IndicatorContainer}.linked & {
     background: var(--color-icon-highlight);
   }
 
-  ${IndicatorContainer}.bind:hover & {
+  ${IndicatorContainer}.linked:hover & {
     display: none;
   }
 `;
 
-const UnbindIcon = styled(Link2Off)`
+const UnlinkIcon = styled(Lucide.Link2Off)`
   display: none;
 
-  color: var(--color-unbind);
+  color: var(--color-unlink);
 
-  ${IndicatorContainer}.bind:hover & {
+  ${IndicatorContainer}.linked:hover & {
     display: block;
   }
 `;
 
-function Indicator({bind}: {bind: boolean}): ReactElement {
+function Indicator({linked}: {linked: boolean}): ReactElement {
   return (
     <IndicatorContainer
-      className={classNames({bind})}
-      title={bind ? 'Unbind' : undefined}
+      className={classNames({linked})}
+      title={linked ? 'Unlink' : undefined}
     >
       <DotIndicator />
-      {bind && <UnbindIcon />}
+      {linked && <UnlinkIcon />}
     </IndicatorContainer>
   );
 }
