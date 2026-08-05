@@ -5,7 +5,7 @@
     "rootDir": ".",
     "outDir": "../../bld/program"
   },
-  "exclude": ["design/**"],
+  "exclude": ["design-draft/**"],
   "references": [
     {
       "path": "../../../core/src/library"

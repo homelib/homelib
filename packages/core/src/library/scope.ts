@@ -10,8 +10,8 @@ export const ScopePath = x.array(ScopeName);
 
 export type ScopePath = x.TypeOf<typeof ScopePath>;
 
-export class Scope implements NamedObject<string> {
-  declare [types]: {name: string};
+export class Scope implements NamedObject<ScopeName> {
+  declare [types]: {name: ScopeName};
 
   readonly name: ScopeName;
 
@@ -42,17 +42,27 @@ declare global {
   namespace Home {
     // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
     interface DeviceConstructors {}
+
+    // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+    interface ProviderNamespaces {}
   }
 }
 
-type ScopeWithDeviceConstructors = Scope & {
-  [TKey in keyof Home.DeviceConstructors as `$${TKey}`]: (
+type ScopeWithDeviceConstructors = Scope &
+  DeviceConstructors<Home.DeviceConstructors> & {
+    [TNamespace in keyof Home.ProviderNamespaces]: DeviceConstructors<
+      Home.ProviderNamespaces[TNamespace]
+    >;
+  };
+
+type DeviceConstructors<TDeviceConstructors> = {
+  [TKey in Extract<keyof TDeviceConstructors, string> as `$${TKey}`]: (
     name: string,
-  ) => Home.DeviceConstructors[TKey];
+  ) => TDeviceConstructors[TKey];
 } & {
-  [TKey in keyof Home.DeviceConstructors as `$$${TKey}`]: (
+  [TKey in Extract<keyof TDeviceConstructors, string> as `$$${TKey}`]: (
     name: string,
-  ) => Home.DeviceConstructors[TKey][];
+  ) => TDeviceConstructors[TKey][];
 };
 
 function createScopeWithDeviceConstructors(

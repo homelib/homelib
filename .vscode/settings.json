@@ -22,5 +22,5 @@
     "typescript",
     "typescriptreact"
   ],
-  "cSpell.words": ["homelib", "miot", "routra"]
+  "cSpell.words": ["homelib", "miot", "piid", "routra", "siid"]
 }
