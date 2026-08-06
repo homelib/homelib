@@ -1,6 +1,6 @@
 import type {Command} from '../command.js';
 import {Device} from '../device.js';
-import {Endpoint} from '../endpoint.js';
+import {Endpoint, type EndpointConnection} from '../endpoint.js';
 
 export class Light<
   TEndpoint extends LightEndpoint = LightEndpoint,
@@ -21,7 +21,9 @@ export class Light<
 
 export abstract class LightEndpoint<
   TCommand extends Command = Command,
-> extends Endpoint<TCommand> {
+  TConnection extends EndpointConnection<TCommand> =
+    EndpointConnection<TCommand>,
+> extends Endpoint<TCommand, TConnection> {
   abstract turnOn(): void;
   abstract turnOff(): void;
 }

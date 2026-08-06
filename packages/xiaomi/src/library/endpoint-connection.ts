@@ -1,8 +1,16 @@
-import {EndpointConnection} from '@homelib/core';
+import {
+  EndpointConnection,
+  type EndpointConnectionMetadata,
+} from '@homelib/core';
 
 import type {MiotCommand} from './command.js';
+import type {MiotProvider} from './provider.js';
 
-export class MiotEndpointConnection extends EndpointConnection<MiotCommand> {
+export class MiotEndpointConnection extends EndpointConnection<
+  MiotCommand,
+  MiotProvider,
+  MiotEndpointConnectionMetadata
+> {
   override get id(): string {
     throw new Error('Method not implemented.');
   }
@@ -17,3 +25,15 @@ export class MiotEndpointConnection extends EndpointConnection<MiotCommand> {
 }
 
 export abstract class MiotEndpointConnectionTransport {}
+
+export type MiotEndpointConnectionMetadata = EndpointConnectionMetadata & {
+  readonly device: {
+    readonly did: string;
+    readonly model: string;
+    readonly urn: string;
+  };
+  readonly service: {
+    readonly siid: number;
+    readonly urn: string;
+  };
+};

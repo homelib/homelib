@@ -1,10 +1,14 @@
-import {Light, LightEndpoint} from '@homelib/core';
+import {type Command, Light, LightEndpoint} from '@homelib/core';
 
-import {type MiotCommand, MiotSetPropertyCommand} from '../command.js';
+import {MiotCommand} from '../command.js';
+import type {MiotEndpointConnection} from '../endpoint-connection.js';
 
 export class MiotLight extends Light<MiotLightEndpoint> {}
 
-export class MiotLightEndpoint extends LightEndpoint<MiotCommand> {
+export class MiotLightEndpoint extends LightEndpoint<
+  MiotCommand,
+  MiotEndpointConnection
+> {
   override turnOn(): void {
     this.enqueueCommand(new MiotSetLightOnCommand(true));
   }
@@ -14,9 +18,13 @@ export class MiotLightEndpoint extends LightEndpoint<MiotCommand> {
   }
 }
 
-export class MiotSetLightOnCommand extends MiotSetPropertyCommand {
-  constructor(value: boolean) {
-    super({siid: 2, piid: 1}, value);
+export class MiotSetLightOnCommand extends MiotCommand {
+  constructor(readonly value: boolean) {
+    super();
+  }
+
+  override supersedes(command: Command): boolean {
+    return command instanceof MiotSetLightOnCommand;
   }
 }
 
