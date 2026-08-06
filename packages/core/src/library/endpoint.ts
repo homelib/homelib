@@ -80,7 +80,7 @@ export abstract class Endpoint<
         console.error(error);
 
         if (error instanceof EndpointConnectionError) {
-          await this.connectionErrorBackoff.wait();
+          await this.connectionErrorBackoff;
           continue;
         }
       }

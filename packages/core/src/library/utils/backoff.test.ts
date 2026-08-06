@@ -14,14 +14,15 @@ test('waits with exponentially increasing delays up to the maximum', async () =>
   expect(elapsedTimes[2] - elapsedTimes[1]).toBeGreaterThanOrEqual(10);
 
   async function schedule(): Promise<void> {
-    await backoff.wait();
+    await backoff;
     elapsedTimes.push(Date.now() - startedAt);
   }
 });
 
 test('reset interrupts the current wait', async () => {
   const backoff = new ExponentialBackoff(1_000, 2_000);
-  const waiting = backoff.wait();
+  const waiting = Promise.resolve(backoff);
+  await Promise.resolve();
   backoff.reset();
   await waiting;
 });
