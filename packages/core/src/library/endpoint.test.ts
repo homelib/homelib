@@ -14,7 +14,7 @@ test('consumes pending commands after binding becomes online', async () => {
 
   endpoint.send(1);
   endpoint.send(2);
-  endpoint._bindConnection(connection);
+  endpoint.bindConnection(connection);
 
   expect(connection.processedValues).toEqual([]);
 
@@ -28,7 +28,7 @@ test('keeps a command pending when the connection becomes unavailable', async ()
   const endpoint = new TestEndpoint();
   const connection = new TestEndpointConnection(new TestProvider('test'), {});
 
-  endpoint._bindConnection(connection);
+  endpoint.bindConnection(connection);
   endpoint.send(1);
   connection.deferNextCommand = true;
   connection.setOnline(true);
@@ -59,12 +59,12 @@ test('continues pending commands after rebinding during consumption', async () =
     await firstCommand.promise;
   };
   firstConnection.setOnline(true);
-  endpoint._bindConnection(firstConnection);
+  endpoint.bindConnection(firstConnection);
   endpoint.send(1);
   await flushMicrotasks();
 
   firstConnection.setOnline(false);
-  endpoint._bindConnection(secondConnection);
+  endpoint.bindConnection(secondConnection);
   secondConnection.setOnline(true);
   endpoint.send(2);
   firstCommand.resolve();
@@ -87,7 +87,7 @@ test('does not repeat an in-flight command when the queue changes', async () => 
     }
   };
   connection.setOnline(true);
-  endpoint._bindConnection(connection);
+  endpoint.bindConnection(connection);
   endpoint.send(1, 'first');
   await flushMicrotasks();
 
@@ -108,14 +108,14 @@ test('does not immediately retry a connection error', async () => {
     throw new EndpointConnectionError('Connection unavailable.');
   };
   connection.setOnline(true);
-  endpoint._bindConnection(connection);
+  endpoint.bindConnection(connection);
   endpoint.send(1);
   await flushMicrotasks();
 
   expect(attempts).toBe(1);
 
   connection.setOnline(false);
-  endpoint._bindConnection(undefined);
+  endpoint.bindConnection(undefined);
 });
 
 test('replaces a connection without exposing an unbound state', () => {
@@ -134,8 +134,8 @@ test('replaces a connection without exposing an unbound state', () => {
     connection => observedConnections.push(connection),
   );
 
-  endpoint._bindConnection(firstConnection);
-  endpoint._bindConnection(secondConnection);
+  endpoint.bindConnection(firstConnection);
+  endpoint.bindConnection(secondConnection);
 
   expect(observedConnections).toEqual([firstConnection, secondConnection]);
 

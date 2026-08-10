@@ -1,13 +1,13 @@
-import type {Command} from '../command.js';
-import {Device} from '../device.js';
+import {Command} from '../command.js';
+import {Device, type DeviceEntry} from '../device.js';
 import {Endpoint, type EndpointConnection} from '../endpoint.js';
 
-export class Light<
-  TEndpoint extends LightEndpoint = LightEndpoint,
-> extends Device {
-  constructor(protected readonly endpoint: TEndpoint) {
-    super();
-    this.registerEndpoint(endpoint);
+export class Light extends Device {
+  protected readonly endpoint: LightEndpoint;
+
+  constructor(entry: DeviceEntry) {
+    super(entry);
+    this.endpoint = this.getOrCreateEndpoint(LightEndpoint);
   }
 
   turnOn(): void {
@@ -19,20 +19,29 @@ export class Light<
   }
 }
 
-export abstract class LightEndpoint<
-  TCommand extends Command = Command,
-  TConnection extends EndpointConnection<TCommand> =
-    EndpointConnection<TCommand>,
-> extends Endpoint<TCommand, TConnection> {
-  abstract turnOn(): void;
-  abstract turnOff(): void;
-}
+export class LightEndpoint<
+  TConnection extends EndpointConnection<LightEndpointCommand> =
+    EndpointConnection<LightEndpointCommand>,
+> extends Endpoint<LightEndpointCommand, TConnection> {
+  turnOn(): void {
+    this.enqueueCommand(new SetLightOnCommand(true));
+  }
 
-declare global {
-  namespace Home {
-    // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
-    interface DeviceConstructors {
-      light: Light;
-    }
+  turnOff(): void {
+    this.enqueueCommand(new SetLightOnCommand(false));
   }
 }
+
+export abstract class LightCommand extends Command {}
+
+export class SetLightOnCommand extends LightCommand {
+  constructor(readonly value: boolean) {
+    super();
+  }
+
+  override supersedes(command: Command): boolean {
+    return command instanceof SetLightOnCommand;
+  }
+}
+
+export type LightEndpointCommand = SetLightOnCommand;

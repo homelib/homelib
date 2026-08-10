@@ -3,11 +3,11 @@ import {
   type EndpointConnectionMetadata,
 } from '@homelib/core';
 
-import type {MiotCommand} from './command.js';
+import type {MiotEndpointCommand} from './command.js';
 import type {MiotProvider} from './provider.js';
 
 export class MiotEndpointConnection extends EndpointConnection<
-  MiotCommand,
+  MiotEndpointCommand,
   MiotProvider,
   MiotEndpointConnectionMetadata
 > {
@@ -19,7 +19,7 @@ export class MiotEndpointConnection extends EndpointConnection<
     throw new Error('Method not implemented.');
   }
 
-  override processCommand(_command: MiotCommand): Promise<void> {
+  override processCommand(_command: MiotEndpointCommand): Promise<void> {
     throw new Error('Method not implemented.');
   }
 }

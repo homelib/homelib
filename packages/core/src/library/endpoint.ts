@@ -10,7 +10,7 @@ export abstract class Endpoint<
   TConnection extends EndpointConnection<TCommand> =
     EndpointConnection<TCommand>,
 > {
-  @observable.ref private accessor _connection: TConnection | undefined;
+  @observable.ref private accessor connection_: TConnection | undefined;
 
   private pendingCommands: TCommand[] = [];
 
@@ -20,18 +20,19 @@ export abstract class Endpoint<
 
   private connectionReactionDisposer: (() => void) | undefined;
 
+  constructor(readonly name = '') {}
+
   protected get connection(): TConnection | undefined {
-    return this._connection;
+    return this.connection_;
   }
 
-  /** @internal */
   @action
-  _bindConnection(connection: TConnection | undefined): void {
-    if (this._connection === connection) {
+  bindConnection(connection: TConnection | undefined): void {
+    if (this.connection_ === connection) {
       return;
     }
 
-    this._connection = connection;
+    this.connection_ = connection;
 
     this.connectionErrorBackoff.reset();
 

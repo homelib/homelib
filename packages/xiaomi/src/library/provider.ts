@@ -1,10 +1,10 @@
 import type {EndpointConnection} from '@homelib/core';
 import {$constructor, Provider, register} from '@homelib/core';
 
-import type {MiotCommand} from './command.js';
+import type {MiotEndpointCommand} from './command.js';
 
-export class MiotProvider extends Provider<MiotCommand> {
-  override get endpointConnections(): EndpointConnection<MiotCommand>[] {
+export class MiotProvider extends Provider<MiotEndpointCommand> {
+  override get endpointConnections(): EndpointConnection<MiotEndpointCommand>[] {
     throw new Error('Method not implemented.');
   }
 }
