@@ -26,8 +26,8 @@ import {
   type AuthInfo,
   type CloudServer,
   type DeviceInfo,OAUTH2_CLIENT_ID, XiaomiHttpClient,XiaomiOAuthClient, generateUuid
-} from '../library/index.js';
-import {XiaomiMqttCloudClient} from '../library/index.js';
+} from '../library/miot-exp/index.js';
+import {XiaomiMqttCloudClient} from '../library/miot-exp/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = join(__dirname, '.cache');

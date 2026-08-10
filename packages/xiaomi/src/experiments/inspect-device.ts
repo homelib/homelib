@@ -6,8 +6,8 @@ import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-import {type AuthInfo, type CloudServer,OAUTH2_CLIENT_ID, XiaomiOAuthClient} from '../library/index.js';
-import {XiaomiHttpClient} from '../library/index.js';
+import {type AuthInfo, type CloudServer,OAUTH2_CLIENT_ID, XiaomiOAuthClient} from '../library/miot-exp/index.js';
+import {XiaomiHttpClient} from '../library/miot-exp/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = join(__dirname, '.cache');

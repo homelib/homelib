@@ -7,7 +7,7 @@
  * Flow: OAuth token → HTTP API → get/set device properties
  */
 
-import {OAUTH2_CLIENT_ID,XiaomiHttpClient} from '../library/index.js';
+import {OAUTH2_CLIENT_ID,XiaomiHttpClient} from '../library/miot-exp/index.js';
 
 import {
   TARGET_DID,

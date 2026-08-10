@@ -4,7 +4,12 @@ import {
 } from '@homelib/core';
 
 import type {MiotEndpointCommand} from './command.js';
-import type {MiotSpecService} from './miot/index.js';
+import type {
+  MiotExecutionRequest,
+  MiotExecutionResult,
+  MiotSpecProperty,
+  MiotSpecService,
+} from './miot/index.js';
 import type {MiotProvider} from './provider.js';
 
 export class MiotEndpointConnection extends EndpointConnection<
@@ -12,6 +17,17 @@ export class MiotEndpointConnection extends EndpointConnection<
   MiotProvider,
   MiotEndpointConnectionMetadata
 > {
+  protected readonly transports: MiotEndpointConnectionTransports;
+
+  constructor(
+    provider: MiotProvider,
+    metadata: MiotEndpointConnectionMetadata,
+    transports: MiotEndpointConnectionTransports,
+  ) {
+    super(provider, metadata);
+    this.transports = transports;
+  }
+
   override get id(): string {
     throw new Error('Method not implemented.');
   }
@@ -25,7 +41,16 @@ export class MiotEndpointConnection extends EndpointConnection<
   }
 }
 
-export abstract class MiotEndpointConnectionTransport {}
+export abstract class MiotEndpointConnectionTransport {
+  abstract executeRequest(
+    request: MiotExecutionRequest,
+  ): Promise<MiotExecutionResult>;
+}
+
+export type MiotEndpointConnectionTransports = readonly [
+  MiotEndpointConnectionTransport,
+  ...MiotEndpointConnectionTransport[],
+];
 
 export type MiotEndpointConnectionMetadata = EndpointConnectionMetadata & {
   readonly device: {
@@ -34,4 +59,5 @@ export type MiotEndpointConnectionMetadata = EndpointConnectionMetadata & {
     readonly urn: string;
   };
   readonly service: MiotSpecService;
+  readonly properties: Readonly<Record<string, MiotSpecProperty>>;
 };

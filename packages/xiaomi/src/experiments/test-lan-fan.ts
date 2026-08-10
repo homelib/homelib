@@ -2,7 +2,7 @@
  * Quick test: LAN direct control of the fan (dmaker.fan.p5c).
  */
 
-import {XiaomiLanClient} from '../library/index.js';
+import {XiaomiLanClient} from '../library/miot-exp/index.js';
 
 async function main(): Promise<void> {
   const lan = new XiaomiLanClient({

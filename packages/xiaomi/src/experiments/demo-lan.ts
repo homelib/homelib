@@ -15,7 +15,7 @@
  *   - Does NOT work with BLE Mesh, ZigBee, or sub-devices of a gateway
  */
 
-import {OAUTH2_CLIENT_ID,XiaomiHttpClient,XiaomiLanClient} from '../library/index.js';
+import {OAUTH2_CLIENT_ID,XiaomiHttpClient,XiaomiLanClient} from '../library/miot-exp/index.js';
 
 import {
   TARGET_DID,

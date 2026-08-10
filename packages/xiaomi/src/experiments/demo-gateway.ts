@@ -17,11 +17,11 @@
  *   - CN cloud server (central gateway only supported in mainland China)
  */
 
-import {OAUTH2_CLIENT_ID,XiaomiCertManager,XiaomiHttpClient,XiaomiLocalMqttClient, calcGroupId} from '../library/index.js';
+import {OAUTH2_CLIENT_ID,XiaomiCertManager,XiaomiHttpClient,XiaomiLocalMqttClient, calcGroupId} from '../library/miot-exp/index.js';
 import {
   type GatewayInfo,
   discoverGatewaysWithFallback,
-} from '../library/index.js';
+} from '../library/miot-exp/index.js';
 
 import {
   CACHE_DIR,

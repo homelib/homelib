@@ -2,7 +2,7 @@
  * Quick test: LAN direct control of the 大灯 (WiFi device).
  */
 
-import {XiaomiLanClient} from '../library/index.js';
+import {XiaomiLanClient} from '../library/miot-exp/index.js';
 
 async function main(): Promise<void> {
   const lan = new XiaomiLanClient({

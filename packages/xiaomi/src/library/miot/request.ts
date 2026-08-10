@@ -11,6 +11,8 @@ export class MiotSetPropertyRequest extends MiotRequest {
   }
 }
 
+export type MiotExecutionRequest = MiotSetPropertyRequest;
+
 export type MiotProperty = {
   readonly did: string;
   readonly siid: number;

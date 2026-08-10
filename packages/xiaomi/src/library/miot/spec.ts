@@ -43,20 +43,3 @@ export const MiotSpecInstance = x.object({
 });
 
 export type MiotSpecInstance = x.TypeOf<typeof MiotSpecInstance>;
-
-export type MiotEndpointMatcher<
-  TProperties extends Record<string, MiotPropertyMatcher> = Record<
-    string,
-    MiotPropertyMatcher
-  >,
-> = {
-  readonly service: string;
-  readonly properties: TProperties;
-};
-
-export type MiotPropertyMatcher = {
-  readonly type: string;
-  readonly access: readonly MiotPropertyAccess[];
-};
-
-export type MiotPropertyAccess = 'read' | 'write' | 'notify';

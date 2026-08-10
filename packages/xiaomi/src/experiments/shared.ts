@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {type AuthInfo, type CloudServer,
   OAUTH2_CLIENT_ID,
   XiaomiOAuthClient,
-  generateUuid} from '../library/index.js';
+  generateUuid} from '../library/miot-exp/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const CACHE_DIR = join(__dirname, '.cache');

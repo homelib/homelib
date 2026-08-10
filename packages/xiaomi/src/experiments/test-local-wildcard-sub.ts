@@ -27,7 +27,7 @@ import {
   XiaomiHttpClient,
   calcGroupId,
   discoverGatewaysWithFallback,
-} from '../library/index.js';
+} from '../library/miot-exp/index.js';
 
 import {
   CACHE_DIR,
