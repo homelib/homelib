@@ -4,6 +4,7 @@ import {
 } from '@homelib/core';
 
 import type {MiotEndpointCommand} from './command.js';
+import type {MiotSpecService} from './miot/index.js';
 import type {MiotProvider} from './provider.js';
 
 export class MiotEndpointConnection extends EndpointConnection<
@@ -32,8 +33,5 @@ export type MiotEndpointConnectionMetadata = EndpointConnectionMetadata & {
     readonly model: string;
     readonly urn: string;
   };
-  readonly service: {
-    readonly siid: number;
-    readonly urn: string;
-  };
+  readonly service: MiotSpecService;
 };

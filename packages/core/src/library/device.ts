@@ -35,6 +35,10 @@ export class DeviceEntry {
     return this.instanceMap.values();
   }
 
+  getEndpoint(name = ''): Endpoint<Command> | undefined {
+    return this.endpointMap.get(name);
+  }
+
   getOrCreateEndpoint<TEndpoint extends Endpoint<Command>>(
     Constructor: EndpointConstructor<TEndpoint>,
     name = '',
