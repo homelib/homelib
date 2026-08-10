@@ -1,11 +1,12 @@
 import * as x from 'x-value';
 
+import {assertDeclaring} from './@lifecycle.js';
 import {DeviceEntry} from './device.js';
 import {
   getDeviceConstructor,
   getProviderNamespaceDeviceConstructor,
   hasProviderNamespace,
-} from './runtime/index.js';
+} from './registry.js';
 import type {NamedObject, types} from './types.js';
 
 export const ScopeName = x.string.nominal<'scope name'>();
@@ -52,13 +53,17 @@ export class Scope implements NamedObject<ScopeName> {
     return this.deviceMap.values();
   }
 
-  getOrCreateDeviceEntry(name: string): DeviceEntry {
-    let deviceEntry = this.deviceMap.get(name);
+  createDeviceEntry(name: string): DeviceEntry {
+    assertDeclaring();
 
-    if (deviceEntry === undefined) {
-      deviceEntry = new DeviceEntry(name);
-      this.deviceMap.set(name, deviceEntry);
+    const existingDeviceEntry = this.deviceMap.get(name);
+
+    if (existingDeviceEntry !== undefined) {
+      throw new TypeError(`Duplicate device: ${name}.`);
     }
+
+    const deviceEntry = new DeviceEntry(name);
+    this.deviceMap.set(name, deviceEntry);
 
     return deviceEntry;
   }
@@ -75,12 +80,16 @@ export class Scope implements NamedObject<ScopeName> {
   }
 
   $scope(name: string): ScopeWithDeviceConstructors {
-    let scope = this.scopeMap.get(name);
+    assertDeclaring();
 
-    if (scope === undefined) {
-      scope = createScopeWithDeviceConstructors(new Scope(name, this));
-      this.scopeMap.set(name, scope);
+    const existingScope = this.scopeMap.get(name);
+
+    if (existingScope !== undefined) {
+      throw new TypeError(`Duplicate scope: ${name}.`);
     }
+
+    const scope = createScopeWithDeviceConstructors(new Scope(name, this));
+    this.scopeMap.set(name, scope);
 
     return scope;
   }
@@ -132,9 +141,7 @@ function createScopeWithDeviceConstructors(scope: Scope): Scope {
               throw new TypeError(`Unknown device constructor: ${deviceType}.`);
             }
 
-            return scope
-              .getOrCreateDeviceEntry(name)
-              .getOrCreateInstance(Constructor);
+            return scope.createDeviceEntry(name).createInstance(Constructor);
           };
         } else if (hasProviderNamespace(property)) {
           return scope.getOrCreateNamespace(property, () =>
@@ -174,9 +181,7 @@ function createProviderNamespaceWithDeviceConstructors(
                 );
               }
 
-              return scope
-                .getOrCreateDeviceEntry(name)
-                .getOrCreateInstance(Constructor);
+              return scope.createDeviceEntry(name).createInstance(Constructor);
             };
           }
         }

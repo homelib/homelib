@@ -1,5 +1,5 @@
 import {Light} from './devices/index.js';
-import {register} from './runtime/index.js';
+import {register} from './registry.js';
 
 register({
   light: Light,

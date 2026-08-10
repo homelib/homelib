@@ -1,4 +1,16 @@
-import {$constructor} from './constructor.js';
+import {$constructor, uniqueName} from './constructor.js';
+
+test('uniqueName', () => {
+  const $named = $constructor(
+    class Named {
+      constructor(readonly name: string) {}
+    },
+  ).build(uniqueName('object'));
+
+  expect($named('one').name).toBe('one');
+  expect(() => $named('one')).toThrow('Duplicate object: one.');
+  expect($named('two').name).toBe('two');
+});
 
 test('$constructor', () => {
   const $yummy = $constructor(

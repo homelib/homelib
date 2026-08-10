@@ -1,8 +1,9 @@
 import {register} from '@homelib/core';
 
 import {MiotLight} from './devices/index.js';
+import {MIOT_NAMESPACE} from './provider.js';
 
-register('miot', {
+register(MIOT_NAMESPACE, {
   light: MiotLight,
 });
 

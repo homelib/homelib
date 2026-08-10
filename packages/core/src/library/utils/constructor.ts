@@ -1,5 +1,19 @@
 import type {NamedObject, UnknownNamedObject} from '../types.js';
 
+export function uniqueName(type: string): <T extends Named>(object: T) => void {
+  const nameSet = new Set<string>();
+
+  return object => {
+    const {name} = object;
+
+    if (nameSet.has(name)) {
+      throw new TypeError(`Duplicate ${type}: ${name}.`);
+    }
+
+    nameSet.add(name);
+  };
+}
+
 export function $constructor<
   TConstructor extends abstract new (...args: never[]) => UnknownNamedObject,
 >(
@@ -68,4 +82,8 @@ export type ExtendedConstructor<TArgs extends unknown[], T extends object> = {
     builder: (instance: T) => TRefined,
   ): ExtendedConstructor<TArgs, TRefined>;
   build(builder: (instance: T) => void): ExtendedConstructor<TArgs, T>;
+};
+
+type Named = {
+  readonly name: string;
 };

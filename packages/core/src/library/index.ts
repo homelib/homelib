@@ -5,6 +5,7 @@ export * from './devices/index.js';
 export * from './endpoint.js';
 export * from './home.js';
 export * from './provider.js';
+export * from './registry.js';
 export * from './runtime/index.js';
 export * from './scope.js';
 export * from './types.js';

@@ -1,3 +1,4 @@
+import {assertDeclaring} from './@lifecycle.js';
 import type {Command} from './command.js';
 import type {Endpoint} from './endpoint.js';
 
@@ -46,6 +47,7 @@ export class DeviceEntry {
     let endpoint = this.endpointMap.get(name);
 
     if (endpoint === undefined) {
+      assertDeclaring();
       endpoint = new Constructor(name);
       this.endpointMap.set(name, endpoint);
     } else if (!(endpoint instanceof Constructor)) {
@@ -55,16 +57,20 @@ export class DeviceEntry {
     return endpoint as TEndpoint;
   }
 
-  getOrCreateInstance<TDevice extends Device>(
+  createInstance<TDevice extends Device>(
     Constructor: DeviceConstructor<TDevice>,
   ): TDevice;
-  getOrCreateInstance(Constructor: DeviceConstructor<Device>): Device {
-    let instance = this.instanceMap.get(Constructor);
+  createInstance(Constructor: DeviceConstructor<Device>): Device {
+    assertDeclaring();
 
-    if (instance === undefined) {
-      instance = new Constructor(this);
-      this.instanceMap.set(Constructor, instance);
+    const existingInstance = this.instanceMap.get(Constructor);
+
+    if (existingInstance !== undefined) {
+      throw new TypeError(`Duplicate device instance: ${this.name}.`);
     }
+
+    const instance = new Constructor(this);
+    this.instanceMap.set(Constructor, instance);
 
     return instance;
   }

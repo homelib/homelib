@@ -1,4 +1,5 @@
 import {action, observable, reaction} from 'mobx';
+import * as x from 'x-value';
 
 import {Command} from './command.js';
 import {
@@ -7,6 +8,12 @@ import {
   EndpointConnectionError,
 } from './endpoint.js';
 import {Provider} from './provider.js';
+
+const TestEndpointConnectionMetadata = x.object({});
+
+type TestEndpointConnectionMetadata = x.TypeOf<
+  typeof TestEndpointConnectionMetadata
+>;
 
 test('consumes pending commands after binding becomes online', async () => {
   const endpoint = new TestEndpoint();
@@ -202,9 +209,22 @@ class TestEndpointConnection extends EndpointConnection<
   }
 }
 
-class TestProvider extends Provider<TestCommand> {
+class TestProvider extends Provider<
+  TestCommand,
+  TestEndpointConnectionMetadata
+> {
+  override readonly EndpointConnectionMetadata =
+    TestEndpointConnectionMetadata;
+
   override get endpointConnections(): TestEndpointConnection[] {
     return [];
+  }
+
+  override createEndpointConnection(
+    _endpoint: Endpoint<TestCommand>,
+    _metadata: TestEndpointConnectionMetadata,
+  ): PromiseLike<TestEndpointConnection> {
+    throw new Error('Method not implemented.');
   }
 }
 
