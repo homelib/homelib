@@ -1,10 +1,10 @@
 import {assertDeclaring} from './@lifecycle.js';
-import type {Command} from './command.js';
 import type {Device, DeviceConstructor} from './device.js';
-import {Provider} from './provider.js';
+import type {EndpointConnectionMetadata} from './endpoint.js';
+import {Provider, type RuntimeProvider} from './provider.js';
 import type {Scope} from './scope.js';
 
-const PROVIDER_MAP = new Map<string, Map<string, Provider<Command>>>();
+const PROVIDER_MAP = new Map<string, Map<string, RuntimeProvider>>();
 const DEVICE_CONSTRUCTOR_MAP = new Map<string, DeviceConstructor<Device>>();
 const PROVIDER_NAMESPACE_DEVICE_CONSTRUCTOR_MAP = new Map<
   string,
@@ -12,9 +12,9 @@ const PROVIDER_NAMESPACE_DEVICE_CONSTRUCTOR_MAP = new Map<
 >();
 const ROOT_SCOPE_SET = new Set<Scope>();
 
-export function register<TCommand extends Command>(
+export function register<TMetadata extends EndpointConnectionMetadata>(
   providerNamespace: Extract<keyof Home.ProviderNamespaces, string>,
-  provider: Provider<TCommand>,
+  provider: Provider<TMetadata>,
 ): void;
 export function register(
   constructors: DeviceConstructors<Home.DeviceConstructors>,
@@ -32,7 +32,7 @@ export function register(
     | Record<string, DeviceConstructor<Device>>
     | Extract<keyof Home.ProviderNamespaces, string>,
   providerOrConstructors?:
-    Provider<Command> | Record<string, DeviceConstructor<Device>>,
+    RuntimeProvider | Record<string, DeviceConstructor<Device>>,
 ): void {
   assertDeclaring();
 
@@ -61,7 +61,7 @@ export function registerRootScope(scope: Scope): void {
   ROOT_SCOPE_SET.add(scope);
 }
 
-export function* getProviders(): IterableIterator<Provider<Command>> {
+export function* getProviders(): IterableIterator<RuntimeProvider> {
   for (const providerNameMap of PROVIDER_MAP.values()) {
     yield* providerNameMap.values();
   }
@@ -70,7 +70,7 @@ export function* getProviders(): IterableIterator<Provider<Command>> {
 export function getProvider(
   providerNamespace: string,
   providerName: string,
-): Provider<Command> | undefined {
+): RuntimeProvider | undefined {
   return PROVIDER_MAP.get(providerNamespace)?.get(providerName);
 }
 
@@ -108,7 +108,7 @@ type ProviderNamespaceDeviceConstructors<TDevices> =
 
 function registerProvider(
   providerNamespace: string,
-  provider: Provider<Command>,
+  provider: RuntimeProvider,
 ): void {
   let providerNameMap = PROVIDER_MAP.get(providerNamespace);
 

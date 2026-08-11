@@ -1,9 +1,16 @@
+import {computed} from 'mobx';
+
 import {Command} from '../command.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {Endpoint, type EndpointConnection} from '../endpoint.js';
 
 export class Light extends Device {
   protected readonly endpoint: LightEndpoint;
+
+  @computed
+  get on(): boolean | undefined {
+    return this.endpoint.on;
+  }
 
   constructor(entry: DeviceEntry) {
     super(entry);
@@ -20,9 +27,13 @@ export class Light extends Device {
 }
 
 export class LightEndpoint<
-  TConnection extends EndpointConnection<LightEndpointCommand> =
-    EndpointConnection<LightEndpointCommand>,
+  TConnection extends LightEndpointConnection = LightEndpointConnection,
 > extends Endpoint<LightEndpointCommand, TConnection> {
+  @computed
+  get on(): boolean | undefined {
+    return this.connection?.on;
+  }
+
   turnOn(): void {
     this.enqueueCommand(new SetLightOnCommand(true));
   }
@@ -31,6 +42,11 @@ export class LightEndpoint<
     this.enqueueCommand(new SetLightOnCommand(false));
   }
 }
+
+export type LightEndpointConnection =
+  EndpointConnection<LightEndpointCommand> & {
+    readonly on: boolean | undefined;
+  };
 
 export abstract class LightCommand extends Command {}
 

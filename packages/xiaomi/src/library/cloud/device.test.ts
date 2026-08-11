@@ -89,6 +89,56 @@ test('keeps an MQTT update that arrives during the initial snapshot', async () =
   expect(empty).toBe(true);
 });
 
+test('keeps the MQTT subscription when the initial snapshot fails', async () => {
+  let messageHandler: CloudMqttDeviceMessageHandler | undefined;
+  let unsubscribeCount = 0;
+  const snapshotError = new Error('Snapshot failed.');
+  const property = {did: 'device-1', siid: 2, piid: 1};
+  const channel = new CloudDeviceChannel(
+    property.did,
+    {
+      subscribeDevice: async (_did, handler) => {
+        messageHandler = handler;
+      },
+      unsubscribeDevice: async _did => {
+        unsubscribeCount++;
+      },
+    },
+    async () => {
+      throw snapshotError;
+    },
+    () => undefined,
+  );
+  const updates: unknown[] = [];
+  const errors: unknown[] = [];
+  const subscription = await channel.subscribe([property], {
+    onPropertyChanged: update => {
+      updates.push(update);
+    },
+    onError: error => {
+      errors.push(error);
+    },
+  });
+
+  expect(errors).toEqual([snapshotError]);
+  expect(unsubscribeCount).toBe(0);
+
+  const handler = messageHandler;
+
+  if (handler === undefined) {
+    throw new Error('Cloud MQTT handler was not registered.');
+  }
+
+  handler({...property, type: 'property', value: true});
+
+  expect(updates).toEqual([
+    {...property, value: true, revision: 1, source: 'mqtt'},
+  ]);
+
+  await subscription.dispose();
+  expect(unsubscribeCount).toBe(1);
+});
+
 test('keeps an MQTT update that arrives during a reconnect snapshot', async () => {
   let messageHandler: CloudMqttDeviceMessageHandler | undefined;
   let readCount = 0;

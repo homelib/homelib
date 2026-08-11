@@ -1,10 +1,10 @@
 import * as x from 'x-value';
 
-import type {Command} from './command.js';
 import type {
-  Endpoint,
   EndpointConnection,
+  EndpointConnectionBinding,
   EndpointConnectionMetadata,
+  EndpointReference,
 } from './endpoint.js';
 import type {NamedObject, types} from './types.js';
 
@@ -13,7 +13,6 @@ export const ProviderName = x.string.nominal<'provider name'>();
 export type ProviderName = x.TypeOf<typeof ProviderName>;
 
 export abstract class Provider<
-  TCommand extends Command,
   TMetadata extends EndpointConnectionMetadata = EndpointConnectionMetadata,
 > implements NamedObject<ProviderName> {
   declare [types]: {name: ProviderName};
@@ -26,10 +25,36 @@ export abstract class Provider<
     this.name = name as ProviderName;
   }
 
-  abstract get endpointConnections(): readonly EndpointConnection<TCommand>[];
+  abstract get endpointConnections(): readonly EndpointConnection<never>[];
 
-  abstract createEndpointConnection(
-    endpoint: Endpoint<TCommand>,
+  createEndpointConnectionBindingPlan(
+    endpoint: EndpointReference,
+    metadata: unknown,
+  ): EndpointConnectionBindingPlan {
+    const validatedMetadata =
+      this.EndpointConnectionMetadata.satisfies(metadata);
+
+    return this.createEndpointConnectionBindingPlanFromMetadata(
+      endpoint,
+      validatedMetadata,
+    );
+  }
+
+  protected abstract createEndpointConnectionBindingPlanFromMetadata(
+    endpoint: EndpointReference,
     metadata: TMetadata,
-  ): PromiseLike<EndpointConnection<TCommand>>;
+  ): EndpointConnectionBindingPlan;
 }
+
+export type EndpointConnectionBindingPlan = {
+  create(): PromiseLike<EndpointConnectionBinding>;
+};
+
+export type RuntimeProvider = {
+  readonly name: ProviderName;
+  readonly endpointConnections: readonly EndpointConnection<never>[];
+  createEndpointConnectionBindingPlan(
+    endpoint: EndpointReference,
+    metadata: unknown,
+  ): EndpointConnectionBindingPlan;
+};

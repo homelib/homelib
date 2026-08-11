@@ -1,23 +1,15 @@
 import {action, observable, reaction} from 'mobx';
-import * as x from 'x-value';
 
 import {Command} from './command.js';
 import {
   Endpoint,
-  EndpointConnection,
+  type EndpointConnection,
   EndpointConnectionError,
 } from './endpoint.js';
-import {Provider} from './provider.js';
-
-const TestEndpointConnectionMetadata = x.object({});
-
-type TestEndpointConnectionMetadata = x.TypeOf<
-  typeof TestEndpointConnectionMetadata
->;
 
 test('consumes pending commands after binding becomes online', async () => {
   const endpoint = new TestEndpoint();
-  const connection = new TestEndpointConnection(new TestProvider('test'), {});
+  const connection = new TestEndpointConnection();
 
   endpoint.send(1);
   endpoint.send(2);
@@ -33,7 +25,7 @@ test('consumes pending commands after binding becomes online', async () => {
 
 test('keeps a command pending when the connection becomes unavailable', async () => {
   const endpoint = new TestEndpoint();
-  const connection = new TestEndpointConnection(new TestProvider('test'), {});
+  const connection = new TestEndpointConnection();
 
   endpoint.bindConnection(connection);
   endpoint.send(1);
@@ -52,14 +44,8 @@ test('keeps a command pending when the connection becomes unavailable', async ()
 
 test('continues pending commands after rebinding during consumption', async () => {
   const endpoint = new TestEndpoint();
-  const firstConnection = new TestEndpointConnection(
-    new TestProvider('first'),
-    {},
-  );
-  const secondConnection = new TestEndpointConnection(
-    new TestProvider('second'),
-    {},
-  );
+  const firstConnection = new TestEndpointConnection();
+  const secondConnection = new TestEndpointConnection();
   const firstCommand = createDeferred();
 
   firstConnection.processCommandWith = async () => {
@@ -83,7 +69,7 @@ test('continues pending commands after rebinding during consumption', async () =
 
 test('does not repeat an in-flight command when the queue changes', async () => {
   const endpoint = new TestEndpoint();
-  const connection = new TestEndpointConnection(new TestProvider('test'), {});
+  const connection = new TestEndpointConnection();
   const firstCommand = createDeferred();
 
   connection.processCommandWith = async command => {
@@ -107,7 +93,7 @@ test('does not repeat an in-flight command when the queue changes', async () => 
 
 test('does not immediately retry a connection error', async () => {
   const endpoint = new TestEndpoint();
-  const connection = new TestEndpointConnection(new TestProvider('test'), {});
+  const connection = new TestEndpointConnection();
   let attempts = 0;
 
   connection.processCommandWith = async () => {
@@ -127,14 +113,8 @@ test('does not immediately retry a connection error', async () => {
 
 test('replaces a connection without exposing an unbound state', () => {
   const endpoint = new TestEndpoint();
-  const firstConnection = new TestEndpointConnection(
-    new TestProvider('first'),
-    {},
-  );
-  const secondConnection = new TestEndpointConnection(
-    new TestProvider('second'),
-    {},
-  );
+  const firstConnection = new TestEndpointConnection();
+  const secondConnection = new TestEndpointConnection();
   const observedConnections: (TestEndpointConnection | undefined)[] = [];
   const dispose = reaction(
     () => endpoint.boundConnection,
@@ -172,11 +152,8 @@ class TestEndpoint extends Endpoint<TestCommand, TestEndpointConnection> {
   }
 }
 
-class TestEndpointConnection extends EndpointConnection<
-  TestCommand,
-  TestProvider
-> {
-  @observable override accessor online = false;
+class TestEndpointConnection implements EndpointConnection<TestCommand> {
+  @observable accessor online = false;
 
   deferNextCommand = false;
 
@@ -184,11 +161,7 @@ class TestEndpointConnection extends EndpointConnection<
 
   readonly processedValues: number[] = [];
 
-  override get id(): string {
-    return 'test';
-  }
-
-  override async processCommand(command: TestCommand): Promise<void> {
+  async processCommand(command: TestCommand): Promise<void> {
     if (this.processCommandWith !== undefined) {
       await this.processCommandWith(command);
       return;
@@ -206,25 +179,6 @@ class TestEndpointConnection extends EndpointConnection<
   @action
   setOnline(online: boolean): void {
     this.online = online;
-  }
-}
-
-class TestProvider extends Provider<
-  TestCommand,
-  TestEndpointConnectionMetadata
-> {
-  override readonly EndpointConnectionMetadata =
-    TestEndpointConnectionMetadata;
-
-  override get endpointConnections(): TestEndpointConnection[] {
-    return [];
-  }
-
-  override createEndpointConnection(
-    _endpoint: Endpoint<TestCommand>,
-    _metadata: TestEndpointConnectionMetadata,
-  ): PromiseLike<TestEndpointConnection> {
-    throw new Error('Method not implemented.');
   }
 }
 

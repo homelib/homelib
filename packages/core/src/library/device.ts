@@ -1,6 +1,5 @@
 import {assertDeclaring} from './@lifecycle.js';
-import type {Command} from './command.js';
-import type {Endpoint} from './endpoint.js';
+import type {EndpointReference} from './endpoint.js';
 
 export abstract class Device {
   constructor(private readonly entry: DeviceEntry) {}
@@ -9,11 +8,11 @@ export abstract class Device {
     return this.entry.name;
   }
 
-  get endpoints(): IterableIterator<Endpoint<Command>> {
+  get endpoints(): IterableIterator<EndpointReference> {
     return this.entry.endpoints;
   }
 
-  protected getOrCreateEndpoint<TEndpoint extends Endpoint<Command>>(
+  protected getOrCreateEndpoint<TEndpoint extends EndpointReference>(
     Constructor: EndpointConstructor<TEndpoint>,
     name = '',
   ): TEndpoint {
@@ -22,13 +21,13 @@ export abstract class Device {
 }
 
 export class DeviceEntry {
-  private readonly endpointMap = new Map<string, Endpoint<Command>>();
+  private readonly endpointMap = new Map<string, EndpointReference>();
 
   private readonly instanceMap = new Map<DeviceConstructor<Device>, Device>();
 
   constructor(readonly name: string) {}
 
-  get endpoints(): IterableIterator<Endpoint<Command>> {
+  get endpoints(): IterableIterator<EndpointReference> {
     return this.endpointMap.values();
   }
 
@@ -36,11 +35,11 @@ export class DeviceEntry {
     return this.instanceMap.values();
   }
 
-  getEndpoint(name = ''): Endpoint<Command> | undefined {
+  getEndpoint(name = ''): EndpointReference | undefined {
     return this.endpointMap.get(name);
   }
 
-  getOrCreateEndpoint<TEndpoint extends Endpoint<Command>>(
+  getOrCreateEndpoint<TEndpoint extends EndpointReference>(
     Constructor: EndpointConstructor<TEndpoint>,
     name = '',
   ): TEndpoint {
@@ -80,6 +79,6 @@ export type DeviceConstructor<TDevice extends Device> = new (
   entry: DeviceEntry,
 ) => TDevice;
 
-type EndpointConstructor<TEndpoint extends Endpoint<Command>> = new (
+type EndpointConstructor<TEndpoint extends EndpointReference> = new (
   name?: string,
 ) => TEndpoint;

@@ -6,8 +6,13 @@ import * as x from 'x-value';
 
 import {Command} from '../command.js';
 import {Device, type DeviceEntry} from '../device.js';
-import {Endpoint, EndpointConnection} from '../endpoint.js';
-import {Provider} from '../provider.js';
+import {
+  Endpoint,
+  type EndpointConnection,
+  type EndpointReference,
+  createEndpointConnectionBinding,
+} from '../endpoint.js';
+import {type EndpointConnectionBindingPlan, Provider} from '../provider.js';
 import {register, registerRootScope} from '../registry.js';
 import {Scope} from '../scope.js';
 
@@ -20,6 +25,26 @@ const TestEndpointConnectionMetadata = x.object({
 type TestEndpointConnectionMetadata = x.TypeOf<
   typeof TestEndpointConnectionMetadata
 >;
+
+test('validates metadata before creating an endpoint connection', async () => {
+  const provider = new TestProvider('provider');
+  const endpoint = new TestEndpoint();
+
+  expect(() =>
+    provider.createEndpointConnectionBindingPlan(endpoint, {value: 1}),
+  ).toThrow('Value does not satisfy the type');
+  expect(provider.endpointConnections).toHaveLength(0);
+
+  const plan = provider.createEndpointConnectionBindingPlan(endpoint, {
+    value: 'metadata',
+  });
+
+  expect(provider.endpointConnections).toHaveLength(0);
+
+  await plan.create();
+
+  expect(provider.endpointConnections).toHaveLength(1);
+});
 
 test('binds every declared endpoint before resolving', async () => {
   const environmentDirectory = await mkdtemp(
@@ -104,12 +129,8 @@ class TestCommand extends Command {
   }
 }
 
-class TestProvider extends Provider<
-  TestCommand,
-  TestEndpointConnectionMetadata
-> {
-  override readonly EndpointConnectionMetadata =
-    TestEndpointConnectionMetadata;
+class TestProvider extends Provider<TestEndpointConnectionMetadata> {
+  override readonly EndpointConnectionMetadata = TestEndpointConnectionMetadata;
 
   readonly processedValues: number[] = [];
 
@@ -121,36 +142,37 @@ class TestProvider extends Provider<
     return this.connectionValues;
   }
 
-  override createEndpointConnection(
-    endpoint: Endpoint<TestCommand>,
+  protected override createEndpointConnectionBindingPlanFromMetadata(
+    endpoint: EndpointReference,
     metadata: TestEndpointConnectionMetadata,
-  ): PromiseLike<TestEndpointConnection> {
+  ): EndpointConnectionBindingPlan {
     if (!(endpoint instanceof TestEndpoint)) {
       throw new TypeError('Unexpected test endpoint.');
     }
 
     this.receivedMetadata = metadata;
 
-    const connection = new TestEndpointConnection(this, {});
-    this.connectionValues.push(connection);
+    return {
+      create: () => {
+        const connection = new TestEndpointConnection(this);
+        this.connectionValues.push(connection);
 
-    return Promise.resolve(connection);
+        return Promise.resolve(
+          createEndpointConnectionBinding(endpoint, connection),
+        );
+      },
+    };
   }
 }
 
-class TestEndpointConnection extends EndpointConnection<
-  TestCommand,
-  TestProvider
-> {
-  override get id(): string {
-    return 'test';
-  }
-
-  override get online(): boolean {
+class TestEndpointConnection implements EndpointConnection<TestCommand> {
+  get online(): boolean {
     return true;
   }
 
-  override async processCommand(command: TestCommand): Promise<void> {
+  constructor(readonly provider: TestProvider) {}
+
+  async processCommand(command: TestCommand): Promise<void> {
     this.provider.processedValues.push(command.value);
   }
 }

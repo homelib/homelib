@@ -1,8 +1,7 @@
 import * as x from 'x-value';
 
-import type {Command} from '../command.js';
 import type {DeviceEntry} from '../device.js';
-import type {Endpoint} from '../endpoint.js';
+import type {EndpointReference} from '../endpoint.js';
 import {ProviderName} from '../provider.js';
 import {type Scope, ScopePath} from '../scope.js';
 
@@ -39,7 +38,7 @@ export type BindingFile = Readonly<x.TypeOf<typeof BindingFile>>;
 export function getEndpointPath(
   scope: Scope,
   deviceEntry: DeviceEntry,
-  endpoint: Endpoint<Command>,
+  endpoint: EndpointReference,
 ): EndpointPath {
   return {
     scopePath: scope.path,

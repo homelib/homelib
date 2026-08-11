@@ -1,8 +1,6 @@
 import {action, observable, reaction} from 'mobx';
-import * as x from 'x-value';
 
 import {type Command} from './command.js';
-import type {Provider} from './provider.js';
 import {ExponentialBackoff} from './utils/index.js';
 
 export abstract class Endpoint<
@@ -104,27 +102,33 @@ export abstract class Endpoint<
   }
 }
 
-export const EndpointId = x.string.nominal<'endpoint id'>();
-
-export type EndpointId = x.TypeOf<typeof EndpointId>;
-
 export type EndpointConnectionMetadata = {};
 
-export abstract class EndpointConnection<
+export type EndpointReference = {
+  readonly name: string;
+};
+
+export type EndpointConnection<in TCommand extends Command> = {
+  readonly online: boolean;
+  readonly processCommand: (command: TCommand) => PromiseLike<void>;
+};
+
+export type EndpointConnectionBinding = {
+  bind(): void;
+};
+
+export function createEndpointConnectionBinding<
   TCommand extends Command,
-  TProvider extends Provider<TCommand> = Provider<TCommand>,
-  TMetadata extends EndpointConnectionMetadata = EndpointConnectionMetadata,
-> {
-  constructor(
-    readonly provider: TProvider,
-    readonly metadata: TMetadata,
-  ) {}
-
-  abstract get id(): string;
-
-  abstract get online(): boolean;
-
-  abstract processCommand(command: TCommand): Promise<void>;
+  TConnection extends EndpointConnection<TCommand>,
+>(
+  endpoint: Endpoint<TCommand, TConnection>,
+  connection: TConnection,
+): EndpointConnectionBinding {
+  return {
+    bind() {
+      endpoint.bindConnection(connection);
+    },
+  };
 }
 
 export class EndpointConnectionError extends Error {

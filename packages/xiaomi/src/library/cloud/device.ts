@@ -71,10 +71,15 @@ export class CloudDeviceChannel {
 
     try {
       await this.ensureSubscribed();
-      await this.refresh(missingProperties, snapshotBaselineMap);
     } catch (error) {
       await this.removeObserver(observerEntry);
       throw error;
+    }
+
+    try {
+      await this.refresh(missingProperties, snapshotBaselineMap);
+    } catch (error) {
+      notifyObserverError(observer, error);
     }
 
     let disposed = false;

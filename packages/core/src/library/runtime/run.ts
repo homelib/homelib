@@ -2,9 +2,8 @@ import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 
 import {beginRun, completeRun, failRun} from '../@lifecycle.js';
-import type {Command} from '../command.js';
-import type {Endpoint, EndpointConnectionMetadata} from '../endpoint.js';
-import type {Provider} from '../provider.js';
+import type {EndpointReference} from '../endpoint.js';
+import type {EndpointConnectionBindingPlan} from '../provider.js';
 import {getProvider, getRootScopes} from '../registry.js';
 import type {Scope} from '../scope.js';
 
@@ -29,7 +28,7 @@ async function runInternal(): Promise<void> {
   const bindingFile = await readBindingFile();
   const endpointMap = collectEndpoints();
   const bindingPathSet = new Set<string>();
-  const bindingPlans: BindingPlan[] = [];
+  const connectionBindingPlans: EndpointConnectionBindingPlan[] = [];
 
   for (const binding of bindingFile.bindings) {
     const pathKey = getPathKey(binding.endpoint);
@@ -57,11 +56,9 @@ async function runInternal(): Promise<void> {
       );
     }
 
-    const metadata = provider.EndpointConnectionMetadata.satisfies(
-      binding.metadata,
+    connectionBindingPlans.push(
+      provider.createEndpointConnectionBindingPlan(endpoint, binding.metadata),
     );
-
-    bindingPlans.push({endpoint, provider, metadata});
   }
 
   for (const pathKey of endpointMap.keys()) {
@@ -70,31 +67,12 @@ async function runInternal(): Promise<void> {
     }
   }
 
-  const connections = await Promise.all(
-    bindingPlans.map(async ({endpoint, provider, metadata}) => {
-      const connection = await provider.createEndpointConnection(
-        endpoint,
-        metadata,
-      );
-
-      if (connection.provider !== provider) {
-        throw new Error(
-          'Provider created an endpoint connection for another provider.',
-        );
-      }
-
-      return connection;
-    }),
+  const connectionBindings = await Promise.all(
+    connectionBindingPlans.map(async plan => plan.create()),
   );
 
-  for (const [index, {endpoint}] of bindingPlans.entries()) {
-    const connection = connections[index];
-
-    if (connection === undefined) {
-      throw new Error('Created endpoint connection is missing.');
-    }
-
-    endpoint.bindConnection(connection);
+  for (const connectionBinding of connectionBindings) {
+    connectionBinding.bind();
   }
 }
 
@@ -105,8 +83,8 @@ async function readBindingFile(): Promise<BindingFile> {
   return BindingFile.satisfies(JSON.parse(source));
 }
 
-function collectEndpoints(): Map<string, Endpoint<Command>> {
-  const endpointMap = new Map<string, Endpoint<Command>>();
+function collectEndpoints(): Map<string, EndpointReference> {
+  const endpointMap = new Map<string, EndpointReference>();
 
   for (const rootScope of getRootScopes()) {
     collectScopeEndpoints(rootScope, endpointMap);
@@ -117,7 +95,7 @@ function collectEndpoints(): Map<string, Endpoint<Command>> {
 
 function collectScopeEndpoints(
   scope: Scope,
-  endpointMap: Map<string, Endpoint<Command>>,
+  endpointMap: Map<string, EndpointReference>,
 ): void {
   for (const deviceEntry of scope.devices) {
     for (const endpoint of deviceEntry.endpoints) {
@@ -140,9 +118,3 @@ function collectScopeEndpoints(
 function getPathKey(path: EndpointPath): string {
   return JSON.stringify([path.scopePath, path.deviceName, path.endpointName]);
 }
-
-type BindingPlan = {
-  readonly endpoint: Endpoint<Command>;
-  readonly provider: Provider<Command>;
-  readonly metadata: EndpointConnectionMetadata;
-};

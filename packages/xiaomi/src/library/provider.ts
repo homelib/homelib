@@ -2,10 +2,13 @@ import {join} from 'node:path';
 
 import {
   $constructor,
-  type Endpoint,
-  type EndpointConnection,
+  type EndpointConnectionBinding,
+  type EndpointConnectionBindingPlan,
+  type EndpointReference,
+  ExponentialBackoff,
   LightEndpoint,
   Provider,
+  createEndpointConnectionBinding,
   getEnvironmentDirectory,
   register,
   uniqueName,
@@ -13,63 +16,85 @@ import {
 import {action, observable} from 'mobx';
 
 import {BackendClient} from './backend/index.js';
+import {CloudClient} from './cloud/client.js';
+import type {CloudDeviceSubscription} from './cloud/device.js';
 import {MiotEndpointConnectionCloudTransport} from './cloud/transport.js';
-import type {MiotEndpointCommand} from './command.js';
+import {MiotLightEndpointConnection} from './devices/index.js';
 import {
-  MiotEndpointConnection,
+  type MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
+import type {MiotProperty} from './miot/index.js';
 import {loadValidOAuthSession} from './session.js';
 
 export const MIOT_NAMESPACE = 'miot';
 
-export class MiotProvider extends Provider<
-  MiotEndpointCommand,
-  MiotEndpointConnectionMetadata
-> {
-  override readonly EndpointConnectionMetadata =
-    MiotEndpointConnectionMetadata;
+export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
+  override readonly EndpointConnectionMetadata = MiotEndpointConnectionMetadata;
 
   @observable.shallow
-  private accessor endpointConnectionValues: MiotEndpointConnection[] = [];
+  private accessor endpointConnectionValues: MiotEndpointConnection<never>[] =
+    [];
 
-  private cloudTransportPromise:
-    Promise<MiotEndpointConnectionCloudTransport> | undefined;
+  private readonly endpointConnectionSubscriptionMap = new Map<
+    MiotEndpointConnection<never>,
+    CloudDeviceSubscription
+  >();
 
-  override get endpointConnections(): readonly EndpointConnection<MiotEndpointCommand>[] {
+  private cloudPromise: Promise<MiotProviderCloud> | undefined;
+
+  override get endpointConnections(): readonly MiotEndpointConnection<never>[] {
     return this.endpointConnectionValues;
   }
 
-  override async createEndpointConnection(
-    endpoint: Endpoint<MiotEndpointCommand>,
+  protected override createEndpointConnectionBindingPlanFromMetadata(
+    endpoint: EndpointReference,
     metadata: MiotEndpointConnectionMetadata,
-  ): Promise<MiotEndpointConnection> {
+  ): EndpointConnectionBindingPlan {
     if (!(endpoint instanceof LightEndpoint)) {
       throw new TypeError('MIoT light metadata requires a light endpoint.');
     }
 
-    const cloudTransport = await this.getCloudTransport();
-    const connection = new MiotEndpointConnection(this, metadata, [
-      cloudTransport,
+    MiotLightEndpointConnection.assertMetadata(metadata);
+
+    return {
+      create: () =>
+        this.createLightEndpointConnectionBinding(endpoint, metadata),
+    };
+  }
+
+  private async createLightEndpointConnectionBinding(
+    endpoint: LightEndpoint,
+    metadata: MiotEndpointConnectionMetadata,
+  ): Promise<EndpointConnectionBinding> {
+    const cloud = await this.getCloud();
+    const connection = new MiotLightEndpointConnection(this, metadata, [
+      cloud.transport,
     ]);
+    const stateProperties = connection.stateProperties;
 
     this.addEndpointConnection(connection);
+    void this.subscribeEndpointConnection(
+      connection,
+      stateProperties,
+      cloud.client,
+    ).catch(console.error);
 
-    return connection;
+    return createEndpointConnectionBinding(endpoint, connection);
   }
 
-  private getCloudTransport(): Promise<MiotEndpointConnectionCloudTransport> {
-    let cloudTransportPromise = this.cloudTransportPromise;
+  private getCloud(): Promise<MiotProviderCloud> {
+    let cloudPromise = this.cloudPromise;
 
-    if (cloudTransportPromise === undefined) {
-      cloudTransportPromise = this.createCloudTransport();
-      this.cloudTransportPromise = cloudTransportPromise;
+    if (cloudPromise === undefined) {
+      cloudPromise = this.createCloud();
+      this.cloudPromise = cloudPromise;
     }
 
-    return cloudTransportPromise;
+    return cloudPromise;
   }
 
-  private async createCloudTransport(): Promise<MiotEndpointConnectionCloudTransport> {
+  private async createCloud(): Promise<MiotProviderCloud> {
     const session = await loadValidOAuthSession(this.getSessionPath());
     const backendClient = new BackendClient({
       uuid: session.uuid,
@@ -77,7 +102,39 @@ export class MiotProvider extends Provider<
       cloudServer: session.cloudServer,
     });
 
-    return new MiotEndpointConnectionCloudTransport(backendClient);
+    return {
+      client: new CloudClient(backendClient),
+      transport: new MiotEndpointConnectionCloudTransport(backendClient),
+    };
+  }
+
+  private async subscribeEndpointConnection(
+    connection: MiotEndpointConnection<never>,
+    properties: readonly MiotProperty[],
+    cloudClient: CloudClient,
+  ): Promise<void> {
+    const backoff = new ExponentialBackoff(1_000, 60_000);
+
+    while (true) {
+      try {
+        const subscription = await cloudClient.subscribeDevice(
+          connection.metadata.device.did,
+          properties,
+          {
+            onPropertyChanged: update => {
+              connection.handlePropertyUpdate(update);
+            },
+            onError: console.error,
+          },
+        );
+
+        this.endpointConnectionSubscriptionMap.set(connection, subscription);
+        return;
+      } catch (error) {
+        console.error(error);
+        await backoff;
+      }
+    }
   }
 
   private getSessionPath(): string {
@@ -102,7 +159,9 @@ export class MiotProvider extends Provider<
   }
 
   @action
-  private addEndpointConnection(connection: MiotEndpointConnection): void {
+  private addEndpointConnection(
+    connection: MiotEndpointConnection<never>,
+  ): void {
     this.endpointConnectionValues.push(connection);
   }
 }
@@ -112,3 +171,8 @@ export const $xiaomi = $constructor(MiotProvider)
   .build(provider => {
     register(MIOT_NAMESPACE, provider);
   });
+
+type MiotProviderCloud = {
+  readonly client: CloudClient;
+  readonly transport: MiotEndpointConnectionCloudTransport;
+};

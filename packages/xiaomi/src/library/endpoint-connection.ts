@@ -1,17 +1,17 @@
 import {
+  type Command,
   CommandError,
-  EndpointConnection,
+  type EndpointConnection,
   EndpointConnectionError,
   type EndpointConnectionMetadata,
-  SetLightOnCommand,
 } from '@homelib/core';
+import {action, observable} from 'mobx';
 import * as x from 'x-value';
 
-import type {MiotEndpointCommand} from './command.js';
 import {
   type MiotExecutionRequest,
   type MiotExecutionResult,
-  MiotSetPropertyRequest,
+  type MiotProperty,
   MiotSpecProperty,
   MiotSpecService,
   isSuccessfulMiotExecutionResult,
@@ -28,32 +28,75 @@ export const MiotEndpointConnectionMetadata = x.object({
   properties: x.record(x.string, MiotSpecProperty),
 });
 
-export class MiotEndpointConnection extends EndpointConnection<
-  MiotEndpointCommand,
-  MiotProvider,
-  MiotEndpointConnectionMetadata
-> {
+export abstract class MiotEndpointConnection<
+  in TCommand extends Command,
+> implements EndpointConnection<TCommand> {
+  @observable.shallow private accessor stateMap = new Map<string, unknown>();
+
   protected readonly transports: MiotEndpointConnectionTransports;
 
-  constructor(
-    provider: MiotProvider,
-    metadata: MiotEndpointConnectionMetadata,
-    transports: MiotEndpointConnectionTransports,
-  ) {
-    super(provider, metadata);
-    this.transports = transports;
-  }
-
-  override get id(): string {
-    return `${this.metadata.device.did}/${this.metadata.service.iid}`;
-  }
-
-  override get online(): boolean {
+  get online(): boolean {
     return true;
   }
 
-  override async processCommand(command: MiotEndpointCommand): Promise<void> {
-    const request = createMiotRequest(command, this.metadata);
+  get stateProperties(): readonly MiotProperty[] {
+    const {metadata} = this;
+    return Object.values(metadata.properties).map(property => {
+      return {
+        did: metadata.device.did,
+        siid: metadata.service.iid,
+        piid: property.iid,
+      };
+    });
+  }
+
+  constructor(
+    readonly provider: MiotProvider,
+    readonly metadata: MiotEndpointConnectionMetadata,
+    transports: MiotEndpointConnectionTransports,
+  ) {
+    this.transports = transports;
+  }
+
+  @action
+  handlePropertyUpdate(update: MiotPropertyUpdate): void {
+    const {metadata} = this;
+
+    if (
+      update.did !== metadata.device.did ||
+      update.siid !== metadata.service.iid
+    ) {
+      throw new TypeError('Unexpected MIoT endpoint property update.');
+    }
+
+    let stateName: string | undefined;
+
+    for (const [name, property] of Object.entries(metadata.properties)) {
+      if (property.iid !== update.piid) {
+        continue;
+      }
+
+      if (stateName !== undefined) {
+        throw new TypeError('Ambiguous MIoT endpoint property update.');
+      }
+
+      stateName = name;
+    }
+
+    if (stateName === undefined) {
+      throw new TypeError('Unexpected MIoT endpoint property update.');
+    }
+
+    this.stateMap.set(stateName, update.value);
+  }
+
+  abstract processCommand(command: TCommand): Promise<void>;
+
+  protected getState(name: string): unknown {
+    return this.stateMap.get(name);
+  }
+
+  protected async executeRequest(request: MiotExecutionRequest): Promise<void> {
     const [transport] = this.transports;
     let result: MiotExecutionResult;
 
@@ -87,28 +130,6 @@ export type MiotEndpointConnectionTransports = readonly [
 export type MiotEndpointConnectionMetadata = EndpointConnectionMetadata &
   Readonly<x.TypeOf<typeof MiotEndpointConnectionMetadata>>;
 
-function createMiotRequest(
-  command: MiotEndpointCommand,
-  metadata: MiotEndpointConnectionMetadata,
-): MiotExecutionRequest {
-  if (command instanceof SetLightOnCommand) {
-    const property = metadata.properties.on;
-
-    if (property === undefined) {
-      throw new TypeError('MIoT endpoint metadata has no on property.');
-    }
-
-    return new MiotSetPropertyRequest(
-      {
-        did: metadata.device.did,
-        siid: metadata.service.iid,
-        piid: property.iid,
-      },
-      command.value,
-    );
-  }
-
-  throw new TypeError(
-    `Unsupported MIoT endpoint command: ${command.constructor.name}.`,
-  );
-}
+export type MiotPropertyUpdate = MiotProperty & {
+  readonly value: unknown;
+};
