@@ -1,5 +1,7 @@
 /* eslint-disable @mufan/scoped-modules -- Experimental and runtime-only modules are intentionally not exported. */
 
+import './tui.js';
+
 export * from './backend/index.js';
 export * from './cloud/client.js';
 export * from './cloud/transport.js';

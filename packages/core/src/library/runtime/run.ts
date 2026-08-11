@@ -1,14 +1,17 @@
-import {readFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import {basename} from 'node:path';
 
 import {beginRun, completeRun, failRun} from '../@lifecycle.js';
 import type {EndpointReference} from '../endpoint.js';
 import type {EndpointConnectionBindingPlan} from '../provider.js';
-import {getProvider, getRootScopes} from '../registry.js';
+import {getProvider, getProviderEntries, getRootScopes} from '../registry.js';
 import type {Scope} from '../scope.js';
 
-import {BindingFile, type EndpointPath, getEndpointPath} from './binding.js';
-import {getEnvironmentDirectory} from './environment.js';
+import {presentStartup} from './@tui/startup.js';
+import {
+  type EndpointPath,
+  getEndpointPath,
+  readBindingFile,
+} from './binding.js';
 
 export function run(): Promise<void> {
   beginRun();
@@ -61,11 +64,17 @@ async function runInternal(): Promise<void> {
     );
   }
 
-  for (const pathKey of endpointMap.keys()) {
-    if (!bindingPathSet.has(pathKey)) {
-      throw new Error(`Endpoint has no binding: ${pathKey}.`);
-    }
-  }
+  await presentStartup({
+    scriptName: getScriptName(),
+    providers: Array.from(getProviderEntries(), ([namespace, provider]) => ({
+      namespace,
+      provider,
+    })),
+    endpoints: {
+      boundCount: bindingPathSet.size,
+      unboundCount: endpointMap.size - bindingPathSet.size,
+    },
+  });
 
   const connectionBindings = await Promise.all(
     connectionBindingPlans.map(async plan => plan.create()),
@@ -74,13 +83,6 @@ async function runInternal(): Promise<void> {
   for (const connectionBinding of connectionBindings) {
     connectionBinding.bind();
   }
-}
-
-async function readBindingFile(): Promise<BindingFile> {
-  const path = join(getEnvironmentDirectory(), 'bindings.json');
-  const source = await readFile(path, 'utf8');
-
-  return BindingFile.satisfies(JSON.parse(source));
 }
 
 function collectEndpoints(): Map<string, EndpointReference> {
@@ -117,4 +119,14 @@ function collectScopeEndpoints(
 
 function getPathKey(path: EndpointPath): string {
   return JSON.stringify([path.scopePath, path.deviceName, path.endpointName]);
+}
+
+function getScriptName(): string {
+  const scriptPath = process.argv.at(1);
+
+  if (scriptPath === undefined) {
+    return 'automation';
+  }
+
+  return basename(scriptPath);
 }

@@ -21,7 +21,7 @@ export default defineConfig([
   {
     files: ['packages/core/src/library/**/*.{ts,tsx}'],
     plugins: {'@mufan': mufan},
-    extends: [configs.typescript],
+    extends: [configs.typescript, configs.react],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -53,7 +53,7 @@ export default defineConfig([
   {
     files: ['packages/xiaomi/src/library/**/*.{ts,tsx}'],
     plugins: {'@mufan': mufan},
-    extends: [configs.typescript],
+    extends: [configs.typescript, configs.react],
     languageOptions: {
       parserOptions: {
         projectService: true,

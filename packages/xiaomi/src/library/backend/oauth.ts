@@ -30,7 +30,7 @@ const OAuthTokenResponse = x.object({
 });
 
 export class OAuthClient {
-  /** Identifies this homelib environment to Xiaomi OAuth, not a physical device. */
+  /** Identifies this MIoT provider to Xiaomi, not a physical device. */
   private readonly deviceId: string;
 
   private readonly apiHost: string;
@@ -62,26 +62,35 @@ export class OAuthClient {
   async exchangeCode(
     code: string,
     redirectUrl = OAUTH_REDIRECT_URL,
+    signal?: AbortSignal,
   ): Promise<OAuthToken> {
-    return this.requestToken({
-      redirect_uri: redirectUrl,
-      code,
-      device_id: this.deviceId,
-    });
+    return this.requestToken(
+      {
+        redirect_uri: redirectUrl,
+        code,
+        device_id: this.deviceId,
+      },
+      signal,
+    );
   }
 
   async refreshToken(
     refreshToken: string,
     redirectUrl = OAUTH_REDIRECT_URL,
+    signal?: AbortSignal,
   ): Promise<OAuthToken> {
-    return this.requestToken({
-      redirect_uri: redirectUrl,
-      refresh_token: refreshToken,
-    });
+    return this.requestToken(
+      {
+        redirect_uri: redirectUrl,
+        refresh_token: refreshToken,
+      },
+      signal,
+    );
   }
 
   private async requestToken(
     data: Record<string, string>,
+    signal?: AbortSignal,
   ): Promise<OAuthToken> {
     const url = new URL(
       '/app/v2/ha/oauth/get_token',
@@ -91,7 +100,7 @@ export class OAuthClient {
 
     const response = await fetch(url, {
       headers: {'content-type': 'application/x-www-form-urlencoded'},
-      signal: AbortSignal.timeout(BACKEND_API_TIMEOUT),
+      signal: createRequestSignal(signal),
     });
 
     if (response.status === 401) {
@@ -144,4 +153,12 @@ export type OAuthToken = {
 
 function createTokenRequestData(data: Record<string, string>): string {
   return `{"client_id":${OAUTH2_CLIENT_ID},${JSON.stringify(data).slice(1)}`;
+}
+
+function createRequestSignal(signal: AbortSignal | undefined): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(BACKEND_API_TIMEOUT);
+
+  return signal === undefined
+    ? timeoutSignal
+    : AbortSignal.any([signal, timeoutSignal]);
 }

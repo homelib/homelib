@@ -1,9 +1,14 @@
+import {readFile} from 'node:fs/promises';
+import {join} from 'node:path';
+
 import * as x from 'x-value';
 
 import type {DeviceEntry} from '../device.js';
 import type {EndpointReference} from '../endpoint.js';
 import {ProviderName} from '../provider.js';
 import {type Scope, ScopePath} from '../scope.js';
+
+import {getEnvironmentDirectory} from './environment.js';
 
 export const EndpointPath = x.object({
   scopePath: ScopePath,
@@ -35,6 +40,23 @@ export const BindingFile = x.object({
 
 export type BindingFile = Readonly<x.TypeOf<typeof BindingFile>>;
 
+export async function readBindingFile(): Promise<BindingFile> {
+  const path = join(getEnvironmentDirectory(), 'bindings.json');
+  let source: string;
+
+  try {
+    source = await readFile(path, 'utf8');
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return {version: 0, bindings: []};
+    }
+
+    throw error;
+  }
+
+  return BindingFile.satisfies(JSON.parse(source));
+}
+
 export function getEndpointPath(
   scope: Scope,
   deviceEntry: DeviceEntry,
@@ -45,4 +67,12 @@ export function getEndpointPath(
     deviceName: deviceEntry.name,
     endpointName: endpoint.name,
   };
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return false;
+  }
+
+  return error.code === 'ENOENT';
 }

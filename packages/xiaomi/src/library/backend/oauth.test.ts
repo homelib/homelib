@@ -115,3 +115,44 @@ test('reports an OAuth error response', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('passes caller cancellation to the token request', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestSignal: AbortSignal | undefined;
+
+  globalThis.fetch = async (_input, init) =>
+    new Promise((_resolve, reject) => {
+      requestSignal = init?.signal ?? undefined;
+
+      if (requestSignal === undefined) {
+        reject(new Error('Missing request signal.'));
+      } else if (requestSignal.aborted) {
+        reject(requestSignal.reason);
+      } else {
+        requestSignal.addEventListener(
+          'abort',
+          () => {
+            reject(requestSignal?.reason);
+          },
+          {once: true},
+        );
+      }
+    });
+
+  try {
+    const controller = new AbortController();
+    const reason = new Error('OAuth cancelled.');
+    const token = new OAuthClient('test-uuid').exchangeCode(
+      'test-code',
+      OAUTH_REDIRECT_URL,
+      controller.signal,
+    );
+
+    controller.abort(reason);
+
+    await expect(token).rejects.toBe(reason);
+    expect(requestSignal?.aborted).toBe(true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

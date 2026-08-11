@@ -15,5 +15,9 @@
     "mqtt": "^5.13.0",
     "tslib": "^2.8.1",
     "x-value": "^0.2.3"
+  },
+  "peerDependencies": {
+    "ink": "^7.1.1",
+    "react": "^19.2.7"
   }
 }

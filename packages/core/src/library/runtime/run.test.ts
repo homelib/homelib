@@ -46,7 +46,7 @@ test('validates metadata before creating an endpoint connection', async () => {
   expect(provider.endpointConnections).toHaveLength(1);
 });
 
-test('binds every declared endpoint before resolving', async () => {
+test('binds configured endpoints before resolving', async () => {
   const environmentDirectory = await mkdtemp(
     join(tmpdir(), 'homelib-run-test-'),
   );
@@ -63,6 +63,7 @@ test('binds every declared endpoint before resolving', async () => {
 
     const room = home.$scope('room');
     const device = room.createDeviceEntry('device').createInstance(TestDevice);
+    room.createDeviceEntry('unbound-device').createInstance(TestDevice);
 
     device.send(1);
 

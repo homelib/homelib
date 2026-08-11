@@ -61,9 +61,13 @@ export function registerRootScope(scope: Scope): void {
   ROOT_SCOPE_SET.add(scope);
 }
 
-export function* getProviders(): IterableIterator<RuntimeProvider> {
-  for (const providerNameMap of PROVIDER_MAP.values()) {
-    yield* providerNameMap.values();
+export function* getProviderEntries(): IterableIterator<
+  readonly [namespace: string, provider: RuntimeProvider]
+> {
+  for (const [namespace, providerNameMap] of PROVIDER_MAP) {
+    for (const provider of providerNameMap.values()) {
+      yield [namespace, provider];
+    }
   }
 }
 
