@@ -1,12 +1,13 @@
 import {PassThrough} from 'node:stream';
 
-import {render} from 'ink';
+import {Text, render} from 'ink';
 import {createElement, useState} from 'react';
 
 import {EndpointPath, ProviderReference} from '../binding.js';
 
 import {
   BindingDevicePage,
+  BindingProviderPage,
   type BindingScopeItem,
   BindingsPage,
   type StaleBindingItem,
@@ -137,12 +138,13 @@ test('removes duplicate stale paths with retry and locked input', async () => {
   try {
     await terminal.flush();
     expect(terminal.frame()).toContain('2 stale bindings');
-    expect(terminal.frame()).toContain('home / missing / main');
-    expect(terminal.frame()).toContain('test / provider');
+    expect(terminal.frame()).toContain('bindings › stale');
+    expect(terminal.frame()).toContain('home › missing › main');
+    expect(terminal.frame()).toContain('test · provider');
 
     await terminal.input('\r');
     expect(terminal.frame()).toContain(
-      'remove all 2 stale bindings for home / missing / main?',
+      'remove all 2 stale bindings for home › missing › main?',
     );
 
     await terminal.input('y');
@@ -212,9 +214,10 @@ test('unbinds from the core device page without a provider renderer', async () =
 
   try {
     await terminal.flush();
+    expect(terminal.frame()).toContain('bindings › home › light');
     await terminal.input('u');
     expect(terminal.frame()).toContain('bound endpoints');
-    expect(terminal.frame()).toContain('test / provider');
+    expect(terminal.frame()).toContain('test · provider');
 
     await terminal.input('\r');
     expect(terminal.frame()).toContain('remove the binding for main?');
@@ -237,6 +240,29 @@ test('unbinds from the core device page without a provider renderer', async () =
     expect(unbindAttemptCount).toBe(2);
     expect(terminal.frame()).toContain('binding removed.');
     expect(terminal.frame()).toContain('no providers declared.');
+  } finally {
+    await terminal.close();
+  }
+});
+
+test('shows the provider as a match rather than part of the breadcrumb', async () => {
+  const terminal = renderTestTerminal(
+    createElement(BindingProviderPage, {
+      model: {
+        scriptName: 'test',
+        scopePath: ['home', 'room'],
+        deviceName: 'light',
+        provider: {namespace: 'miot', name: 'xiaomi'},
+      },
+      children: createElement(Text, undefined, 'provider content'),
+    }),
+  );
+
+  try {
+    await terminal.flush();
+    expect(terminal.frame()).toContain('bindings › home › room › light');
+    expect(terminal.frame()).toContain('match with miot · xiaomi');
+    expect(terminal.frame()).not.toContain('light › miot');
   } finally {
     await terminal.close();
   }

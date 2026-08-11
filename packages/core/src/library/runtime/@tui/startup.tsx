@@ -15,6 +15,7 @@ import {
 import {
   type ProviderBindingDevice,
   ProviderBindingOutlet,
+  type ProviderBindingRequest,
   ProviderDetailsOutlet,
 } from '../tui.js';
 
@@ -335,51 +336,16 @@ function Startup({model}: StartupProps): React.JSX.Element {
               deviceName: page.deviceName,
             });
           }}
-          onBind={async (endpointPath, metadata, options) => {
-            const endpoint = findProviderBindingEndpoint(
-              providerBindingDevice,
-              endpointPath,
-            );
-
-            if (endpoint === undefined) {
-              throw new TypeError('Unknown endpoint selected for binding.');
-            }
-
+          onBind={async requests => {
             await mutateBindingFile(currentBindingFile => {
-              const currentBinding = findEndpointBinding(
+              return applyProviderBindingRequests(
                 currentBindingFile,
-                endpoint.path,
-              );
-
-              if (
-                currentBinding !== undefined &&
-                (currentBinding.provider.namespace !==
-                  providerReference.namespace ||
-                  currentBinding.provider.name !== providerReference.name) &&
-                !options.replaceExisting
-              ) {
-                throw new TypeError(
-                  'Replacing another provider binding requires confirmation.',
-                );
-              }
-
-              const nextBindingFile = upsertEndpointBinding(
-                currentBindingFile,
-                {
-                  endpoint: endpoint.path,
-                  provider: providerReference,
-                  metadata,
-                },
-              );
-
-              assertProviderResourceBindingsUnique(
-                nextBindingFile,
+                requests,
                 providerReference,
                 page.provider.provider,
+                providerBindingDevice,
                 model.bindingScopes,
               );
-
-              return nextBindingFile;
             });
           }}
         />
@@ -637,6 +603,67 @@ function findEndpointBinding(
   return bindingFile.bindings.find(
     binding => getEndpointPathKey(binding.endpoint) === pathKey,
   );
+}
+
+export function applyProviderBindingRequests(
+  bindingFile: BindingFile,
+  requests: readonly ProviderBindingRequest[],
+  providerReference: EndpointBinding['provider'],
+  provider: RuntimeProvider,
+  device: ProviderBindingDevice,
+  scopes: readonly StartupBindingScope[],
+): BindingFile {
+  const endpointPathKeySet = new Set<string>();
+  const resolvedRequests = requests.map(request => {
+    const endpointPathKey = getEndpointPathKey(request.endpoint);
+
+    if (endpointPathKeySet.has(endpointPathKey)) {
+      throw new TypeError(
+        `Duplicate endpoint binding request: ${endpointPathKey}.`,
+      );
+    }
+
+    endpointPathKeySet.add(endpointPathKey);
+
+    const endpoint = findProviderBindingEndpoint(device, request.endpoint);
+
+    if (endpoint === undefined) {
+      throw new TypeError('Unknown endpoint selected for binding.');
+    }
+
+    return {endpoint, request};
+  });
+  let nextBindingFile = bindingFile;
+
+  for (const {endpoint, request} of resolvedRequests) {
+    const currentBinding = findEndpointBinding(nextBindingFile, endpoint.path);
+
+    if (
+      currentBinding !== undefined &&
+      (currentBinding.provider.namespace !== providerReference.namespace ||
+        currentBinding.provider.name !== providerReference.name) &&
+      !request.replaceExisting
+    ) {
+      throw new TypeError(
+        'Replacing another provider binding requires confirmation.',
+      );
+    }
+
+    nextBindingFile = upsertEndpointBinding(nextBindingFile, {
+      endpoint: endpoint.path,
+      provider: providerReference,
+      metadata: request.metadata,
+    });
+  }
+
+  assertProviderResourceBindingsUnique(
+    nextBindingFile,
+    providerReference,
+    provider,
+    scopes,
+  );
+
+  return nextBindingFile;
 }
 
 function assertProviderResourceBindingsUnique(

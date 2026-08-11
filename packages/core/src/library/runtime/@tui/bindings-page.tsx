@@ -184,7 +184,7 @@ export function StaleBindingsPage({
       : 0;
 
   return (
-    <Page scriptName={model.scriptName} title="bindings / stale">
+    <Page scriptName={model.scriptName} title="bindings › stale">
       <StaleBindingsView
         bindings={model.bindings}
         matchingBindingCount={matchingBindingCount}
@@ -246,7 +246,7 @@ function StaleBindingsView({
           {formatEndpointPath(state.binding.path)}?
         </Text>
         <Text dimColor>
-          {state.binding.provider.namespace} / {state.binding.provider.name}
+          {state.binding.provider.namespace} · {state.binding.provider.name}
         </Text>
         <Hint>enter/y confirm · esc cancel · ctrl+c exit</Hint>
       </Box>
@@ -281,7 +281,7 @@ function StaleBindingsView({
           bindings.map((binding, index) => (
             <ListItem
               key={getStaleBindingKey(binding, index)}
-              details={`${binding.provider.namespace} / ${binding.provider.name}`}
+              details={`${binding.provider.namespace} · ${binding.provider.name}`}
               label={formatEndpointPath(binding.path)}
               selected={index === cursor}
             />
@@ -346,7 +346,7 @@ export function BindingScopePage({
   return (
     <Page
       scriptName={model.scriptName}
-      title={`bindings / ${model.scope.path.join(' / ')}`}
+      title={`bindings › ${model.scope.path.join(' › ')}`}
     >
       <Box flexDirection="column" marginTop={1}>
         {hasItems ? (
@@ -569,7 +569,7 @@ function BindingDeviceView({
           {boundEndpoints.map((endpoint, index) => (
             <ListItem
               key={endpoint.name}
-              details={`${endpoint.provider.namespace} / ${endpoint.provider.name}`}
+              details={`${endpoint.provider.namespace} · ${endpoint.provider.name}`}
               label={getDisplayName(endpoint.name, '(default endpoint)')}
               selected={index === state.cursor}
             />
@@ -587,7 +587,7 @@ function BindingDeviceView({
           {getDisplayName(state.endpoint.name, '(default endpoint)')}?
         </Text>
         <Text dimColor>
-          {state.endpoint.provider.namespace} / {state.endpoint.provider.name}
+          {state.endpoint.provider.namespace} · {state.endpoint.provider.name}
         </Text>
         <Hint>enter/y confirm · esc cancel · ctrl+c exit</Hint>
       </Box>
@@ -663,12 +663,15 @@ export function BindingProviderPage({
   const deviceTitle = getDevicePageTitle(model.scopePath, model.deviceName);
 
   return (
-    <Page
-      scriptName={model.scriptName}
-      title={`${deviceTitle} / ${model.provider.namespace} / ${model.provider.name}`}
-    >
+    <Page scriptName={model.scriptName} title={deviceTitle}>
       <Box flexDirection="column" marginTop={1}>
-        {children}
+        <Text dimColor>
+          match with {model.provider.namespace} · {model.provider.name}
+        </Text>
+
+        <Box flexDirection="column" marginTop={1}>
+          {children}
+        </Box>
       </Box>
     </Page>
   );
@@ -758,7 +761,7 @@ function ScopeItem({scope, selected}: ScopeItemProps): React.JSX.Element {
   return (
     <ListItem
       details={`${summary.deviceCount} devices · ${summary.configuredEndpointCount} bound · ${summary.unconfiguredEndpointCount} unbound`}
-      label={scope.path.join(' / ')}
+      label={scope.path.join(' › ')}
       selected={selected}
     />
   );
@@ -813,7 +816,7 @@ function BindingProviderItemView({
   return (
     <ListItem
       details={details}
-      label={`${provider.namespace} / ${provider.name}`}
+      label={`${provider.namespace} · ${provider.name}`}
       selected={selected}
     />
   );
@@ -943,7 +946,7 @@ function formatEndpointPath(path: EndpointPath): string {
     ...path.scopePath,
     getDisplayName(path.deviceName, '(default device)'),
     getDisplayName(path.endpointName, '(default endpoint)'),
-  ].join(' / ');
+  ].join(' › ');
 }
 
 function getScopeKey(scope: BindingScopeItem): string {
@@ -966,10 +969,10 @@ function getDevicePageTitle(
   scopePath: readonly string[],
   deviceName: string,
 ): string {
-  return `bindings / ${[
+  return `bindings › ${[
     ...scopePath,
     getDisplayName(deviceName, '(default device)'),
-  ].join(' / ')}`;
+  ].join(' › ')}`;
 }
 
 function getDisplayName(name: string, fallback: string): string {

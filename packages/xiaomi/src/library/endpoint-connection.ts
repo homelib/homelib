@@ -28,6 +28,12 @@ export const MiotEndpointConnectionMetadata = x.object({
   properties: x.record(x.string, MiotSpecProperty),
 });
 
+export function getMiotEndpointConnectionResourceKey(
+  metadata: MiotEndpointConnectionMetadata,
+): string {
+  return JSON.stringify([metadata.device.did, metadata.service.iid]);
+}
+
 export abstract class MiotEndpointConnection<
   in TCommand extends Command,
 > implements EndpointConnection<TCommand> {

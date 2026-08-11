@@ -29,6 +29,7 @@ import {MiotLightEndpointConnection} from './devices/index.js';
 import {
   type MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
+  getMiotEndpointConnectionResourceKey,
 } from './endpoint-connection.js';
 import type {MiotProperty} from './miot/index.js';
 import {
@@ -102,9 +103,7 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     MiotLightEndpointConnection.assertMetadata(metadata);
 
     return {
-      resourceKeys: [
-        JSON.stringify([metadata.device.did, metadata.service.iid]),
-      ],
+      resourceKeys: [getMiotEndpointConnectionResourceKey(metadata)],
       create: () =>
         this.createLightEndpointConnectionBinding(endpoint, metadata),
     };

@@ -80,20 +80,20 @@ export type ProviderBindingRecord = {
   readonly metadata: unknown;
 };
 
+export type ProviderBindingRequest = {
+  readonly endpoint: EndpointPath;
+  readonly metadata: unknown;
+  readonly replaceExisting: boolean;
+};
+
 export type ProviderBindingComponentProps<TProvider extends RuntimeProvider> = {
   readonly provider: TProvider;
   readonly device: ProviderBindingDevice;
   readonly providerBindings: readonly ProviderBindingRecord[];
   readonly onBind: (
-    endpoint: EndpointPath,
-    metadata: unknown,
-    options: ProviderBindingOptions,
+    requests: readonly ProviderBindingRequest[],
   ) => Promise<void>;
   readonly onBack: () => void;
-};
-
-export type ProviderBindingOptions = {
-  readonly replaceExisting: boolean;
 };
 
 export function registerProviderBindingComponent<
@@ -127,9 +127,7 @@ export type ProviderBindingOutletProps = {
   readonly device: ProviderBindingDevice;
   readonly bindings: readonly EndpointBinding[];
   readonly onBind: (
-    endpoint: EndpointPath,
-    metadata: unknown,
-    options: ProviderBindingOptions,
+    requests: readonly ProviderBindingRequest[],
   ) => Promise<void>;
   readonly onBack: () => void;
 };

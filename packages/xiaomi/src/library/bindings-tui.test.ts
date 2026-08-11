@@ -1,0 +1,319 @@
+import {PassThrough} from 'node:stream';
+
+import {
+  EndpointPath,
+  LightEndpoint,
+  type ProviderBindingDevice,
+  type ProviderBindingRequest,
+} from '@homelib/core';
+import {render} from 'ink';
+import {createElement} from 'react';
+
+import {MiotProviderBindings} from './bindings.js';
+import type {MiotProviderFilteredDiscovery} from './configuration.js';
+import type {MiotSpecInstance} from './miot/index.js';
+import {MiotProvider} from './provider.js';
+
+test('confirms the default device match as one batch and returns after saving', async () => {
+  const spec = createLightSpec('default-device-match', ['Main Light']);
+  const restoreFetch = installSpecFetch(spec);
+  const provider = createFakeProvider('default-device-match', spec);
+  const bindingOperation = createDeferred<void>();
+  const bindingBatches: Array<readonly ProviderBindingRequest[]> = [];
+  let backCallCount = 0;
+  const terminal = renderTestTerminal(
+    createElement(MiotProviderBindings, {
+      provider,
+      device: createLogicalDevice(),
+      providerBindings: [],
+      onBind: requests => {
+        bindingBatches.push(requests);
+        return bindingOperation.promise;
+      },
+      onBack: () => {
+        backCallCount++;
+      },
+    }),
+  );
+
+  try {
+    await terminal.flushUntil(frame =>
+      frame.includes('choose a mi home device'),
+    );
+    expect(terminal.frame()).toContain('Ceiling Light');
+    expect(terminal.frame()).toContain('My Home ›');
+    expect(terminal.frame()).toContain('Living Room');
+
+    await terminal.input('\r');
+    const summary = terminal.frame();
+
+    expect(summary).toContain('device match');
+    expect(summary).toContain('main');
+    expect(summary).toContain('matched automatically');
+    expect(summary).toContain('Main Light');
+    expect(summary).toContain('› bind device · 1 feature');
+    expectInternalDetailsToBeHidden(summary);
+    expect(bindingBatches).toHaveLength(0);
+
+    await terminal.input('\r');
+    expect(bindingBatches).toHaveLength(1);
+    expect(bindingBatches[0]).toHaveLength(1);
+    expect(bindingBatches[0]?.[0]).toMatchObject({
+      endpoint: {
+        scopePath: ['My Home', 'Living Room'],
+        deviceName: 'Ceiling Light',
+        endpointName: '',
+      },
+      replaceExisting: false,
+      metadata: {
+        device: {did: 'physical-light', urn: spec.type},
+        service: {iid: 2},
+        properties: {on: {iid: 1}},
+      },
+    });
+    expect(terminal.frame()).toContain('saving device match…');
+    expect(backCallCount).toBe(0);
+
+    bindingOperation.resolve();
+    await terminal.flushUntil(() => backCallCount === 1);
+    expect(bindingBatches).toHaveLength(1);
+    expect(backCallCount).toBe(1);
+  } finally {
+    bindingOperation.resolve();
+    await terminal.close();
+    restoreFetch();
+  }
+}, 10_000);
+
+test('opens optional endpoint matching without exposing MIoT identifiers', async () => {
+  const spec = createLightSpec('optional-endpoint-match', [
+    'Main Light',
+    'Ambient Light',
+  ]);
+  const restoreFetch = installSpecFetch(spec);
+  const provider = createFakeProvider('optional-endpoint-match', spec);
+  const terminal = renderTestTerminal(
+    createElement(MiotProviderBindings, {
+      provider,
+      device: createLogicalDevice(),
+      providerBindings: [],
+      onBind: () => Promise.resolve(),
+      onBack: () => undefined,
+    }),
+  );
+
+  try {
+    await terminal.flushUntil(frame =>
+      frame.includes('choose a mi home device'),
+    );
+    await terminal.input('\r');
+
+    expect(terminal.frame()).toContain('2 possible matches');
+    expect(terminal.frame()).toContain('e endpoint matching');
+    expectInternalDetailsToBeHidden(terminal.frame());
+
+    await terminal.input('e');
+    expect(terminal.frame()).toContain('endpoint matching (optional)');
+    expect(terminal.frame()).toContain('main');
+
+    await terminal.input('\r');
+    expect(terminal.frame()).toContain('choose a matching feature');
+    expect(terminal.frame()).toContain('Main Light');
+    expect(terminal.frame()).toContain('Ambient Light');
+    expectInternalDetailsToBeHidden(terminal.frame());
+
+    await terminal.input('\r');
+    expect(terminal.frame()).toContain('selected · Main Light');
+    await terminal.input('\u001B');
+    expect(terminal.frame()).toContain('selected · Main Light');
+  } finally {
+    await terminal.close();
+    restoreFetch();
+  }
+}, 10_000);
+
+function createFakeProvider(
+  name: string,
+  spec: MiotSpecInstance,
+): MiotProvider {
+  const provider = new MiotProvider(name);
+  const discovery: MiotProviderFilteredDiscovery = {
+    account: {cloudServer: 'cn', userId: 'test-user'},
+    homes: [],
+    devices: [
+      {
+        did: 'physical-light',
+        name: 'Ceiling Light',
+        model: 'test.light',
+        specType: spec.type,
+        homeName: 'My Home',
+        roomName: 'Living Room',
+      },
+    ],
+  };
+
+  Object.defineProperty(provider.configuration, 'discoverDevices', {
+    configurable: true,
+    value: () => Promise.resolve(discovery),
+  });
+
+  return provider;
+}
+
+function createLogicalDevice(): ProviderBindingDevice {
+  const path = EndpointPath.satisfies({
+    scopePath: ['My Home', 'Living Room'],
+    deviceName: 'Ceiling Light',
+    endpointName: '',
+  });
+
+  return {
+    name: path.deviceName,
+    endpoints: [
+      {
+        path,
+        endpoint: new LightEndpoint(),
+        binding: undefined,
+      },
+    ],
+  };
+}
+
+function createLightSpec(
+  name: string,
+  serviceNames: readonly string[],
+): MiotSpecInstance {
+  return {
+    type: `urn:miot-spec-v2:device:light:0000A001:${name}:1`,
+    description: 'Test Light',
+    services: serviceNames.map((serviceName, index) => ({
+      iid: index + 2,
+      type: `urn:miot-spec-v2:service:light:00007802:${name}:${index + 1}`,
+      description: serviceName,
+      properties: [
+        {
+          iid: 1,
+          type: `urn:miot-spec-v2:property:on:00000006:${name}:1`,
+          description: 'Switch Status',
+          format: 'bool',
+          access: ['read', 'write', 'notify'],
+        },
+      ],
+    })),
+  };
+}
+
+function installSpecFetch(spec: MiotSpecInstance): () => void {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response(JSON.stringify(spec));
+
+  return () => {
+    globalThis.fetch = originalFetch;
+  };
+}
+
+function expectInternalDetailsToBeHidden(frame: string): void {
+  const normalizedFrame = frame.toLowerCase();
+
+  expect(normalizedFrame).not.toContain('service');
+  expect(normalizedFrame).not.toContain('siid');
+  expect(normalizedFrame).not.toContain('piid');
+  expect(normalizedFrame).not.toContain('urn:');
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve: (value: T | PromiseLike<T>) => void = () => undefined;
+  let reject: (reason?: unknown) => void = () => undefined;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return {promise, resolve, reject};
+}
+
+type Deferred<T> = {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T | PromiseLike<T>) => void;
+  readonly reject: (reason?: unknown) => void;
+};
+
+function renderTestTerminal(node: React.ReactNode): TestTerminal {
+  const stdin = new PassThrough() as PassThrough & NodeJS.ReadStream;
+  const stdout = new PassThrough() as PassThrough & NodeJS.WriteStream;
+  const stderr = new PassThrough() as PassThrough & NodeJS.WriteStream;
+  let frame = '';
+
+  Object.defineProperties(stdin, {
+    isTTY: {value: true},
+    setRawMode: {value: () => stdin},
+    ref: {value: () => stdin},
+    unref: {value: () => stdin},
+  });
+  Object.defineProperties(stdout, {
+    isTTY: {value: true},
+    columns: {value: 120},
+    rows: {value: 40},
+  });
+  Object.defineProperties(stderr, {
+    isTTY: {value: true},
+    columns: {value: 120},
+    rows: {value: 40},
+  });
+
+  stdout.on('data', chunk => {
+    frame = String(chunk);
+  });
+
+  const instance = render(node, {
+    stdin,
+    stdout,
+    stderr,
+    debug: true,
+    exitOnCtrlC: false,
+    patchConsole: false,
+    interactive: true,
+    maxFps: 1_000,
+  });
+  const flush = async (): Promise<void> => {
+    await new Promise<void>(resolve => {
+      setImmediate(resolve);
+    });
+    await instance.waitUntilRenderFlush();
+  };
+
+  return {
+    frame: () => frame,
+    flushUntil: async predicate => {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await flush();
+
+        if (predicate(frame)) {
+          return;
+        }
+      }
+
+      throw new Error(`Expected terminal state was not reached:\n${frame}`);
+    },
+    input: async value => {
+      stdin.write(value);
+      await flush();
+    },
+    close: async () => {
+      instance.unmount();
+      await instance.waitUntilExit();
+      instance.cleanup();
+      stdin.end();
+      stdout.end();
+      stderr.end();
+    },
+  };
+}
+
+type TestTerminal = {
+  readonly frame: () => string;
+  readonly flushUntil: (predicate: (frame: string) => boolean) => Promise<void>;
+  readonly input: (value: string) => Promise<void>;
+  readonly close: () => Promise<void>;
+};
