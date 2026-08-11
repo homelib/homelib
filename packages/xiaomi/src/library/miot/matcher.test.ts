@@ -7,6 +7,7 @@ const LIGHT_MATCHER = {
   properties: {
     on: {
       type: 'urn:miot-spec-v2:property:on:00000006',
+      format: 'bool',
       access: ['read', 'write'],
     },
   },
@@ -18,6 +19,39 @@ test('matches the light service and property from the light group spec', () => {
   expect(matches).toHaveLength(1);
   expect(matches[0]?.service.iid).toBe(2);
   expect(matches[0]?.properties.on.iid).toBe(1);
+});
+
+test('matches any declared device type', () => {
+  const matcher = {
+    ...LIGHT_MATCHER,
+    device: [
+      'urn:miot-spec-v2:device:air-conditioner:0000A004',
+      'urn:miot-spec-v2:device:light:0000A001',
+    ],
+  } as const satisfies MiotEndpointMatcher;
+
+  expect(findMiotEndpointMatches(LIGHT_GROUP_SPEC, matcher)).toHaveLength(1);
+});
+
+test('requires the declared property format', () => {
+  const service = LIGHT_GROUP_SPEC.services.at(0);
+  const property = service?.properties?.at(0);
+
+  if (service === undefined || property === undefined) {
+    throw new Error('Light group spec has no light property.');
+  }
+
+  const spec: MiotSpecInstance = {
+    ...LIGHT_GROUP_SPEC,
+    services: [
+      {
+        ...service,
+        properties: [{...property, format: 'uint8'}],
+      },
+    ],
+  };
+
+  expect(findMiotEndpointMatches(spec, LIGHT_MATCHER)).toHaveLength(0);
 });
 
 test('returns every matching service instance', () => {

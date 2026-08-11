@@ -1,10 +1,10 @@
 import {register} from '@homelib/core';
 
-import {MiotLight} from './devices/index.js';
+import {MiotPlaceholderDevice} from './devices/index.js';
 import {MIOT_NAMESPACE} from './provider.js';
 
 register(MIOT_NAMESPACE, {
-  light: MiotLight,
+  placeholder: MiotPlaceholderDevice,
 });
 
 declare global {
@@ -16,7 +16,7 @@ declare global {
 
     // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
     interface MiotDeviceConstructors {
-      light: MiotLight;
+      placeholder: MiotPlaceholderDevice;
     }
   }
 }

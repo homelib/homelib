@@ -23,6 +23,8 @@ import {
   type MiotExecutionRequest,
   type MiotExecutionResult,
   MiotSetPropertyRequest,
+  type MiotSpecInstance,
+  findMiotEndpointMatches,
 } from './miot/index.js';
 import {MiotProvider} from './provider.js';
 
@@ -46,6 +48,27 @@ const TEST_METADATA = MiotEndpointConnectionMetadata.satisfies({
       access: ['read', 'write', 'notify'],
     },
   },
+});
+
+test('declares the supported endpoint and MIoT matchers', () => {
+  const spec: MiotSpecInstance = {
+    type: TEST_METADATA.device.urn,
+    description: 'Test light',
+    services: [
+      {
+        ...TEST_METADATA.service,
+        properties: Object.values(TEST_METADATA.properties),
+      },
+    ],
+  };
+  const matches = MiotLightEndpointConnection.endpointMatchers.flatMap(
+    matcher => findMiotEndpointMatches(spec, matcher),
+  );
+
+  expect(MiotLightEndpointConnection.Endpoint).toBe(LightEndpoint);
+  expect(matches).toHaveLength(1);
+  expect(matches[0]?.service.iid).toBe(TEST_METADATA.service.iid);
+  expect(matches[0]?.properties.on.iid).toBe(TEST_METADATA.properties.on?.iid);
 });
 
 test('rejects light metadata without an on property', () => {

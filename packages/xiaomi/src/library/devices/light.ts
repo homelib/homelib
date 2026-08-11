@@ -1,5 +1,5 @@
 import {
-  Light,
+  LightEndpoint,
   type LightEndpointCommand,
   type LightEndpointConnection,
   SetLightOnCommand,
@@ -28,23 +28,24 @@ const MIOT_LIGHT_ENDPOINT_MATCHER: MiotLightEndpointMatcher = {
   properties: {
     on: {
       type: 'urn:miot-spec-v2:property:on:00000006',
+      format: 'bool',
       access: ['read', 'write', 'notify'],
     },
   },
 };
 
-const MIOT_LIGHT_ENDPOINT_MATCHERS = [MIOT_LIGHT_ENDPOINT_MATCHER];
-
-export class MiotLight extends Light {
-  static get endpointMatchers(): readonly MiotLightEndpointMatcher[] {
-    return MIOT_LIGHT_ENDPOINT_MATCHERS;
-  }
-}
+const MIOT_LIGHT_ENDPOINT_MATCHERS = [
+  MIOT_LIGHT_ENDPOINT_MATCHER,
+] as const satisfies readonly MiotLightEndpointMatcher[];
 
 export class MiotLightEndpointConnection
   extends MiotEndpointConnection<LightEndpointCommand>
   implements LightEndpointConnection
 {
+  static readonly Endpoint = LightEndpoint;
+
+  static readonly endpointMatchers = MIOT_LIGHT_ENDPOINT_MATCHERS;
+
   private readonly onProperty: MiotSpecProperty;
 
   @computed

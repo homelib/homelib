@@ -37,7 +37,7 @@ export type MiotEndpointMatcher<
     MiotPropertyMatcher
   >,
 > = {
-  readonly device?: string;
+  readonly device?: string | readonly string[];
   readonly service: string;
   readonly properties: TProperties;
 };
@@ -53,6 +53,7 @@ export type MiotEndpointMatch<
 
 export type MiotPropertyMatcher = {
   readonly type: string;
+  readonly format: string;
   readonly access: readonly MiotPropertyAccess[];
 };
 
@@ -71,6 +72,7 @@ function findProperties<
     const candidates = (service.properties ?? []).filter(
       property =>
         matchesType(property.type, matcher.type) &&
+        property.format === matcher.format &&
         matcher.access.every(access => property.access.includes(access)),
     );
 
@@ -90,6 +92,13 @@ function findProperties<
   return properties as MiotEndpointMatch<TProperties>['properties'];
 }
 
-function matchesType(actual: string, expected: string): boolean {
-  return actual === expected || actual.startsWith(`${expected}:`);
+function matchesType(
+  actual: string,
+  expected: string | readonly string[],
+): boolean {
+  if (typeof expected === 'string') {
+    return actual === expected || actual.startsWith(`${expected}:`);
+  }
+
+  return expected.some(type => matchesType(actual, type));
 }

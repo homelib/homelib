@@ -5,7 +5,7 @@ import * as x from 'x-value';
 
 import {
   BackendClient,
-  MiotLight,
+  MiotLightEndpointConnection,
   MiotSetPropertyRequest,
   MiotSpecClient,
   findMiotEndpointMatches,
@@ -41,8 +41,8 @@ async function main(): Promise<void> {
   }
 
   const spec = await new MiotSpecClient().getInstance(device.specType);
-  const matches = MiotLight.endpointMatchers.flatMap(matcher =>
-    findMiotEndpointMatches(spec, matcher),
+  const matches = MiotLightEndpointConnection.endpointMatchers.flatMap(
+    matcher => findMiotEndpointMatches(spec, matcher),
   );
 
   if (matches.length !== 1) {
