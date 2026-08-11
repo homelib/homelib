@@ -1,4 +1,4 @@
-import {OAUTH2_CLIENT_ID} from './constants.js';
+import {BACKEND_API_TIMEOUT, OAUTH2_CLIENT_ID} from './constants.js';
 import {OAUTH2_AUTH_URL, OAUTH_REDIRECT_URL, OAuthClient} from './oauth.js';
 
 test('creates an OAuth authorization', () => {
@@ -116,43 +116,32 @@ test('reports an OAuth error response', async () => {
   }
 });
 
-test('passes caller cancellation to the token request', async () => {
+test('times out waiting for the token request', async () => {
   const originalFetch = globalThis.fetch;
-  let requestSignal: AbortSignal | undefined;
+  let resolveFetch: ((response: Response) => void) | undefined;
 
-  globalThis.fetch = async (_input, init) =>
-    new Promise((_resolve, reject) => {
-      requestSignal = init?.signal ?? undefined;
-
-      if (requestSignal === undefined) {
-        reject(new Error('Missing request signal.'));
-      } else if (requestSignal.aborted) {
-        reject(requestSignal.reason);
-      } else {
-        requestSignal.addEventListener(
-          'abort',
-          () => {
-            reject(requestSignal?.reason);
-          },
-          {once: true},
-        );
-      }
+  globalThis.fetch = () =>
+    new Promise(resolve => {
+      resolveFetch = resolve;
     });
+  import.meta.jest.useFakeTimers();
 
   try {
-    const controller = new AbortController();
-    const reason = new Error('OAuth cancelled.');
-    const token = new OAuthClient('test-uuid').exchangeCode(
-      'test-code',
-      OAUTH_REDIRECT_URL,
-      controller.signal,
+    const token = new OAuthClient('test-uuid').exchangeCode('test-code');
+    const rejection = expect(token).rejects.toThrow(
+      'OAuth token request timed out.',
     );
 
-    controller.abort(reason);
+    await import.meta.jest.advanceTimersByTimeAsync(BACKEND_API_TIMEOUT);
+    await rejection;
 
-    await expect(token).rejects.toBe(reason);
-    expect(requestSignal?.aborted).toBe(true);
+    if (resolveFetch === undefined) {
+      throw new Error('OAuth request did not start.');
+    }
+
+    resolveFetch(new Response());
   } finally {
     globalThis.fetch = originalFetch;
+    import.meta.jest.useRealTimers();
   }
 });

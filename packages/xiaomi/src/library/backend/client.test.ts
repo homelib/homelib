@@ -1,3 +1,5 @@
+import {MiotSetPropertyRequest} from '../miot/index.js';
+
 import {BackendClient} from './client.js';
 
 test('discovers owned and separately shared devices', async () => {
@@ -6,7 +8,6 @@ test('discovers owned and separately shared devices', async () => {
     readonly url: string;
     readonly headers: Headers;
     readonly body: Record<string, unknown>;
-    readonly signal: AbortSignal | null;
   }> = [];
 
   globalThis.fetch = async (input, init) => {
@@ -16,7 +17,6 @@ test('discovers owned and separately shared devices', async () => {
       url,
       headers: new Headers(init?.headers),
       body,
-      signal: init?.signal ?? null,
     });
 
     if (url.endsWith('/app/v2/homeroom/gethome')) {
@@ -83,11 +83,10 @@ test('discovers owned and separately shared devices', async () => {
   };
 
   try {
-    const controller = new AbortController();
     const discovery = await new BackendClient({
       uuid: 'test-uuid',
       accessToken: 'test-access-token',
-    }).discoverDevices(controller.signal);
+    }).discoverDevices();
 
     expect(requests).toHaveLength(3);
     expect(requests[0]?.headers.get('authorization')).toBe(
@@ -123,8 +122,6 @@ test('discovers owned and separately shared devices', async () => {
         }),
       ]),
     );
-    controller.abort();
-    expect(requests.every(request => request.signal?.aborted)).toBe(true);
     expect(JSON.stringify(discovery)).not.toContain('must-not-leak');
     expect(JSON.stringify(discovery)).not.toContain('192.0.2.1');
   } finally {
@@ -132,31 +129,49 @@ test('discovers owned and separately shared devices', async () => {
   }
 });
 
-test('passes caller cancellation to property requests', async () => {
+test('gets and sets properties', async () => {
   const originalFetch = globalThis.fetch;
-  const signals: AbortSignal[] = [];
+  const requests: Array<{
+    readonly url: string;
+    readonly body: Record<string, unknown>;
+  }> = [];
 
-  globalThis.fetch = async (_input, init) => {
-    if (init?.signal !== undefined && init.signal !== null) {
-      signals.push(init.signal);
-    }
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requests.push({
+      url,
+      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+    });
 
-    return jsonResponse([]);
+    return jsonResponse([
+      {did: 'device-1', siid: 2, piid: 1, value: true, code: 0},
+    ]);
   };
 
   try {
-    const controller = new AbortController();
     const client = new BackendClient({
       uuid: 'test-uuid',
       accessToken: 'test-access-token',
     });
+    const property = {did: 'device-1', siid: 2, piid: 1};
 
-    await client.getProperties([], controller.signal);
-    await client.setProperties([], controller.signal);
-    controller.abort();
+    const readResults = await client.getProperties([property]);
+    const writeResults = await client.setProperties([
+      new MiotSetPropertyRequest(property, true),
+    ]);
 
-    expect(signals).toHaveLength(2);
-    expect(signals.every(signal => signal.aborted)).toBe(true);
+    expect(requests).toEqual([
+      expect.objectContaining({
+        url: expect.stringMatching('/app/v2/miotspec/prop/get$'),
+        body: {datasource: 1, params: [property]},
+      }),
+      expect.objectContaining({
+        url: expect.stringMatching('/app/v2/miotspec/prop/set$'),
+        body: {params: [{...property, value: true}]},
+      }),
+    ]);
+    expect(readResults).toEqual([{...property, value: true, code: 0}]);
+    expect(writeResults).toEqual([{...property, value: true, code: 0}]);
   } finally {
     globalThis.fetch = originalFetch;
   }

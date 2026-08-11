@@ -62,36 +62,32 @@ export class OAuthClient {
   async exchangeCode(
     code: string,
     redirectUrl = OAUTH_REDIRECT_URL,
-    signal?: AbortSignal,
   ): Promise<OAuthToken> {
-    return this.requestToken(
-      {
-        redirect_uri: redirectUrl,
-        code,
-        device_id: this.deviceId,
-      },
-      signal,
-    );
+    return this.requestToken({
+      redirect_uri: redirectUrl,
+      code,
+      device_id: this.deviceId,
+    });
   }
 
   async refreshToken(
     refreshToken: string,
     redirectUrl = OAUTH_REDIRECT_URL,
-    signal?: AbortSignal,
   ): Promise<OAuthToken> {
-    return this.requestToken(
-      {
-        redirect_uri: redirectUrl,
-        refresh_token: refreshToken,
-      },
-      signal,
+    return this.requestToken({
+      redirect_uri: redirectUrl,
+      refresh_token: refreshToken,
+    });
+  }
+
+  private requestToken(data: Record<string, string>): Promise<OAuthToken> {
+    return withRequestTimeout(
+      this.fetchToken(data),
+      'OAuth token request timed out.',
     );
   }
 
-  private async requestToken(
-    data: Record<string, string>,
-    signal?: AbortSignal,
-  ): Promise<OAuthToken> {
+  private async fetchToken(data: Record<string, string>): Promise<OAuthToken> {
     const url = new URL(
       '/app/v2/ha/oauth/get_token',
       `https://${this.apiHost}`,
@@ -100,7 +96,6 @@ export class OAuthClient {
 
     const response = await fetch(url, {
       headers: {'content-type': 'application/x-www-form-urlencoded'},
-      signal: createRequestSignal(signal),
     });
 
     if (response.status === 401) {
@@ -155,10 +150,21 @@ function createTokenRequestData(data: Record<string, string>): string {
   return `{"client_id":${OAUTH2_CLIENT_ID},${JSON.stringify(data).slice(1)}`;
 }
 
-function createRequestSignal(signal: AbortSignal | undefined): AbortSignal {
-  const timeoutSignal = AbortSignal.timeout(BACKEND_API_TIMEOUT);
+function withRequestTimeout<T>(
+  request: Promise<T>,
+  message: string,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(message));
+    }, BACKEND_API_TIMEOUT);
+  });
 
-  return signal === undefined
-    ? timeoutSignal
-    : AbortSignal.any([signal, timeoutSignal]);
+  // This only bounds the caller's wait; the underlying fetch keeps running.
+  return Promise.race([request, timeoutPromise]).finally(() => {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  });
 }

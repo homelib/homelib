@@ -94,10 +94,8 @@ export class MiotProviderConfiguration {
     this.dependencies = dependencies;
   }
 
-  async load(
-    signal: AbortSignal,
-  ): Promise<MiotProviderConfigurationSnapshot | undefined> {
-    const state = await this.loadState(signal);
+  async load(): Promise<MiotProviderConfigurationSnapshot | undefined> {
+    const state = await this.loadState();
 
     if (state === undefined) {
       return undefined;
@@ -119,10 +117,8 @@ export class MiotProviderConfiguration {
     };
   }
 
-  async discoverDevices(
-    signal: AbortSignal,
-  ): Promise<MiotProviderFilteredDiscovery | undefined> {
-    const state = await this.loadState(signal);
+  async discoverDevices(): Promise<MiotProviderFilteredDiscovery | undefined> {
+    const state = await this.loadState();
 
     if (state === undefined) {
       return undefined;
@@ -152,20 +148,12 @@ export class MiotProviderConfiguration {
 
   async beginAuthorization(
     cloudServer: CloudServer,
-    signal: AbortSignal,
   ): Promise<MiotProviderConfigurationAuthorization> {
     const validatedCloudServer = CloudServerValue.satisfies(cloudServer);
-
-    signal.throwIfAborted();
-
-    const authorization = await this.dependencies.beginAuthorization(
-      validatedCloudServer,
-      signal,
-    );
+    const authorization =
+      await this.dependencies.beginAuthorization(validatedCloudServer);
     const url = x.string.satisfies(authorization.url);
     let completion: Promise<void> | undefined;
-
-    signal.throwIfAborted();
 
     return {
       url,
@@ -173,7 +161,12 @@ export class MiotProviderConfiguration {
         completion ??= authorization.wait();
         return completion;
       },
+      cancel: () => authorization.cancel(),
     };
+  }
+
+  forgetAuthorization(): Promise<void> {
+    return this.dependencies.forgetAuthorization();
   }
 
   async saveIncludedHomes(
@@ -201,22 +194,15 @@ export class MiotProviderConfiguration {
     } satisfies ConfigurationFile);
   }
 
-  private async loadState(
-    signal: AbortSignal,
-  ): Promise<LoadedState | undefined> {
-    const configuration = await this.readConfiguration(signal);
-
-    signal.throwIfAborted();
-
-    const discovered = await this.dependencies.discoverDevices(signal);
+  private async loadState(): Promise<LoadedState | undefined> {
+    const configuration = await this.readConfiguration();
+    const discovered = await this.dependencies.discoverDevices();
 
     if (discovered === undefined) {
       return undefined;
     }
 
     const discovery = sanitizeDiscovery(discovered);
-
-    signal.throwIfAborted();
 
     if (configuration === undefined) {
       return {
@@ -239,13 +225,11 @@ export class MiotProviderConfiguration {
     };
   }
 
-  private async readConfiguration(
-    signal: AbortSignal,
-  ): Promise<ConfigurationFile | undefined> {
+  private async readConfiguration(): Promise<ConfigurationFile | undefined> {
     let source: string;
 
     try {
-      source = await readFile(this.path, {encoding: 'utf8', signal});
+      source = await readFile(this.path, 'utf8');
     } catch (error) {
       if (isFileNotFoundError(error)) {
         return undefined;
@@ -270,13 +254,11 @@ export type MiotProviderConfigurationOptions = {
 };
 
 export type MiotProviderConfigurationDependencies = {
-  discoverDevices(
-    signal: AbortSignal,
-  ): Promise<MiotProviderConfigurationDiscovery | undefined>;
+  discoverDevices(): Promise<MiotProviderConfigurationDiscovery | undefined>;
   beginAuthorization(
     cloudServer: CloudServer,
-    signal: AbortSignal,
   ): Promise<MiotProviderConfigurationAuthorizationDependency>;
+  forgetAuthorization(): Promise<void>;
 };
 
 export type MiotProviderConfigurationDiscovery = {
@@ -290,11 +272,13 @@ export type MiotProviderFilteredDiscovery = MiotProviderConfigurationDiscovery;
 export type MiotProviderConfigurationAuthorizationDependency = {
   readonly url: string;
   wait(): Promise<void>;
+  cancel(): Promise<void>;
 };
 
 export type MiotProviderConfigurationAuthorization = {
   readonly url: string;
   wait(): Promise<void>;
+  cancel(): Promise<void>;
 };
 
 export type MiotProviderConfigurationSnapshot = {

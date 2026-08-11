@@ -52,13 +52,10 @@ export class BackendClient {
     this.token = accessToken;
   }
 
-  async discoverDevices(signal?: AbortSignal): Promise<BackendDeviceDiscovery> {
-    const {userId, homes, locations} = await this.getHomes(signal);
-    const homeDeviceMap = await this.getDevicesWithDids(
-      [...locations.keys()],
-      signal,
-    );
-    const allDeviceMap = await this.getDeviceListPage([], signal);
+  async discoverDevices(): Promise<BackendDeviceDiscovery> {
+    const {userId, homes, locations} = await this.getHomes();
+    const homeDeviceMap = await this.getDevicesWithDids([...locations.keys()]);
+    const allDeviceMap = await this.getDeviceListPage([]);
 
     for (const [did, device] of allDeviceMap) {
       if (locations.has(did)) {
@@ -113,51 +110,37 @@ export class BackendClient {
 
   async getProperties(
     properties: readonly MiotProperty[],
-    signal?: AbortSignal,
   ): Promise<readonly BackendPropertyResult[]> {
-    const result = await this.post(
-      '/app/v2/miotspec/prop/get',
-      {
-        datasource: 1,
-        params: properties,
-      },
-      signal,
-    );
+    const result = await this.post('/app/v2/miotspec/prop/get', {
+      datasource: 1,
+      params: properties,
+    });
 
     return x.array(BackendPropertyResultValue).satisfies(result);
   }
 
   async setProperties(
     requests: readonly MiotSetPropertyRequest[],
-    signal?: AbortSignal,
   ): Promise<readonly BackendPropertyResult[]> {
-    const result = await this.post(
-      '/app/v2/miotspec/prop/set',
-      {
-        params: requests.map(request => ({
-          ...request.property,
-          value: request.value,
-        })),
-      },
-      signal,
-    );
+    const result = await this.post('/app/v2/miotspec/prop/set', {
+      params: requests.map(request => ({
+        ...request.property,
+        value: request.value,
+      })),
+    });
 
     return x.array(BackendPropertyResultValue).satisfies(result);
   }
 
-  private async getHomes(signal?: AbortSignal): Promise<HomeDiscovery> {
+  private async getHomes(): Promise<HomeDiscovery> {
     const result = requireRecord(
-      await this.post(
-        '/app/v2/homeroom/gethome',
-        {
-          limit: HOME_PAGE_SIZE,
-          fetch_share: true,
-          fetch_share_dev: true,
-          plat_form: 0,
-          app_ver: 9,
-        },
-        signal,
-      ),
+      await this.post('/app/v2/homeroom/gethome', {
+        limit: HOME_PAGE_SIZE,
+        fetch_share: true,
+        fetch_share_dev: true,
+        plat_form: 0,
+        app_ver: 9,
+      }),
       'home list result',
     );
     const homes = new Map<string, MutableHome>();
@@ -188,7 +171,7 @@ export class BackendClient {
     const maxId = readString(result.max_id);
 
     if (hasMore && maxId !== undefined) {
-      await this.extendHomes(homes, locations, maxId, signal);
+      await this.extendHomes(homes, locations, maxId);
     }
 
     return {userId, homes, locations};
@@ -198,21 +181,16 @@ export class BackendClient {
     homes: Map<string, MutableHome>,
     locations: Map<string, DeviceLocation>,
     initialMaxId: string,
-    signal?: AbortSignal,
   ): Promise<void> {
     let maxId: string | undefined = initialMaxId;
 
     while (maxId !== undefined) {
       const currentMaxId: string = maxId;
       const result = requireRecord(
-        await this.post(
-          '/app/v2/homeroom/get_dev_room_page',
-          {
-            start_id: currentMaxId,
-            limit: HOME_PAGE_SIZE,
-          },
-          signal,
-        ),
+        await this.post('/app/v2/homeroom/get_dev_room_page', {
+          start_id: currentMaxId,
+          limit: HOME_PAGE_SIZE,
+        }),
         'home room page result',
       );
 
@@ -244,11 +222,10 @@ export class BackendClient {
 
   private async getDevicesWithDids(
     dids: string[],
-    signal?: AbortSignal,
   ): Promise<Map<string, DeviceDetail>> {
     const results = await Promise.all(
       chunk(dids, DEVICE_REQUEST_SIZE).map(batch =>
-        this.getDeviceListPage(batch, signal),
+        this.getDeviceListPage(batch),
       ),
     );
     const devices = new Map<string, DeviceDetail>();
@@ -264,7 +241,6 @@ export class BackendClient {
 
   private async getDeviceListPage(
     dids: string[],
-    signal?: AbortSignal,
   ): Promise<Map<string, DeviceDetail>> {
     const devices = new Map<string, DeviceDetail>();
     let startDid: string | undefined;
@@ -282,7 +258,7 @@ export class BackendClient {
       }
 
       const result = requireRecord(
-        await this.post('/app/v2/home/device_list_page', data, signal),
+        await this.post('/app/v2/home/device_list_page', data),
         'device list result',
       );
 
@@ -308,10 +284,16 @@ export class BackendClient {
     return devices;
   }
 
-  private async post(
+  private post(path: string, data: Record<string, unknown>): Promise<unknown> {
+    return withRequestTimeout(
+      this.sendPost(path, data),
+      `Cloud API request timed out (${path}).`,
+    );
+  }
+
+  private async sendPost(
     path: string,
     data: Record<string, unknown>,
-    signal?: AbortSignal,
   ): Promise<unknown> {
     const response = await fetch(`${this.apiUrl}${path}`, {
       method: 'POST',
@@ -323,7 +305,6 @@ export class BackendClient {
         authorization: `Bearer${this.token}`,
       },
       body: JSON.stringify(data),
-      signal: createRequestSignal(signal),
     });
 
     if (response.status === 401) {
@@ -682,10 +663,21 @@ function compareNames(
   return left.name.localeCompare(right.name);
 }
 
-function createRequestSignal(signal: AbortSignal | undefined): AbortSignal {
-  const timeoutSignal = AbortSignal.timeout(BACKEND_API_TIMEOUT);
+function withRequestTimeout<T>(
+  request: Promise<T>,
+  message: string,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(message));
+    }, BACKEND_API_TIMEOUT);
+  });
 
-  return signal === undefined
-    ? timeoutSignal
-    : AbortSignal.any([signal, timeoutSignal]);
+  // This only bounds the caller's wait; the underlying fetch keeps running.
+  return Promise.race([request, timeoutPromise]).finally(() => {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  });
 }

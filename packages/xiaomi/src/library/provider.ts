@@ -1,3 +1,4 @@
+import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 
 import {
@@ -78,9 +79,10 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
       providerName: name,
       environmentDirectory,
       dependencies: {
-        discoverDevices: signal => this.discoverConfigurationDevices(signal),
-        beginAuthorization: (cloudServer, signal) =>
-          this.beginConfigurationAuthorization(cloudServer, signal),
+        discoverDevices: () => this.discoverConfigurationDevices(),
+        beginAuthorization: cloudServer =>
+          this.beginConfigurationAuthorization(cloudServer),
+        forgetAuthorization: () => this.forgetConfigurationAuthorization(),
       },
     });
   }
@@ -166,13 +168,13 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     });
   }
 
-  private async discoverConfigurationDevices(
-    signal: AbortSignal,
-  ): Promise<MiotProviderConfigurationDiscovery | undefined> {
+  private async discoverConfigurationDevices(): Promise<
+    MiotProviderConfigurationDiscovery | undefined
+  > {
     let session: OAuthSession;
 
     try {
-      session = await loadValidOAuthSession(this.sessionPath, signal);
+      session = await loadValidOAuthSession(this.sessionPath);
     } catch (error) {
       if (error instanceof OAuthSessionMissingError) {
         return undefined;
@@ -185,7 +187,7 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
       uuid: session.uuid,
       accessToken: session.token.accessToken,
       cloudServer: session.cloudServer,
-    }).discoverDevices(signal);
+    }).discoverDevices();
 
     return {
       account: {
@@ -199,8 +201,11 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
 
   private async beginConfigurationAuthorization(
     cloudServer: CloudServer,
-    signal: AbortSignal,
-  ): Promise<{readonly url: string; wait(): Promise<void>}> {
+  ): Promise<{
+    readonly url: string;
+    wait(): Promise<void>;
+    cancel(): Promise<void>;
+  }> {
     if (this.authorizationInProgress) {
       throw new Error('MIoT provider authorization is already in progress.');
     } else if (
@@ -221,7 +226,6 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
         sessionPath: this.sessionPath,
         uuidPath: this.oauthUuidPath,
         cloudServer,
-        signal,
       });
     } catch (error) {
       this.authorizationInProgress = false;
@@ -240,7 +244,12 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     return {
       url: authorization.url,
       wait: () => completion,
+      cancel: () => authorization.cancel(),
     };
+  }
+
+  private async forgetConfigurationAuthorization(): Promise<void> {
+    await rm(this.sessionPath, {force: true});
   }
 
   private async subscribeEndpointConnection(

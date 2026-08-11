@@ -15,12 +15,10 @@ import {
 
 test('receives an OAuth callback and releases its port', async () => {
   const port = await reservePort();
-  const controller = new AbortController();
   const redirectUrl = `http://homeassistant.local:${port}/api/webhook/test`;
   const listener = await startOAuthCallbackListener({
     expectedState: 'expected-state',
     redirectUrl,
-    signal: controller.signal,
     timeout: 1_000,
   });
 
@@ -43,26 +41,26 @@ test('receives an OAuth callback and releases its port', async () => {
     await expect(callback).resolves.toBe('test-code');
     await expectPortAvailable(port);
   } finally {
-    controller.abort();
+    await listener.close();
     await listener.wait().catch(() => undefined);
   }
 });
 
-test('aborts an OAuth callback listener after releasing its port', async () => {
+test('closes an OAuth callback listener idempotently and releases its port', async () => {
   const port = await reservePort();
-  const controller = new AbortController();
-  const reason = new Error('OAuth callback cancelled.');
   const listener = await startOAuthCallbackListener({
     expectedState: 'expected-state',
     redirectUrl: `http://homeassistant.local:${port}/callback`,
-    signal: controller.signal,
     timeout: 1_000,
   });
   const callback = listener.wait();
+  const firstClose = listener.close();
+  const secondClose = listener.close();
 
-  controller.abort(reason);
+  expect(secondClose).toBe(firstClose);
+  await Promise.all([firstClose, secondClose]);
 
-  await expect(callback).rejects.toBe(reason);
+  await expect(callback).rejects.toThrow('OAuth callback listener closed.');
   await expectPortAvailable(port);
 });
 
@@ -73,7 +71,7 @@ test('completes and persists an initial OAuth authorization', async () => {
   const uuidPath = join(directory, 'uuid.json');
   const port = await reservePort();
   const redirectUrl = `http://homeassistant.local:${port}/api/webhook/test`;
-  const controller = new AbortController();
+  let authorization: OAuthSessionAuthorization | undefined;
 
   globalThis.fetch = async () =>
     new Response(
@@ -88,11 +86,10 @@ test('completes and persists an initial OAuth authorization', async () => {
     );
 
   try {
-    const authorization = await beginOAuthSessionAuthorization({
+    authorization = await beginOAuthSessionAuthorization({
       sessionPath,
       uuidPath,
       cloudServer: DEFAULT_CLOUD_SERVER,
-      signal: controller.signal,
       redirectUrl,
     });
     const authorizationUrl = new URL(authorization.url);
@@ -114,7 +111,101 @@ test('completes and persists an initial OAuth authorization', async () => {
     expect(JSON.parse(await readFile(uuidPath, 'utf8'))).toBe(session.uuid);
     await expectPortAvailable(port);
   } finally {
-    controller.abort();
+    await authorization?.cancel();
+    await authorization?.wait().catch(() => undefined);
+    globalThis.fetch = originalFetch;
+    await rm(directory, {recursive: true, force: true});
+  }
+});
+
+test('cancels a pending initial OAuth authorization and releases its port', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'homelib-xiaomi-session-'));
+  const sessionPath = join(directory, 'session.json');
+  const port = await reservePort();
+  let authorization: OAuthSessionAuthorization | undefined;
+
+  try {
+    authorization = await beginOAuthSessionAuthorization({
+      sessionPath,
+      uuidPath: join(directory, 'uuid.json'),
+      cloudServer: DEFAULT_CLOUD_SERVER,
+      redirectUrl: `http://homeassistant.local:${port}/callback`,
+    });
+    const completion = authorization.wait();
+
+    await authorization.cancel();
+
+    await expect(completion).rejects.toThrow('OAuth callback listener closed.');
+    await expectPortAvailable(port);
+    await expect(loadValidOAuthSession(sessionPath)).rejects.toBeInstanceOf(
+      OAuthSessionMissingError,
+    );
+  } finally {
+    await authorization?.cancel();
+    await authorization?.wait().catch(() => undefined);
+    await rm(directory, {recursive: true, force: true});
+  }
+});
+
+test('commits an accepted OAuth code despite later cancellation', async () => {
+  const originalFetch = globalThis.fetch;
+  const directory = await mkdtemp(join(tmpdir(), 'homelib-xiaomi-session-'));
+  const sessionPath = join(directory, 'session.json');
+  const port = await reservePort();
+  const redirectUrl = `http://homeassistant.local:${port}/callback`;
+  let authorization: OAuthSessionAuthorization | undefined;
+  let markExchangeStarted: () => void = () => undefined;
+  let releaseExchange: () => void = () => undefined;
+  const exchangeStarted = new Promise<void>(resolve => {
+    markExchangeStarted = resolve;
+  });
+  const exchangeReleased = new Promise<void>(resolve => {
+    releaseExchange = resolve;
+  });
+
+  globalThis.fetch = async () => {
+    markExchangeStarted();
+    await exchangeReleased;
+
+    return new Response(
+      JSON.stringify({
+        code: 0,
+        result: {
+          access_token: 'test-access-token',
+          refresh_token: 'test-refresh-token',
+          expires_in: 3_600,
+        },
+      }),
+    );
+  };
+
+  try {
+    authorization = await beginOAuthSessionAuthorization({
+      sessionPath,
+      uuidPath: join(directory, 'uuid.json'),
+      cloudServer: DEFAULT_CLOUD_SERVER,
+      redirectUrl,
+    });
+    const state = new URL(authorization.url).searchParams.get('state');
+    const completion = authorization.wait();
+    const callbackResponse = requestCallback(
+      redirectUrl,
+      `?code=test-code&state=${encodeURIComponent(String(state))}`,
+    );
+
+    await exchangeStarted;
+    await authorization.cancel();
+    await expectPortAvailable(port);
+    releaseExchange();
+
+    const session = await completion;
+
+    await expect(callbackResponse).resolves.toMatchObject({status: 200});
+    expect(await loadValidOAuthSession(sessionPath)).toEqual(session);
+  } finally {
+    releaseExchange();
+    await authorization?.cancel();
+    await authorization?.wait().catch(() => undefined);
     globalThis.fetch = originalFetch;
     await rm(directory, {recursive: true, force: true});
   }
@@ -130,8 +221,6 @@ test('shares one UUID across concurrent initial authorizations', async () => {
     secondPort = await reservePort();
   }
 
-  const firstController = new AbortController();
-  const secondController = new AbortController();
   const authorizations: OAuthSessionAuthorization[] = [];
 
   try {
@@ -141,14 +230,12 @@ test('shares one UUID across concurrent initial authorizations', async () => {
           sessionPath: join(directory, 'first-session.json'),
           uuidPath,
           cloudServer: DEFAULT_CLOUD_SERVER,
-          signal: firstController.signal,
           redirectUrl: `http://homeassistant.local:${firstPort}/first`,
         }),
         beginOAuthSessionAuthorization({
           sessionPath: join(directory, 'second-session.json'),
           uuidPath,
           cloudServer: DEFAULT_CLOUD_SERVER,
-          signal: secondController.signal,
           redirectUrl: `http://homeassistant.local:${secondPort}/second`,
         }),
       ])),
@@ -162,8 +249,9 @@ test('shares one UUID across concurrent initial authorizations', async () => {
     expect(deviceIds[0]).toBe(`ha.${uuid}`);
     expect(deviceIds[1]).toBe(`ha.${uuid}`);
   } finally {
-    firstController.abort();
-    secondController.abort();
+    await Promise.all(
+      authorizations.map(authorization => authorization.cancel()),
+    );
     await Promise.allSettled(
       authorizations.map(authorization => authorization.wait()),
     );
@@ -179,54 +267,6 @@ test('reports a missing OAuth session', async () => {
       loadValidOAuthSession(join(directory, 'missing.json')),
     ).rejects.toBeInstanceOf(OAuthSessionMissingError);
   } finally {
-    await rm(directory, {recursive: true, force: true});
-  }
-});
-
-test('passes caller cancellation to session refresh', async () => {
-  const originalFetch = globalThis.fetch;
-  const directory = await mkdtemp(join(tmpdir(), 'homelib-xiaomi-session-'));
-  const sessionPath = join(directory, 'session.json');
-  let requestSignal: AbortSignal | undefined;
-  let markRequestStarted: () => void = () => undefined;
-  const requestStarted = new Promise<void>(resolve => {
-    markRequestStarted = resolve;
-  });
-
-  globalThis.fetch = async (_input, init) =>
-    new Promise((_resolve, reject) => {
-      requestSignal = init?.signal ?? undefined;
-      markRequestStarted();
-
-      if (requestSignal === undefined) {
-        reject(new Error('Missing request signal.'));
-      } else if (requestSignal.aborted) {
-        reject(requestSignal.reason);
-      } else {
-        requestSignal.addEventListener(
-          'abort',
-          () => {
-            reject(requestSignal?.reason);
-          },
-          {once: true},
-        );
-      }
-    });
-
-  try {
-    await saveExpiredOAuthSession(sessionPath);
-
-    const controller = new AbortController();
-    const reason = new Error('Session refresh cancelled.');
-    const session = loadValidOAuthSession(sessionPath, controller.signal);
-
-    await requestStarted;
-    controller.abort(reason);
-
-    await expect(session).rejects.toBe(reason);
-    expect(requestSignal?.aborted).toBe(true);
-  } finally {
-    globalThis.fetch = originalFetch;
     await rm(directory, {recursive: true, force: true});
   }
 });

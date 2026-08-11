@@ -15,9 +15,9 @@ import {createPrivateJsonFile, writePrivateJsonFile} from './storage.js';
 
 const TOKEN_REFRESH_MARGIN = 60_000;
 const OAUTH_CALLBACK_TIMEOUT = 5 * 60_000;
-const OAUTH_SESSION_REFRESH_OPERATION_MAP = new Map<
+const OAUTH_SESSION_REFRESH_PROMISE_MAP = new Map<
   string,
-  OAuthSessionRefreshOperation
+  Promise<OAuthSession>
 >();
 const OAUTH_UUID_PROMISE_MAP = new Map<string, Promise<string>>();
 
@@ -38,11 +38,8 @@ const OAuthSessionValue = x.object({
 
 export async function loadValidOAuthSession(
   path: string,
-  signal?: AbortSignal,
 ): Promise<OAuthSession> {
-  signal?.throwIfAborted();
-
-  const session = await readOAuthSession(path, signal);
+  const session = await readOAuthSession(path);
   const expiresAt = Date.parse(session.expiresAt);
 
   if (Number.isNaN(expiresAt)) {
@@ -51,32 +48,27 @@ export async function loadValidOAuthSession(
     return session;
   }
 
-  return joinOAuthSessionRefresh(path, session, signal);
+  return joinOAuthSessionRefresh(path, session);
 }
 
 export async function beginOAuthSessionAuthorization(options: {
   readonly sessionPath: string;
   readonly uuidPath: string;
   readonly cloudServer: CloudServer;
-  readonly signal: AbortSignal;
   readonly redirectUrl?: string;
 }): Promise<OAuthSessionAuthorization> {
-  const {sessionPath, uuidPath, cloudServer, signal} = options;
-
-  signal.throwIfAborted();
-
-  const uuid = await loadOrCreateOAuthUuid(uuidPath, signal);
+  const {sessionPath, uuidPath, cloudServer} = options;
+  const uuid = await loadOrCreateOAuthUuid(uuidPath);
   const redirectUrl = options.redirectUrl ?? getOAuthRedirectUrl(uuid);
   const oauthClient = new OAuthClient(uuid, cloudServer);
   const authorization = oauthClient.createAuthorization(redirectUrl);
   const callback = await startOAuthCallbackListener({
     expectedState: authorization.state,
     redirectUrl,
-    signal,
   });
   const completion = (async () => {
     const code = await callback.wait();
-    const token = await oauthClient.exchangeCode(code, redirectUrl, signal);
+    const token = await oauthClient.exchangeCode(code, redirectUrl);
     const session = createOAuthSession(uuid, cloudServer, redirectUrl, token);
 
     await saveOAuthSession(sessionPath, session);
@@ -84,7 +76,11 @@ export async function beginOAuthSessionAuthorization(options: {
   })();
 
   void completion.catch(() => undefined);
-  return {url: authorization.url, wait: () => completion};
+  return {
+    url: authorization.url,
+    wait: () => completion,
+    cancel: () => callback.close(),
+  };
 }
 
 export async function saveOAuthSession(
@@ -112,6 +108,7 @@ export function createOAuthSession(
 export type OAuthSessionAuthorization = {
   readonly url: string;
   wait(): Promise<OAuthSession>;
+  cancel(): Promise<void>;
 };
 
 export type OAuthSession = {
@@ -122,28 +119,17 @@ export type OAuthSession = {
   readonly token: OAuthToken;
 };
 
-type OAuthSessionRefreshOperation = {
-  readonly path: string;
-  readonly controller: AbortController;
-  readonly promise: Promise<OAuthSession>;
-  waiterCount: number;
-  settled: boolean;
-};
-
 export class OAuthSessionMissingError extends Error {
   constructor() {
     super('OAuth session is missing.');
   }
 }
 
-async function readOAuthSession(
-  path: string,
-  signal?: AbortSignal,
-): Promise<OAuthSession> {
+async function readOAuthSession(path: string): Promise<OAuthSession> {
   let source: string;
 
   try {
-    source = await readFile(path, {encoding: 'utf8', signal});
+    source = await readFile(path, 'utf8');
   } catch (error) {
     if (isFileNotFoundError(error)) {
       throw new OAuthSessionMissingError();
@@ -169,76 +155,36 @@ function parseOAuthSession(value: unknown): OAuthSession {
 function joinOAuthSessionRefresh(
   path: string,
   session: OAuthSession,
-  signal?: AbortSignal,
 ): Promise<OAuthSession> {
-  signal?.throwIfAborted();
+  let refreshPromise = OAUTH_SESSION_REFRESH_PROMISE_MAP.get(path);
 
-  let operation = OAUTH_SESSION_REFRESH_OPERATION_MAP.get(path);
+  if (refreshPromise === undefined) {
+    const newRefreshPromise = refreshOAuthSession(path, session);
 
-  if (operation === undefined) {
-    const controller = new AbortController();
-    const promise = refreshOAuthSession(path, session, controller.signal);
-    const newOperation: OAuthSessionRefreshOperation = {
-      path,
-      controller,
-      promise,
-      waiterCount: 0,
-      settled: false,
-    };
-
-    operation = newOperation;
-    OAUTH_SESSION_REFRESH_OPERATION_MAP.set(path, newOperation);
+    refreshPromise = newRefreshPromise;
+    OAUTH_SESSION_REFRESH_PROMISE_MAP.set(path, newRefreshPromise);
 
     const complete = (): void => {
-      newOperation.settled = true;
-
-      if (OAUTH_SESSION_REFRESH_OPERATION_MAP.get(path) === newOperation) {
-        OAUTH_SESSION_REFRESH_OPERATION_MAP.delete(path);
+      if (OAUTH_SESSION_REFRESH_PROMISE_MAP.get(path) === newRefreshPromise) {
+        OAUTH_SESSION_REFRESH_PROMISE_MAP.delete(path);
       }
     };
 
-    void promise.then(complete, complete);
+    void newRefreshPromise.then(complete, complete);
   }
 
-  return waitForOAuthSessionRefresh(operation, signal);
-}
-
-async function waitForOAuthSessionRefresh(
-  operation: OAuthSessionRefreshOperation,
-  signal?: AbortSignal,
-): Promise<OAuthSession> {
-  operation.waiterCount++;
-
-  try {
-    return await waitForPromise(operation.promise, signal);
-  } finally {
-    operation.waiterCount--;
-
-    if (!operation.settled && operation.waiterCount === 0) {
-      if (
-        OAUTH_SESSION_REFRESH_OPERATION_MAP.get(operation.path) === operation
-      ) {
-        OAUTH_SESSION_REFRESH_OPERATION_MAP.delete(operation.path);
-      }
-
-      operation.controller.abort();
-    }
-  }
+  return refreshPromise;
 }
 
 async function refreshOAuthSession(
   path: string,
   session: OAuthSession,
-  signal: AbortSignal,
 ): Promise<OAuthSession> {
   const oauthClient = new OAuthClient(session.uuid, session.cloudServer);
   const token = await oauthClient.refreshToken(
     session.token.refreshToken,
     session.redirectUrl,
-    signal,
   );
-
-  signal.throwIfAborted();
 
   const refreshedSession = createOAuthSession(
     session.uuid,
@@ -251,12 +197,7 @@ async function refreshOAuthSession(
   return refreshedSession;
 }
 
-async function loadOrCreateOAuthUuid(
-  path: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  signal?.throwIfAborted();
-
+async function loadOrCreateOAuthUuid(path: string): Promise<string> {
   let uuidPromise = OAUTH_UUID_PROMISE_MAP.get(path);
 
   if (uuidPromise === undefined) {
@@ -272,7 +213,7 @@ async function loadOrCreateOAuthUuid(
     void uuidPromise.then(complete, complete);
   }
 
-  return waitForPromise(uuidPromise, signal);
+  return uuidPromise;
 }
 
 async function loadOrCreateOAuthUuidFromStorage(path: string): Promise<string> {
@@ -307,12 +248,12 @@ function getOAuthRedirectUrl(uuid: string): string {
 export async function startOAuthCallbackListener(options: {
   readonly expectedState: string;
   readonly redirectUrl: string;
-  readonly signal: AbortSignal;
   readonly timeout?: number;
 }): Promise<OAuthCallbackListener> {
-  const {expectedState, signal} = options;
+  const {expectedState} = options;
   const redirectUrl = new URL(options.redirectUrl);
   const result = createResult<string>();
+  let outcome: OAuthCallbackOutcome | undefined;
   let settlementPromise: Promise<void> | undefined;
   const server = createServer((request, response) => {
     const callbackUrl = new URL(request.url ?? '/', redirectUrl);
@@ -320,73 +261,99 @@ export async function startOAuthCallbackListener(options: {
     const error = callbackUrl.searchParams.get('error');
     const code = callbackUrl.searchParams.get('code');
 
-    if (callbackUrl.pathname !== redirectUrl.pathname) {
+    if (outcome !== undefined) {
+      response.writeHead(409);
+      response.end('OAuth callback already received.');
+    } else if (callbackUrl.pathname !== redirectUrl.pathname) {
       response.writeHead(404);
       response.end('Not found.');
     } else if (state !== expectedState) {
       response.writeHead(400);
       response.end('Invalid OAuth state.');
     } else if (error !== null) {
+      outcome = {type: 'error', error: new Error(`OAuth failed: ${error}.`)};
       response.writeHead(400);
-      response.end('OAuth failed.', () => {
-        void settle(() => result.reject(new Error(`OAuth failed: ${error}.`)));
-      });
+      response.end('OAuth failed.', closeConnections);
+      void settle(false);
     } else if (code === null) {
       response.writeHead(400);
       response.end('Missing OAuth code.');
     } else {
+      outcome = {type: 'code', code};
       response.writeHead(200, {'content-type': 'text/plain; charset=utf-8'});
       response.end(
         'OAuth authorization received. You can close this tab.',
-        () => {
-          void settle(() => result.resolve(code));
-        },
+        closeConnections,
       );
+      void settle(false);
     }
   });
-  const handleAbort = (): void => {
-    void settle(() => result.reject(signal.reason));
-  };
   const handleError = (error: Error): void => {
-    void settle(() => result.reject(error));
+    outcome ??= {type: 'error', error};
+    void settle(true);
   };
 
-  signal.throwIfAborted();
   await listen(server, getRedirectPort(redirectUrl));
-  signal.addEventListener('abort', handleAbort, {once: true});
   server.on('error', handleError);
   const timeout = setTimeout(() => {
-    void settle(() => result.reject(new Error('OAuth callback timed out.')));
+    outcome ??= {
+      type: 'error',
+      error: new Error('OAuth callback timed out.'),
+    };
+    void settle(true);
   }, options.timeout ?? OAUTH_CALLBACK_TIMEOUT);
 
-  if (signal.aborted) {
-    await settle(() => result.reject(signal.reason));
-    signal.throwIfAborted();
-  }
+  return {
+    wait: () => result.promise,
+    close: () => {
+      outcome ??= {
+        type: 'error',
+        error: new Error('OAuth callback listener closed.'),
+      };
+      return settle(outcome.type !== 'code');
+    },
+  };
 
-  return {wait: () => result.promise};
-
-  function settle(complete: () => void): Promise<void> {
+  function settle(force: boolean): Promise<void> {
     if (settlementPromise !== undefined) {
       return settlementPromise;
     }
 
-    const promise = (async () => {
-      clearTimeout(timeout);
-      signal.removeEventListener('abort', handleAbort);
-      server.off('error', handleError);
-      await closeServer(server);
-      complete();
-    })();
+    clearTimeout(timeout);
+
+    server.off('error', handleError);
+
+    const finalOutcome = outcome;
+
+    if (finalOutcome === undefined) {
+      throw new TypeError('OAuth callback settled without an outcome.');
+    }
+
+    const promise = closeServer(server, force).then(() => {
+      if (finalOutcome.type === 'code') {
+        result.resolve(finalOutcome.code);
+      } else {
+        result.reject(finalOutcome.error);
+      }
+    });
 
     settlementPromise = promise;
     return promise;
+  }
+
+  function closeConnections(): void {
+    server.closeAllConnections();
   }
 }
 
 export type OAuthCallbackListener = {
   wait(): Promise<string>;
+  close(): Promise<void>;
 };
+
+type OAuthCallbackOutcome =
+  | {readonly type: 'code'; readonly code: string}
+  | {readonly type: 'error'; readonly error: unknown};
 
 function createResult<T>(): {
   readonly promise: Promise<T>;
@@ -402,47 +369,6 @@ function createResult<T>(): {
 
   void promise.catch(() => undefined);
   return {promise, resolve, reject};
-}
-
-function waitForPromise<T>(
-  promise: Promise<T>,
-  signal?: AbortSignal,
-): Promise<T> {
-  if (signal === undefined) {
-    return promise;
-  }
-
-  signal.throwIfAborted();
-
-  return new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const handleAbort = (): void => {
-      settle(() => reject(signal.reason));
-    };
-    const settle = (complete: () => void): void => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      signal.removeEventListener('abort', handleAbort);
-      complete();
-    };
-
-    signal.addEventListener('abort', handleAbort, {once: true});
-    void promise.then(
-      value => {
-        settle(() => resolve(value));
-      },
-      error => {
-        settle(() => reject(error));
-      },
-    );
-
-    if (signal.aborted) {
-      handleAbort();
-    }
-  });
 }
 
 function listen(server: Server, port: number): Promise<void> {
@@ -462,7 +388,7 @@ function listen(server: Server, port: number): Promise<void> {
   });
 }
 
-function closeServer(server: Server): Promise<void> {
+function closeServer(server: Server, force: boolean): Promise<void> {
   if (!server.listening) {
     return Promise.resolve();
   }
@@ -471,7 +397,10 @@ function closeServer(server: Server): Promise<void> {
     server.close(() => {
       resolve();
     });
-    server.closeAllConnections();
+
+    if (force) {
+      server.closeAllConnections();
+    }
   });
 }
 

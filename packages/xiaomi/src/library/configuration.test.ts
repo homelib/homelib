@@ -8,7 +8,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 
 import {
   MiotProviderConfiguration,
@@ -85,9 +85,7 @@ test('loads missing configuration as all homes and strips dependency extras', as
     discoverDevices: () => Promise.resolve(dependencyDiscovery),
     beginAuthorization: unexpectedAuthorization,
   });
-  const signal = new AbortController().signal;
-
-  await expect(configuration.load(signal)).resolves.toEqual({
+  await expect(configuration.load()).resolves.toEqual({
     account: TEST_ACCOUNT,
     selectionSource: 'default',
     homes: [
@@ -101,7 +99,7 @@ test('loads missing configuration as all homes and strips dependency extras', as
     ],
   });
 
-  const discovery = requireDefined(await configuration.discoverDevices(signal));
+  const discovery = requireDefined(await configuration.discoverDevices());
 
   expect(discovery).toEqual(TEST_DISCOVERY);
   expect(JSON.stringify(discovery)).not.toContain('must-not-leak');
@@ -112,10 +110,8 @@ test('returns undefined when authorization is missing', async () => {
     discoverDevices: () => Promise.resolve(undefined),
     beginAuthorization: unexpectedAuthorization,
   });
-  const signal = new AbortController().signal;
-
-  await expect(configuration.load(signal)).resolves.toBeUndefined();
-  await expect(configuration.discoverDevices(signal)).resolves.toBeUndefined();
+  await expect(configuration.load()).resolves.toBeUndefined();
+  await expect(configuration.discoverDevices()).resolves.toBeUndefined();
 });
 
 test('persists an explicit empty selection atomically', async () => {
@@ -137,9 +133,8 @@ test('persists an explicit empty selection atomically', async () => {
     readdir(join(environmentDirectory, 'providers/miot/config')),
   ).resolves.toEqual(['provider.json']);
 
-  const signal = new AbortController().signal;
-  const snapshot = requireDefined(await configuration.load(signal));
-  const discovery = requireDefined(await configuration.discoverDevices(signal));
+  const snapshot = requireDefined(await configuration.load());
+  const discovery = requireDefined(await configuration.discoverDevices());
 
   expect(snapshot.selectionSource).toBe('saved');
   expect(snapshot.homes.every(home => !home.included)).toBe(true);
@@ -207,9 +202,9 @@ test('rejects duplicate homes while loading before discovery', async () => {
     }),
   );
 
-  await expect(
-    configuration.load(new AbortController().signal),
-  ).rejects.toThrow('Duplicate configured home: owned/home-1.');
+  await expect(configuration.load()).rejects.toThrow(
+    'Duplicate configured home: owned/home-1.',
+  );
   expect(discoveryCount).toBe(0);
 });
 
@@ -220,9 +215,8 @@ test('filters runtime discovery with persisted source and id references', async 
     {source: 'owned', id: 'home-1'},
   ]);
 
-  const signal = new AbortController().signal;
-  const snapshot = requireDefined(await configuration.load(signal));
-  const discovery = requireDefined(await configuration.discoverDevices(signal));
+  const snapshot = requireDefined(await configuration.load());
+  const discovery = requireDefined(await configuration.discoverDevices());
 
   expect(snapshot.homes.map(home => [home.id, home.included])).toEqual([
     ['home-1', true],
@@ -262,9 +256,7 @@ test('uses home source and id together as filter identity', async () => {
     {source: 'shared-home', id: 'same-id'},
   ]);
 
-  const discovery = requireDefined(
-    await configuration.discoverDevices(new AbortController().signal),
-  );
+  const discovery = requireDefined(await configuration.discoverDevices());
 
   expect(discovery.homes.map(home => home.source)).toEqual(['shared-home']);
   expect(discovery.devices.map(device => device.did)).toEqual([
@@ -284,9 +276,8 @@ test('does not apply a selection saved for a different account', async () => {
 
   await configuration.saveIncludedHomes(TEST_ACCOUNT, []);
 
-  const signal = new AbortController().signal;
-  const snapshot = requireDefined(await configuration.load(signal));
-  const discovery = requireDefined(await configuration.discoverDevices(signal));
+  const snapshot = requireDefined(await configuration.load());
+  const discovery = requireDefined(await configuration.discoverDevices());
 
   expect(snapshot.selectionSource).toBe('account-mismatch');
   expect(snapshot.homes.every(home => home.included)).toBe(true);
@@ -309,9 +300,8 @@ test('does not reuse a selection when the account identity is unavailable', asyn
     JSON.stringify({version: 0, account, includedHomes: []}),
   );
 
-  const signal = new AbortController().signal;
-  const snapshot = requireDefined(await configuration.load(signal));
-  const discovery = requireDefined(await configuration.discoverDevices(signal));
+  const snapshot = requireDefined(await configuration.load());
+  const discovery = requireDefined(await configuration.discoverDevices());
 
   expect(snapshot.selectionSource).toBe('account-mismatch');
   expect(snapshot.homes.every(home => home.included)).toBe(true);
@@ -334,12 +324,16 @@ test('refuses to save a selection without an account identity', async () => {
 
 test('wraps authorization without exposing its private result', async () => {
   let authorizationWaitCount = 0;
+  let authorizationCancelCount = 0;
   let discoveryCount = 0;
   const internalAuthorization = {
     url: 'https://example.test/authorize',
     token: 'must-not-leak',
     wait: async (): Promise<void> => {
       authorizationWaitCount++;
+    },
+    cancel: async (): Promise<void> => {
+      authorizationCancelCount++;
     },
   };
   const configuration = createConfiguration({
@@ -349,8 +343,7 @@ test('wraps authorization without exposing its private result', async () => {
     },
     beginAuthorization: () => Promise.resolve(internalAuthorization),
   });
-  const signal = new AbortController().signal;
-  const authorization = await configuration.beginAuthorization('cn', signal);
+  const authorization = await configuration.beginAuthorization('cn');
 
   expect(authorization.url).toBe('https://example.test/authorize');
   expect(JSON.stringify(authorization)).not.toContain('must-not-leak');
@@ -361,7 +354,48 @@ test('wraps authorization without exposing its private result', async () => {
   expect(firstCompletion).toBe(secondCompletion);
   await firstCompletion;
   expect(authorizationWaitCount).toBe(1);
+
+  await authorization.cancel();
+  expect(authorizationCancelCount).toBe(1);
   expect(discoveryCount).toBe(0);
+});
+
+test('forgets only local authorization', async () => {
+  let forgetCount = 0;
+  let discoveryCount = 0;
+  const configuration = createConfiguration({
+    discoverDevices: () => {
+      discoveryCount++;
+      return Promise.reject(new Error('Unexpected discovery.'));
+    },
+    forgetAuthorization: () => {
+      forgetCount++;
+      return Promise.resolve();
+    },
+  });
+  const identityPath = join(
+    environmentDirectory,
+    'providers',
+    'miot',
+    'identity',
+    'uuid.json',
+  );
+
+  await configuration.saveIncludedHomes(TEST_ACCOUNT, [
+    {source: 'owned', id: 'home-1'},
+  ]);
+  await mkdir(dirname(identityPath), {recursive: true});
+  await writeFile(identityPath, 'identity');
+
+  await configuration.forgetAuthorization();
+
+  expect(forgetCount).toBe(1);
+  expect(discoveryCount).toBe(0);
+
+  await expect(readFile(getConfigurationPath(), 'utf8')).resolves.toContain(
+    'home-1',
+  );
+  await expect(readFile(identityPath, 'utf8')).resolves.toBe('identity');
 });
 
 test('rejects provider names that could escape the configuration directory', () => {
@@ -371,16 +405,20 @@ test('rejects provider names that could escape the configuration directory', () 
 });
 
 function createConfiguration(
-  dependencies: MiotProviderConfigurationDependencies = {
-    discoverDevices: () => Promise.resolve(TEST_DISCOVERY),
-    beginAuthorization: unexpectedAuthorization,
-  },
+  dependencies: Partial<MiotProviderConfigurationDependencies> = {},
   providerName = 'provider',
 ): MiotProviderConfiguration {
   return new MiotProviderConfiguration({
     providerName,
     environmentDirectory,
-    dependencies,
+    dependencies: {
+      discoverDevices:
+        dependencies.discoverDevices ?? (() => Promise.resolve(TEST_DISCOVERY)),
+      beginAuthorization:
+        dependencies.beginAuthorization ?? unexpectedAuthorization,
+      forgetAuthorization:
+        dependencies.forgetAuthorization ?? unexpectedForgetAuthorization,
+    },
   });
 }
 
@@ -396,6 +434,10 @@ function getConfigurationPath(): string {
 
 function unexpectedAuthorization(): Promise<MiotProviderConfigurationAuthorizationDependency> {
   return Promise.reject(new Error('Unexpected authorization.'));
+}
+
+function unexpectedForgetAuthorization(): Promise<void> {
+  return Promise.reject(new Error('Unexpected authorization forget.'));
 }
 
 function requireDefined<T>(value: T | undefined): T {

@@ -26,24 +26,13 @@ export function MiotProviderDetails({
   const operationReference = useRef<Operation | undefined>(undefined);
 
   const beginOperation = useCallback((): Operation => {
-    operationReference.current?.controller.abort();
-
-    const operation = {
-      controller: new AbortController(),
-    };
+    const operation = {authorizationCancellationRequested: false};
 
     operationReference.current = operation;
     return operation;
   }, []);
 
   const isCurrentOperation = useCallback(
-    (operation: Operation): boolean =>
-      operationReference.current === operation &&
-      !operation.controller.signal.aborted,
-    [],
-  );
-
-  const isCurrentOperationReference = useCallback(
     (operation: Operation): boolean => operationReference.current === operation,
     [],
   );
@@ -54,8 +43,7 @@ export function MiotProviderDetails({
     }
   }, []);
 
-  const abortOperation = useCallback((): void => {
-    operationReference.current?.controller.abort();
+  const clearOperation = useCallback((): void => {
     operationReference.current = undefined;
   }, []);
 
@@ -63,7 +51,7 @@ export function MiotProviderDetails({
     const operation = beginOperation();
 
     setState({type: 'loading'});
-    void provider.configuration.load(operation.controller.signal).then(
+    void provider.configuration.load().then(
       snapshot => {
         if (!isCurrentOperation(operation)) {
           return;
@@ -97,20 +85,25 @@ export function MiotProviderDetails({
 
       setState({type: 'authorizing', cloudServer});
       void (async () => {
-        const authorization = await provider.configuration.beginAuthorization(
-          cloudServer,
-          operation.controller.signal,
-        );
+        const authorization =
+          await provider.configuration.beginAuthorization(cloudServer);
 
         if (!isCurrentOperation(operation)) {
+          await authorization.cancel();
           return;
         }
 
-        setState({
-          type: 'authorizing',
-          cloudServer,
-          url: authorization.url,
-        });
+        operation.cancelAuthorization = authorization.cancel;
+
+        if (operation.authorizationCancellationRequested) {
+          await authorization.cancel();
+        } else {
+          setState({
+            type: 'authorizing',
+            cloudServer,
+            url: authorization.url,
+          });
+        }
 
         await authorization.wait();
 
@@ -120,40 +113,25 @@ export function MiotProviderDetails({
 
         completeOperation(operation);
         load();
-      })()
-        .catch(error => {
-          if (
-            !isCurrentOperationReference(operation) ||
-            operation.controller.signal.aborted
-          ) {
-            return;
-          }
+      })().catch(error => {
+        if (!isCurrentOperation(operation)) {
+          return;
+        }
 
-          completeOperation(operation);
+        completeOperation(operation);
+
+        if (operation.authorizationCancellationRequested) {
+          load();
+        } else {
           setState({
             type: 'authorization-error',
             cloudServer,
             message: getErrorMessage(error),
           });
-        })
-        .finally(() => {
-          if (
-            isCurrentOperationReference(operation) &&
-            operation.controller.signal.aborted
-          ) {
-            completeOperation(operation);
-            load();
-          }
-        });
+        }
+      });
     },
-    [
-      beginOperation,
-      completeOperation,
-      isCurrentOperation,
-      isCurrentOperationReference,
-      load,
-      provider,
-    ],
+    [beginOperation, completeOperation, isCurrentOperation, load, provider],
   );
 
   const save = useCallback(
@@ -210,16 +188,47 @@ export function MiotProviderDetails({
     [beginOperation, completeOperation, isCurrentOperation, provider],
   );
 
+  const logOut = useCallback(
+    (readyState: ReadyState): void => {
+      const operation = beginOperation();
+
+      setState({type: 'logging-out'});
+      void provider.configuration.forgetAuthorization().then(
+        () => {
+          if (!isCurrentOperation(operation)) {
+            return;
+          }
+
+          completeOperation(operation);
+          setState({type: 'logged-out'});
+        },
+        error => {
+          if (!isCurrentOperation(operation)) {
+            return;
+          }
+
+          completeOperation(operation);
+          setState({
+            type: 'logout-error',
+            readyState,
+            message: getErrorMessage(error),
+          });
+        },
+      );
+    },
+    [beginOperation, completeOperation, isCurrentOperation, provider],
+  );
+
   useEffect(() => {
     load();
 
-    return abortOperation;
-  }, [abortOperation, load]);
+    return clearOperation;
+  }, [clearOperation, load]);
 
   useInput((input, key) => {
     if (state.type === 'loading') {
       if (key.escape) {
-        abortOperation();
+        clearOperation();
         onBack();
       }
     } else if (state.type === 'authorization-required') {
@@ -250,7 +259,13 @@ export function MiotProviderDetails({
       }
     } else if (state.type === 'authorizing') {
       if (key.escape) {
-        operationReference.current?.controller.abort();
+        const operation = operationReference.current;
+
+        if (operation !== undefined) {
+          operation.authorizationCancellationRequested = true;
+          void operation.cancelAuthorization?.().catch(console.error);
+        }
+
         setState({type: 'cancelling-authorization'});
       }
     } else if (state.type === 'cancelling-authorization') {
@@ -274,6 +289,22 @@ export function MiotProviderDetails({
         });
       } else if (key.return || input === 'r') {
         authorize(state.cloudServer);
+      }
+    } else if (state.type === 'logout-confirmation') {
+      if (key.escape) {
+        setState(state.readyState);
+      } else if (input === 'y') {
+        logOut(state.readyState);
+      }
+    } else if (state.type === 'logging-out') {
+      return;
+    } else if (state.type === 'logged-out') {
+      return;
+    } else if (state.type === 'logout-error') {
+      if (key.escape) {
+        setState(state.readyState);
+      } else if (key.return || input === 'r') {
+        logOut(state.readyState);
       }
     } else if (!state.saving) {
       const homeCount = state.snapshot.homes.length;
@@ -304,6 +335,8 @@ export function MiotProviderDetails({
         save(state);
       } else if (input === 'r' && !hasDraftChanges(state)) {
         load();
+      } else if (input === 'l') {
+        setState({type: 'logout-confirmation', readyState: state});
       }
     }
   });
@@ -344,6 +377,24 @@ function DetailsView({state}: DetailsViewProps): React.JSX.Element {
       <ErrorView message={state.message}>
         enter/r retry · esc choose region
       </ErrorView>
+    );
+  } else if (state.type === 'logout-confirmation') {
+    return <LogoutConfirmationView />;
+  } else if (state.type === 'logging-out') {
+    return (
+      <Box flexDirection="column">
+        <Text>logging out…</Text>
+      </Box>
+    );
+  } else if (state.type === 'logged-out') {
+    return (
+      <Box flexDirection="column">
+        <Text>logged out locally. restart the script to continue.</Text>
+      </Box>
+    );
+  } else if (state.type === 'logout-error') {
+    return (
+      <ErrorView message={state.message}>enter/r retry · esc cancel</ErrorView>
     );
   }
 
@@ -411,6 +462,19 @@ function AuthorizingView({state}: AuthorizingViewProps): React.JSX.Element {
   );
 }
 
+function LogoutConfirmationView(): React.JSX.Element {
+  return (
+    <Box flexDirection="column">
+      <Text>log out of this miot provider?</Text>
+      <Text dimColor>
+        local oauth credentials will be removed. provider identity and the saved
+        home filter will be kept.
+      </Text>
+      <Hint>y confirm · esc cancel</Hint>
+    </Box>
+  );
+}
+
 type ReadyViewProps = {
   readonly state: ReadyState;
 };
@@ -464,13 +528,18 @@ function ReadyView({state}: ReadyViewProps): React.JSX.Element {
       {state.saving ? (
         <Hint>saving…</Hint>
       ) : !filteringAvailable ? (
-        <Hint>↑↓ select · r reload · esc back</Hint>
+        <Hint>↑↓ select · r reload · l log out · esc back</Hint>
       ) : draftChanged ? (
-        <Hint>↑↓ select · space toggle · enter save · esc discard/back</Hint>
+        <Hint>
+          ↑↓ select · space toggle · enter save · l log out · esc discard/back
+        </Hint>
       ) : saveRequired ? (
-        <Hint>↑↓ select · space toggle · enter save · r reload · esc back</Hint>
+        <Hint>
+          ↑↓ select · space toggle · enter save · r reload · l log out · esc
+          back
+        </Hint>
       ) : (
-        <Hint>↑↓ select · space toggle · r reload · esc back</Hint>
+        <Hint>↑↓ select · space toggle · r reload · l log out · esc back</Hint>
       )}
     </Box>
   );
@@ -528,6 +597,10 @@ type DetailsState =
   | CancellingAuthorizationState
   | LoadErrorState
   | AuthorizationErrorState
+  | LogoutConfirmationState
+  | LoggingOutState
+  | LoggedOutState
+  | LogoutErrorState
   | ReadyState;
 
 type LoadingState = {
@@ -560,6 +633,25 @@ type AuthorizationErrorState = {
   readonly message: string;
 };
 
+type LogoutConfirmationState = {
+  readonly type: 'logout-confirmation';
+  readonly readyState: ReadyState;
+};
+
+type LoggingOutState = {
+  readonly type: 'logging-out';
+};
+
+type LoggedOutState = {
+  readonly type: 'logged-out';
+};
+
+type LogoutErrorState = {
+  readonly type: 'logout-error';
+  readonly readyState: ReadyState;
+  readonly message: string;
+};
+
 type ReadyState = {
   readonly type: 'ready';
   readonly snapshot: MiotProviderConfigurationSnapshot;
@@ -571,7 +663,8 @@ type ReadyState = {
 };
 
 type Operation = {
-  readonly controller: AbortController;
+  authorizationCancellationRequested: boolean;
+  cancelAuthorization?: () => Promise<void>;
 };
 
 function createReadyState(
