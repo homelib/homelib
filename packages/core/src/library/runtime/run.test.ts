@@ -154,6 +154,7 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
     this.receivedMetadata = metadata;
 
     return {
+      resourceKeys: [],
       create: () => {
         const connection = new TestEndpointConnection(this);
         this.connectionValues.push(connection);

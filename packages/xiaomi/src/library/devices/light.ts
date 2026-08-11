@@ -18,6 +18,7 @@ import {
   type MiotPropertyMatcher,
   MiotSetPropertyRequest,
   type MiotSpecProperty,
+  findMiotEndpointMatches,
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
 
@@ -59,11 +60,11 @@ export class MiotLightEndpointConnection
     transports: MiotEndpointConnectionTransports,
   ) {
     super(provider, metadata, transports);
-    this.onProperty = getOnProperty(metadata);
+    this.onProperty = getValidatedOnProperty(metadata);
   }
 
   static assertMetadata(metadata: MiotEndpointConnectionMetadata): void {
-    getOnProperty(metadata);
+    getValidatedOnProperty(metadata);
   }
 
   override async processCommand(command: LightEndpointCommand): Promise<void> {
@@ -106,4 +107,66 @@ function getOnProperty(
   }
 
   return property;
+}
+
+function getValidatedOnProperty(
+  metadata: MiotEndpointConnectionMetadata,
+): MiotSpecProperty {
+  const onProperty = getOnProperty(metadata);
+
+  if (
+    Object.keys(metadata.properties).length !== 1 ||
+    !Object.hasOwn(metadata.properties, 'on')
+  ) {
+    throw new TypeError(
+      'MIoT light endpoint metadata must contain only the on property.',
+    );
+  }
+
+  const spec = {
+    type: metadata.device.urn,
+    description: metadata.device.model,
+    services: [metadata.service],
+  };
+  const matches = MIOT_LIGHT_ENDPOINT_MATCHERS.flatMap(matcher =>
+    findMiotEndpointMatches(spec, matcher),
+  );
+  const valid = matches.some(
+    match =>
+      match.service.iid === metadata.service.iid &&
+      propertiesEqual(match.properties.on, onProperty),
+  );
+
+  if (!valid) {
+    throw new TypeError('Invalid MIoT light endpoint metadata.');
+  }
+
+  return onProperty;
+}
+
+function propertiesEqual(
+  left: MiotSpecProperty,
+  right: MiotSpecProperty,
+): boolean {
+  return (
+    left.iid === right.iid &&
+    left.type === right.type &&
+    left.format === right.format &&
+    uniqueStringArraysEqual(left.access, right.access)
+  );
+}
+
+function uniqueStringArraysEqual(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+
+  return (
+    leftSet.size === left.length &&
+    rightSet.size === right.length &&
+    leftSet.size === rightSet.size &&
+    leftSet.isSubsetOf(rightSet)
+  );
 }

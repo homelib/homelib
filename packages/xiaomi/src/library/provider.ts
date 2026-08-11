@@ -102,6 +102,9 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     MiotLightEndpointConnection.assertMetadata(metadata);
 
     return {
+      resourceKeys: [
+        JSON.stringify([metadata.device.did, metadata.service.iid]),
+      ],
       create: () =>
         this.createLightEndpointConnectionBinding(endpoint, metadata),
     };

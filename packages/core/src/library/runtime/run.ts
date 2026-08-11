@@ -6,10 +6,11 @@ import type {EndpointConnectionBindingPlan} from '../provider.js';
 import {getProvider, getProviderEntries, getRootScopes} from '../registry.js';
 import type {Scope} from '../scope.js';
 
-import {presentStartup} from './@tui/startup.js';
+import {type StartupBindingScope, presentStartup} from './@tui/startup.js';
 import {
-  type EndpointPath,
+  type BindingFile,
   getEndpointPath,
+  getEndpointPathKey,
   readBindingFile,
 } from './binding.js';
 
@@ -28,13 +29,98 @@ export function run(): Promise<void> {
 }
 
 async function runInternal(): Promise<void> {
+  const initialBindingFile = await readBindingFile();
+  const rootScopes = [...getRootScopes()];
+  const {scopes, endpointMap} = collectBindingTopology(rootScopes);
+
+  await presentStartup({
+    scriptName: getScriptName(),
+    providers: Array.from(getProviderEntries(), ([namespace, provider]) => ({
+      namespace,
+      provider,
+    })),
+    bindingScopes: scopes,
+    bindingFile: initialBindingFile,
+  });
+
   const bindingFile = await readBindingFile();
-  const endpointMap = collectEndpoints();
+  const connectionBindingPlans = createConnectionBindingPlans(
+    bindingFile,
+    endpointMap,
+  );
+
+  // TODO: add a disposal contract before plans may allocate independent
+  // resources that need rollback when another plan fails to create.
+  const connectionBindings = await Promise.all(
+    connectionBindingPlans.map(async plan => plan.create()),
+  );
+
+  for (const connectionBinding of connectionBindings) {
+    connectionBinding.bind();
+  }
+}
+
+function collectBindingTopology(rootScopes: readonly Scope[]): {
+  readonly scopes: readonly StartupBindingScope[];
+  readonly endpointMap: ReadonlyMap<string, EndpointReference>;
+} {
+  const endpointMap = new Map<string, EndpointReference>();
+  const scopePathSet = new Set<string>();
+  const scopes = rootScopes.map(scope =>
+    collectBindingScope(scope, endpointMap, scopePathSet),
+  );
+
+  return {scopes, endpointMap};
+}
+
+function collectBindingScope(
+  scope: Scope,
+  endpointMap: Map<string, EndpointReference>,
+  scopePathSet: Set<string>,
+): StartupBindingScope {
+  const scopePathKey = getScopePathKey(scope);
+
+  if (scopePathSet.has(scopePathKey)) {
+    throw new Error(`Duplicate logical scope path: ${scopePathKey}.`);
+  }
+
+  scopePathSet.add(scopePathKey);
+
+  const devices = Array.from(scope.devices, deviceEntry => ({
+    name: deviceEntry.name,
+    endpoints: Array.from(deviceEntry.endpoints, endpoint => {
+      const path = getEndpointPath(scope, deviceEntry, endpoint);
+      const pathKey = getEndpointPathKey(path);
+
+      if (endpointMap.has(pathKey)) {
+        throw new Error(`Duplicate logical endpoint path: ${pathKey}.`);
+      }
+
+      endpointMap.set(pathKey, endpoint);
+
+      return {path, endpoint};
+    }),
+  }));
+
+  return {
+    path: scope.path,
+    scopes: Array.from(scope.scopes, childScope =>
+      collectBindingScope(childScope, endpointMap, scopePathSet),
+    ),
+    devices,
+  };
+}
+
+function createConnectionBindingPlans(
+  bindingFile: BindingFile,
+  endpointMap: ReadonlyMap<string, EndpointReference>,
+): readonly EndpointConnectionBindingPlan[] {
   const bindingPathSet = new Set<string>();
-  const connectionBindingPlans: EndpointConnectionBindingPlan[] = [];
+  const providerResourceKeySet = new Set<string>();
+  const plans: EndpointConnectionBindingPlan[] = [];
 
   for (const binding of bindingFile.bindings) {
-    const pathKey = getPathKey(binding.endpoint);
+    const pathKey = getEndpointPathKey(binding.endpoint);
 
     if (bindingPathSet.has(pathKey)) {
       throw new Error(`Duplicate endpoint binding: ${pathKey}.`);
@@ -59,66 +145,35 @@ async function runInternal(): Promise<void> {
       );
     }
 
-    connectionBindingPlans.push(
-      provider.createEndpointConnectionBindingPlan(endpoint, binding.metadata),
+    const plan = provider.createEndpointConnectionBindingPlan(
+      endpoint,
+      binding.metadata,
     );
-  }
 
-  await presentStartup({
-    scriptName: getScriptName(),
-    providers: Array.from(getProviderEntries(), ([namespace, provider]) => ({
-      namespace,
-      provider,
-    })),
-    endpoints: {
-      boundCount: bindingPathSet.size,
-      unboundCount: endpointMap.size - bindingPathSet.size,
-    },
-  });
+    for (const resourceKey of plan.resourceKeys) {
+      const providerResourceKey = JSON.stringify([
+        binding.provider.namespace,
+        binding.provider.name,
+        resourceKey,
+      ]);
 
-  const connectionBindings = await Promise.all(
-    connectionBindingPlans.map(async plan => plan.create()),
-  );
-
-  for (const connectionBinding of connectionBindings) {
-    connectionBinding.bind();
-  }
-}
-
-function collectEndpoints(): Map<string, EndpointReference> {
-  const endpointMap = new Map<string, EndpointReference>();
-
-  for (const rootScope of getRootScopes()) {
-    collectScopeEndpoints(rootScope, endpointMap);
-  }
-
-  return endpointMap;
-}
-
-function collectScopeEndpoints(
-  scope: Scope,
-  endpointMap: Map<string, EndpointReference>,
-): void {
-  for (const deviceEntry of scope.devices) {
-    for (const endpoint of deviceEntry.endpoints) {
-      const path = getEndpointPath(scope, deviceEntry, endpoint);
-      const pathKey = getPathKey(path);
-
-      if (endpointMap.has(pathKey)) {
-        throw new Error(`Duplicate logical endpoint path: ${pathKey}.`);
+      if (providerResourceKeySet.has(providerResourceKey)) {
+        throw new Error(
+          `Duplicate provider resource binding: ${providerResourceKey}.`,
+        );
       }
 
-      endpointMap.set(pathKey, endpoint);
+      providerResourceKeySet.add(providerResourceKey);
     }
+
+    plans.push(plan);
   }
 
-  for (const childScope of scope.scopes) {
-    collectScopeEndpoints(childScope, endpointMap);
-  }
+  return plans;
 }
 
-function getPathKey(path: EndpointPath): string {
-  return JSON.stringify([path.scopePath, path.deviceName, path.endpointName]);
+function getScopePathKey(scope: Scope): string {
+  return JSON.stringify(scope.path);
 }
 
 function getScriptName(): string {

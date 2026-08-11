@@ -38,6 +38,15 @@ const TEST_METADATA = MiotEndpointConnectionMetadata.satisfies({
     iid: 2,
     type: 'urn:miot-spec-v2:service:light:00007802',
     description: 'Light',
+    properties: [
+      {
+        iid: 1,
+        type: 'urn:miot-spec-v2:property:on:00000006',
+        description: 'Switch Status',
+        format: 'bool',
+        access: ['read', 'write', 'notify'],
+      },
+    ],
   },
   properties: {
     on: {
@@ -83,6 +92,62 @@ test('rejects light metadata without an on property', () => {
         new TestTransport(),
       ]),
   ).toThrow('MIoT light endpoint metadata has no on property.');
+});
+
+test('rejects light metadata whose on property is not part of the service', () => {
+  const metadata = MiotEndpointConnectionMetadata.satisfies({
+    ...TEST_METADATA,
+    service: {...TEST_METADATA.service, properties: []},
+  });
+
+  expect(
+    () =>
+      new MiotLightEndpointConnection(new MiotProvider('provider'), metadata, [
+        new TestTransport(),
+      ]),
+  ).toThrow('Invalid MIoT light endpoint metadata.');
+});
+
+test('rejects light metadata with an extra property alias', () => {
+  const onProperty = TEST_METADATA.properties.on;
+
+  if (onProperty === undefined) {
+    throw new Error('Test light metadata has no on property.');
+  }
+
+  const metadata = MiotEndpointConnectionMetadata.satisfies({
+    ...TEST_METADATA,
+    properties: {on: onProperty, alias: onProperty},
+  });
+
+  expect(() => MiotLightEndpointConnection.assertMetadata(metadata)).toThrow(
+    'MIoT light endpoint metadata must contain only the on property.',
+  );
+});
+
+test('rejects light metadata with duplicate property access values', () => {
+  const onProperty = TEST_METADATA.properties.on;
+
+  if (onProperty === undefined) {
+    throw new Error('Test light metadata has no on property.');
+  }
+
+  const duplicateAccessProperty = {
+    ...onProperty,
+    access: [...onProperty.access, 'notify'],
+  };
+  const metadata = MiotEndpointConnectionMetadata.satisfies({
+    ...TEST_METADATA,
+    service: {
+      ...TEST_METADATA.service,
+      properties: [duplicateAccessProperty],
+    },
+    properties: {on: duplicateAccessProperty},
+  });
+
+  expect(() => MiotLightEndpointConnection.assertMetadata(metadata)).toThrow(
+    'Invalid MIoT light endpoint metadata.',
+  );
 });
 
 test('translates light commands to MIoT requests', async () => {

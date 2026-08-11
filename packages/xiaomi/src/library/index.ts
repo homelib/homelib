@@ -1,5 +1,6 @@
 /* eslint-disable @mufan/scoped-modules -- Experimental and runtime-only modules are intentionally not exported. */
 
+import './bindings.js';
 import './tui.js';
 
 export * from './backend/index.js';

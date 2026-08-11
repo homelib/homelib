@@ -47,6 +47,7 @@ export abstract class Provider<
 }
 
 export type EndpointConnectionBindingPlan = {
+  readonly resourceKeys: readonly string[];
   create(): PromiseLike<EndpointConnectionBinding>;
 };
 
