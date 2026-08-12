@@ -2,6 +2,7 @@ import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
+import {action, observable} from 'mobx';
 import * as x from 'x-value';
 
 import {Command} from '../command.js';
@@ -16,7 +17,7 @@ import {type EndpointConnectionBindingPlan, Provider} from '../provider.js';
 import {register, registerRootScope} from '../registry.js';
 import {Scope} from '../scope.js';
 
-import {run} from './run.js';
+import {bootstrap} from './bootstrap.js';
 
 const TestEndpointConnectionMetadata = x.object({
   value: x.string,
@@ -48,7 +49,7 @@ test('validates metadata before creating an endpoint connection', async () => {
 
 test('binds configured endpoints before resolving', async () => {
   const environmentDirectory = await mkdtemp(
-    join(tmpdir(), 'homelib-run-test-'),
+    join(tmpdir(), 'homelib-bootstrap-test-'),
   );
   const originalEnvironmentDirectory = process.env.HOMELIB_DIRECTORY;
 
@@ -86,10 +87,16 @@ test('binds configured endpoints before resolving', async () => {
       }),
     );
 
-    await run();
+    await bootstrap();
     await Promise.resolve();
 
-    expect(provider.processedValues).toEqual([1]);
+    expect(provider.processedValues).toEqual([]);
+
+    device.send(2);
+    provider.setConnectionsReady();
+    await Promise.resolve();
+
+    expect(provider.processedValues).toEqual([1, 2]);
     expect(provider.receivedMetadata).toEqual({value: 'metadata'});
     expect(() => home.$scope('late')).toThrow(
       'Logical declarations are closed.',
@@ -143,6 +150,12 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
     return this.connectionValues;
   }
 
+  setConnectionsReady(): void {
+    for (const connection of this.connectionValues) {
+      connection.setReady();
+    }
+  }
+
   protected override createEndpointConnectionBindingPlanFromMetadata(
     endpoint: EndpointReference,
     metadata: TestEndpointConnectionMetadata,
@@ -168,11 +181,14 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
 }
 
 class TestEndpointConnection implements EndpointConnection<TestCommand> {
-  get ready(): boolean {
-    return true;
-  }
+  @observable accessor ready = false;
 
   constructor(readonly provider: TestProvider) {}
+
+  @action
+  setReady(): void {
+    this.ready = true;
+  }
 
   async processCommand(command: TestCommand): Promise<void> {
     this.provider.processedValues.push(command.value);

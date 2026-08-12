@@ -1,7 +1,7 @@
 import {action, autorun, observable} from 'mobx';
 
+import {Temperature} from '../atomics/index.js';
 import type {Command} from '../command.js';
-import {Temperature} from '../device/index.js';
 import {type Device, type DeviceConstructor, DeviceEntry} from '../device.js';
 import type {EndpointConnection} from '../endpoint.js';
 import {setEndpointLogTarget} from '../log.js';

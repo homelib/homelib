@@ -77,6 +77,13 @@ export abstract class Endpoint<
       : undefined;
   }
 
+  @action
+  unbindConnection(connection: TConnection): void {
+    if (this.connection_ === connection) {
+      this.bindConnection(undefined);
+    }
+  }
+
   enqueueCommand(command: TCommand): void {
     this.pendingCommands = this.pendingCommands.filter(
       pendingCommand => !command.supersedes(pendingCommand),
@@ -152,6 +159,7 @@ export type EndpointConnection<in TCommand extends Command> = {
 
 export type EndpointConnectionBinding = {
   bind(): void;
+  dispose(): PromiseLike<void>;
 };
 
 export function createEndpointConnectionBinding<
@@ -160,10 +168,51 @@ export function createEndpointConnectionBinding<
 >(
   endpoint: Endpoint<TCommand, TConnection>,
   connection: TConnection,
+  disposeConnection: () => void | PromiseLike<void> = () => undefined,
 ): EndpointConnectionBinding {
+  let bound = false;
+  let disposePromise: Promise<void> | undefined;
+
   return {
     bind() {
+      if (disposePromise !== undefined) {
+        throw new Error('Cannot bind a disposed endpoint connection.');
+      }
+
+      bound = true;
       endpoint.bindConnection(connection);
+    },
+    dispose() {
+      disposePromise ??= (async () => {
+        const errors: unknown[] = [];
+
+        if (bound) {
+          bound = false;
+
+          try {
+            endpoint.unbindConnection(connection);
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+
+        try {
+          await disposeConnection();
+        } catch (error) {
+          errors.push(error);
+        }
+
+        if (errors.length === 1) {
+          throw errors[0];
+        } else if (errors.length > 1) {
+          throw new AggregateError(
+            errors,
+            'Failed to dispose endpoint connection binding.',
+          );
+        }
+      })();
+
+      return disposePromise;
     },
   };
 }

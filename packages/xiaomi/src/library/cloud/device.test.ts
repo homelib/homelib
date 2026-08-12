@@ -90,7 +90,7 @@ test('publishes one initial state and keeps MQTT updates newer than the snapshot
   await subscription.dispose();
 });
 
-test('rejects an incomplete initial state, removes the observer, and can retry', async () => {
+test('rejects an incomplete initial state, removes the listener, and can retry', async () => {
   const source = createMessageSource();
   let results: readonly CloudPropertySnapshot[] = [
     {...FIRST_PROPERTY, value: false, code: 0},
@@ -106,7 +106,7 @@ test('rejects an incomplete initial state, removes the observer, and can retry',
   const states: CloudDeviceState[] = [];
   const updates: CloudPropertyUpdate[] = [];
   const errors: unknown[] = [];
-  const observer = {
+  const listener = {
     onStateChanged: (state: CloudDeviceState) => {
       states.push(state);
     },
@@ -119,7 +119,7 @@ test('rejects an incomplete initial state, removes the observer, and can retry',
   };
 
   await expect(
-    channel.subscribe([FIRST_PROPERTY, SECOND_PROPERTY], observer),
+    channel.subscribe([FIRST_PROPERTY, SECOND_PROPERTY], listener),
   ).rejects.toThrow('Cloud snapshot property 2.2 failed: -1.');
 
   expect(states).toEqual([]);
@@ -135,7 +135,7 @@ test('rejects an incomplete initial state, removes the observer, and can retry',
   ];
   const subscription = await channel.subscribe(
     [FIRST_PROPERTY, SECOND_PROPERTY],
-    observer,
+    listener,
   );
 
   expect(source.subscribeCount).toBe(2);
@@ -152,7 +152,7 @@ test('rejects an incomplete initial state, removes the observer, and can retry',
   await subscription.dispose();
 });
 
-test('does not mark an observer initialized when its first state callback throws', async () => {
+test('does not mark a listener initialized when its first state callback throws', async () => {
   const source = createMessageSource();
   const callbackError = new Error('State callback failed.');
   const states: CloudDeviceState[] = [];
@@ -168,7 +168,7 @@ test('does not mark an observer initialized when its first state callback throws
     async () => true,
     () => undefined,
   );
-  const observer = {
+  const listener = {
     onStateChanged: (state: CloudDeviceState) => {
       callbackCount++;
 
@@ -180,14 +180,14 @@ test('does not mark an observer initialized when its first state callback throws
     },
   };
 
-  await expect(channel.subscribe([FIRST_PROPERTY], observer)).rejects.toBe(
+  await expect(channel.subscribe([FIRST_PROPERTY], listener)).rejects.toBe(
     callbackError,
   );
 
   expect(source.unsubscribeCount).toBe(1);
   expect(states).toEqual([]);
 
-  const subscription = await channel.subscribe([FIRST_PROPERTY], observer);
+  const subscription = await channel.subscribe([FIRST_PROPERTY], listener);
 
   expect(readCount).toBe(2);
   expect(states).toHaveLength(1);
@@ -330,7 +330,7 @@ test('allows MQTT to supply a property omitted by the in-flight snapshot', async
   await subscription.dispose();
 });
 
-test('rejects and removes the observer when initial state loading fails', async () => {
+test('rejects and removes the listener when initial state loading fails', async () => {
   const source = createMessageSource();
   const snapshotError = new Error('Snapshot failed.');
   const errors: unknown[] = [];
@@ -587,6 +587,219 @@ test('retries one reconnect refresh at a time until it succeeds', async () => {
   }
 });
 
+test('retries reconnect refresh when an initialized listener rejects the full state', async () => {
+  import.meta.jest.useFakeTimers();
+
+  const source = createMessageSource();
+  const callbackError = new Error('State callback failed.');
+  const states: CloudDeviceState[] = [];
+  const errors: unknown[] = [];
+  let readCount = 0;
+  let callbackCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+      return [{...FIRST_PROPERTY, value: readCount, code: 0}];
+    },
+    async () => true,
+    () => undefined,
+  );
+
+  try {
+    const subscription = await channel.subscribe([FIRST_PROPERTY], {
+      onStateChanged: state => {
+        callbackCount++;
+
+        if (callbackCount === 2) {
+          throw callbackError;
+        }
+
+        states.push(state);
+      },
+      onError: error => {
+        errors.push(error);
+      },
+    });
+
+    channel.handleConnectionState(false);
+    channel.handleConnectionState(true);
+    await waitFor(() => errors.length === 1);
+
+    expect(readCount).toBe(2);
+    expect(callbackCount).toBe(2);
+    expect(states).toHaveLength(1);
+    expect(errors).toEqual([callbackError]);
+    expect(import.meta.jest.getTimerCount()).toBe(1);
+
+    await import.meta.jest.advanceTimersByTimeAsync(
+      CLOUD_MQTT_RECONNECT_INTERVAL,
+    );
+    await waitFor(() => states.length === 2);
+
+    expect(readCount).toBe(3);
+    expect(callbackCount).toBe(3);
+    expect(states.at(-1)).toMatchObject({
+      online: true,
+      properties: [{...FIRST_PROPERTY, value: 3, source: 'snapshot'}],
+    });
+    expect(import.meta.jest.getTimerCount()).toBe(0);
+
+    channel.handleConnectionState(true);
+    await Promise.resolve();
+    expect(readCount).toBe(3);
+
+    await subscription.dispose();
+  } finally {
+    import.meta.jest.useRealTimers();
+  }
+});
+
+test.each([true, false])(
+  'retries a failed MQTT online=%s state refresh with the same override',
+  async online => {
+    import.meta.jest.useFakeTimers();
+
+    const source = createMessageSource();
+    const callbackError = new Error('State callback failed.');
+    const states: CloudDeviceState[] = [];
+    const errors: unknown[] = [];
+    let propertyReadCount = 0;
+    let onlineReadCount = 0;
+    let callbackCount = 0;
+    const channel = new CloudDeviceChannel(
+      DID,
+      source,
+      async () => {
+        propertyReadCount++;
+        return [{...FIRST_PROPERTY, value: propertyReadCount, code: 0}];
+      },
+      async () => {
+        onlineReadCount++;
+        return true;
+      },
+      () => undefined,
+    );
+
+    try {
+      const subscription = await channel.subscribe([FIRST_PROPERTY], {
+        onStateChanged: state => {
+          callbackCount++;
+
+          if (callbackCount === 2) {
+            throw callbackError;
+          }
+
+          states.push(state);
+        },
+        onError: error => {
+          errors.push(error);
+        },
+      });
+
+      source.send({type: 'state', did: DID, online});
+      await waitFor(() => errors.length === 1);
+
+      expect(propertyReadCount).toBe(online ? 2 : 1);
+      expect(onlineReadCount).toBe(1);
+      expect(errors).toEqual([callbackError]);
+      expect(import.meta.jest.getTimerCount()).toBe(1);
+
+      await import.meta.jest.advanceTimersByTimeAsync(
+        CLOUD_MQTT_RECONNECT_INTERVAL,
+      );
+      await waitFor(() => states.length === 2);
+
+      expect(callbackCount).toBe(3);
+      expect(propertyReadCount).toBe(online ? 3 : 1);
+      expect(onlineReadCount).toBe(1);
+      expect(states.at(-1)).toMatchObject(
+        online
+          ? {
+              did: DID,
+              online: true,
+              properties: [{...FIRST_PROPERTY, value: 3, source: 'snapshot'}],
+            }
+          : {did: DID, online: false, properties: []},
+      );
+      expect(import.meta.jest.getTimerCount()).toBe(0);
+
+      await subscription.dispose();
+    } finally {
+      import.meta.jest.useRealTimers();
+    }
+  },
+);
+
+test('reports incremental listener errors without interrupting other listeners', async () => {
+  const source = createMessageSource();
+  const propertyError = new Error('Property callback failed.');
+  const eventError = new Error('Event callback failed.');
+  const errors: unknown[] = [];
+  const updates: CloudPropertyUpdate[] = [];
+  const events: unknown[] = [];
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async properties =>
+      properties.map(property => ({...property, value: 0, code: 0})),
+    async () => true,
+    () => undefined,
+  );
+  const firstSubscription = await channel.subscribe([FIRST_PROPERTY], {
+    onPropertyChanged: () => {
+      throw propertyError;
+    },
+    onEventOccurred: () => {
+      throw eventError;
+    },
+    onError: error => {
+      errors.push(error);
+    },
+  });
+  const secondSubscription = await channel.subscribe([FIRST_PROPERTY], {
+    onPropertyChanged: update => {
+      updates.push(update);
+    },
+    onEventOccurred: event => {
+      events.push(event);
+    },
+  });
+
+  source.send({...FIRST_PROPERTY, type: 'property', value: 1});
+  source.send({type: 'event', did: DID, siid: 2, eiid: 1, arguments: []});
+
+  expect(errors).toEqual([propertyError, eventError]);
+  expect(updates).toHaveLength(1);
+  expect(events).toHaveLength(1);
+
+  await firstSubscription.dispose();
+  await secondSubscription.dispose();
+});
+
+test('notifies the empty owner while preserving an unsubscribe failure', async () => {
+  const source = createMessageSource();
+  const unsubscribeError = new Error('Unsubscribe failed.');
+  let emptyCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => [{...FIRST_PROPERTY, value: true, code: 0}],
+    async () => true,
+    () => {
+      emptyCount++;
+    },
+  );
+  const subscription = await channel.subscribe([FIRST_PROPERTY], {});
+
+  source.unsubscribeError = unsubscribeError;
+
+  await expect(subscription.dispose()).rejects.toBe(unsubscribeError);
+  expect(source.unsubscribeCount).toBe(1);
+  expect(emptyCount).toBe(1);
+});
+
 test.each(['disconnect', 'empty'] as const)(
   'stops reconnect refresh retry when the channel becomes $result',
   async result => {
@@ -696,7 +909,7 @@ test('does not leave subscribe waiting on a snapshot invalidated by reconnect', 
   await (await subscriptionPromise).dispose();
 });
 
-test('keeps state and updates scoped to each observer', async () => {
+test('keeps state and updates scoped to each listener', async () => {
   const source = createMessageSource();
   const reads: Array<readonly string[]> = [];
   const channel = new CloudDeviceChannel(
@@ -768,12 +981,17 @@ function createMessageSource(): TestMessageSource {
   return {
     subscribeCount: 0,
     unsubscribeCount: 0,
+    unsubscribeError: undefined,
     async subscribeDevice(_did, nextHandler) {
       this.subscribeCount++;
       handler = nextHandler;
     },
     async unsubscribeDevice(_did) {
       this.unsubscribeCount++;
+
+      if (this.unsubscribeError !== undefined) {
+        throw this.unsubscribeError;
+      }
     },
     send(message) {
       if (handler === undefined) {
@@ -788,6 +1006,7 @@ function createMessageSource(): TestMessageSource {
 type TestMessageSource = CloudDeviceMessageSource & {
   subscribeCount: number;
   unsubscribeCount: number;
+  unsubscribeError: Error | undefined;
   send(message: Parameters<CloudMqttDeviceMessageHandler>[0]): void;
 };
 

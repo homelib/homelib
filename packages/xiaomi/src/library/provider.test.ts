@@ -182,3 +182,198 @@ test('forgets the local session while preserving identity and configuration', as
     await rm(environmentDirectory, {recursive: true, force: true});
   }
 });
+
+test('cleans up a connection even when its subscription disposal fails', async () => {
+  const provider = new MiotProvider('cleanup-failure');
+  const internals = getProviderCleanupInternals(provider);
+  const connection = {};
+  const disposalError = new Error('Subscription disposal failed.');
+  const disconnect = import.meta.jest.fn(async () => undefined);
+  const reset = import.meta.jest
+    .spyOn(internals.sessionManager, 'reset')
+    .mockResolvedValue();
+  const cloud = createTestCloud(disconnect);
+
+  internals.endpointConnectionValues.push(connection);
+  internals.endpointConnectionRuntimeMap.set(connection, {
+    active: true,
+    backoff: {reset: import.meta.jest.fn()},
+    subscriptionPromise: Promise.resolve(),
+  });
+  internals.endpointConnectionSubscriptionMap.set(connection, {
+    dispose: () => Promise.reject(disposalError),
+  });
+  internals.cloudValue = cloud;
+  internals.cloudPromise = Promise.resolve(cloud);
+
+  await expect(internals.disposeEndpointConnection(connection)).rejects.toBe(
+    disposalError,
+  );
+  expect(internals.endpointConnectionValues).toEqual([]);
+  expect(internals.endpointConnectionRuntimeMap.size).toBe(0);
+  expect(internals.endpointConnectionSubscriptionMap.size).toBe(0);
+  expect(disconnect).toHaveBeenCalledTimes(1);
+  expect(reset).toHaveBeenCalledTimes(1);
+});
+
+test('disconnects shared cloud only after concurrent connection disposals settle', async () => {
+  const provider = new MiotProvider('concurrent-cleanup');
+  const internals = getProviderCleanupInternals(provider);
+  const connections = [{}, {}];
+  const disposalOperations = [createDeferred<void>(), createDeferred<void>()];
+  const disconnect = import.meta.jest.fn(async () => undefined);
+  const reset = import.meta.jest
+    .spyOn(internals.sessionManager, 'reset')
+    .mockResolvedValue();
+  const cloud = createTestCloud(disconnect);
+
+  internals.cloudValue = cloud;
+  internals.cloudPromise = Promise.resolve(cloud);
+
+  for (const [index, connection] of connections.entries()) {
+    const disposalOperation = disposalOperations[index];
+
+    if (disposalOperation === undefined) {
+      throw new Error('Missing test disposal operation.');
+    }
+
+    internals.endpointConnectionValues.push(connection);
+    internals.endpointConnectionRuntimeMap.set(connection, {
+      active: true,
+      backoff: {reset: import.meta.jest.fn()},
+      subscriptionPromise: Promise.resolve(),
+    });
+    internals.endpointConnectionSubscriptionMap.set(connection, {
+      dispose: () => disposalOperation.promise,
+    });
+  }
+
+  const disposals = connections.map(connection =>
+    internals.disposeEndpointConnection(connection),
+  );
+  await flushMicrotasks();
+  disposalOperations[0]?.resolve();
+  await flushMicrotasks();
+
+  expect(disconnect).not.toHaveBeenCalled();
+  expect(reset).not.toHaveBeenCalled();
+
+  disposalOperations[1]?.resolve();
+  await Promise.all(disposals);
+
+  expect(disconnect).toHaveBeenCalledTimes(1);
+  expect(reset).toHaveBeenCalledTimes(1);
+});
+
+test('does not reset a new cloud created while the old cloud disconnects', async () => {
+  const provider = new MiotProvider('cloud-replacement');
+  const internals = getProviderCleanupInternals(provider);
+  const oldDisconnect = createDeferred<void>();
+  const oldCloud = createTestCloud(() => oldDisconnect.promise);
+  const newCloud = createTestCloud(async () => undefined);
+  const reset = import.meta.jest
+    .spyOn(internals.sessionManager, 'reset')
+    .mockResolvedValue();
+
+  internals.cloudValue = oldCloud;
+  internals.cloudPromise = Promise.resolve(oldCloud);
+  const disposal = internals.disposeCloudIfUnused(oldCloud);
+
+  internals.cloudValue = newCloud;
+  internals.cloudPromise = Promise.resolve(newCloud);
+  oldDisconnect.resolve();
+  await disposal;
+
+  expect(internals.cloudValue).toBe(newCloud);
+  expect(reset).not.toHaveBeenCalled();
+});
+
+test('releases an acquired cloud when binding creation fails', async () => {
+  const provider = new MiotProvider('creation-failure');
+  const internals = getProviderCleanupInternals(provider);
+  const creationError = new Error('Connection construction failed.');
+  const disconnect = import.meta.jest.fn(async () => undefined);
+  const reset = import.meta.jest
+    .spyOn(internals.sessionManager, 'reset')
+    .mockResolvedValue();
+  const cloud = createTestCloud(disconnect);
+
+  internals.cloudValue = cloud;
+  internals.cloudPromise = Promise.resolve(cloud);
+  internals.getCloud = () => Promise.resolve(cloud);
+
+  await expect(
+    internals.createEndpointConnectionBinding(
+      {
+        createBinding() {
+          throw creationError;
+        },
+      },
+      {},
+      {},
+    ),
+  ).rejects.toBe(creationError);
+
+  expect(internals.endpointConnectionCreationCount).toBe(0);
+  expect(internals.endpointConnectionValues).toEqual([]);
+  expect(disconnect).toHaveBeenCalledTimes(1);
+  expect(reset).toHaveBeenCalledTimes(1);
+});
+
+type TestCloud = {
+  readonly client: {disconnect(): Promise<void>};
+  readonly transport: {};
+};
+
+type ProviderCleanupInternals = {
+  endpointConnectionValues: object[];
+  endpointConnectionRuntimeMap: Map<
+    object,
+    {
+      active: boolean;
+      readonly backoff: {reset(): void};
+      subscriptionPromise?: Promise<void>;
+    }
+  >;
+  endpointConnectionSubscriptionMap: Map<object, {dispose(): Promise<void>}>;
+  endpointConnectionCreationCount: number;
+  cloudValue: TestCloud | undefined;
+  cloudPromise: Promise<TestCloud> | undefined;
+  sessionManager: {reset(): Promise<void>};
+  getCloud(): Promise<TestCloud>;
+  createEndpointConnectionBinding(
+    adapter: {createBinding(...arguments_: unknown[]): never},
+    endpoint: object,
+    metadata: object,
+  ): Promise<unknown>;
+  disposeEndpointConnection(connection: object): Promise<void>;
+  disposeCloudIfUnused(expectedCloud?: TestCloud): Promise<void>;
+};
+
+function getProviderCleanupInternals(
+  provider: MiotProvider,
+): ProviderCleanupInternals {
+  return provider as unknown as ProviderCleanupInternals;
+}
+
+function createTestCloud(disconnect: () => Promise<void>): TestCloud {
+  return {client: {disconnect}, transport: {}};
+}
+
+function createDeferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value?: T) => void;
+} {
+  let resolve = (_value?: T): void => undefined;
+  const promise = new Promise<T>(resolvePromise => {
+    resolve = resolvePromise as (value?: T) => void;
+  });
+
+  return {promise, resolve};
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 8; index++) {
+    await Promise.resolve();
+  }
+}

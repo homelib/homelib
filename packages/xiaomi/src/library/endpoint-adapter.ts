@@ -36,6 +36,9 @@ export type MiotEndpointAdapter = {
     endpoint: EndpointReference,
     metadata: MiotEndpointConnectionMetadata,
     transports: MiotEndpointConnectionTransports,
+    disposeConnection?: (
+      connection: MiotEndpointConnection<never>,
+    ) => void | PromiseLike<void>,
   ) => MiotEndpointAdapterBinding;
 };
 
@@ -151,7 +154,7 @@ export function defineMiotEndpointAdapter<
     assertMetadata(metadata) {
       Connection.assertMetadata(metadata);
     },
-    createBinding(provider, endpoint, metadata, transports) {
+    createBinding(provider, endpoint, metadata, transports, disposeConnection) {
       if (
         !(endpoint instanceof EndpointConstructor) ||
         endpoint.constructor !== EndpointConstructor
@@ -165,7 +168,9 @@ export function defineMiotEndpointAdapter<
 
       return {
         connection,
-        binding: createEndpointConnectionBinding(endpoint, connection),
+        binding: createEndpointConnectionBinding(endpoint, connection, () =>
+          disposeConnection?.(connection),
+        ),
       };
     },
   };

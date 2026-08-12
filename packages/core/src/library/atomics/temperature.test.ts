@@ -1,4 +1,4 @@
-import {Temperature} from './sensor.js';
+import {Temperature} from './temperature.js';
 
 test('converts between Kelvin, Celsius, and Fahrenheit', () => {
   const fromKelvin = Temperature.fromKelvin(300);

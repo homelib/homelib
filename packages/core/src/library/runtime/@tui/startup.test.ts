@@ -82,7 +82,7 @@ const PROVIDER: RuntimeProvider = {
     return {
       resourceKeys: [metadata.resourceKey],
       create() {
-        return Promise.resolve({bind() {}});
+        return Promise.resolve({bind() {}, async dispose() {}});
       },
     };
   },

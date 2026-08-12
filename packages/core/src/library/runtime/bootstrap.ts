@@ -1,12 +1,20 @@
 import {basename} from 'node:path';
 
-import {beginRun, completeRun, failRun} from '../@lifecycle.js';
+import {
+  beginBootstrap,
+  completeBootstrap,
+  failBootstrap,
+} from '../@lifecycle.js';
 import type {EndpointReference} from '../endpoint.js';
 import {setEndpointLogTarget} from '../log.js';
 import type {EndpointConnectionBindingPlan} from '../provider.js';
 import {getProvider, getProviderEntries, getRootScopes} from '../registry.js';
 import type {Scope} from '../scope.js';
 
+import {
+  createEndpointConnectionBindings,
+  disposeEndpointConnectionBindings,
+} from './@binding-creation.js';
 import {type StartupBindingScope, presentStartup} from './@tui/startup.js';
 import {
   type BindingFile,
@@ -16,21 +24,28 @@ import {
   readBindingFile,
 } from './binding.js';
 
-export function run(): Promise<void> {
-  beginRun();
+/**
+ * Finalizes declarations and binds all configured endpoint connections.
+ *
+ * Resolves after every binding is installed. Individual endpoints may still be
+ * waiting to become ready; commands issued after this promise resolves remain
+ * queued until their connection is ready.
+ */
+export function bootstrap(): Promise<void> {
+  beginBootstrap();
 
-  return runInternal().then(
+  return bootstrapInternal().then(
     () => {
-      completeRun();
+      completeBootstrap();
     },
     error => {
-      failRun();
+      failBootstrap();
       throw error;
     },
   );
 }
 
-async function runInternal(): Promise<void> {
+async function bootstrapInternal(): Promise<void> {
   const initialBindingFile = await readBindingFile();
   const rootScopes = [...getRootScopes()];
   const {scopes, endpointMap} = collectBindingTopology(rootScopes);
@@ -51,18 +66,34 @@ async function runInternal(): Promise<void> {
     endpointMap,
   );
 
-  // TODO: add a disposal contract before plans may allocate independent
-  // resources that need rollback when another plan fails to create.
-  const connectionBindings = await Promise.all(
-    connectionBindingPlans.map(async item => ({
-      ...item,
-      binding: await item.plan.create(),
-    })),
+  const bindings = await createEndpointConnectionBindings(
+    connectionBindingPlans.map(({plan}) => plan),
   );
 
-  for (const {binding, endpoint, path} of connectionBindings) {
-    setEndpointLogTarget(endpoint, path);
-    binding.bind();
+  try {
+    for (const [index, binding] of bindings.entries()) {
+      const item = connectionBindingPlans[index];
+
+      if (item === undefined) {
+        throw new Error('Endpoint connection binding plan is missing.');
+      }
+
+      const {endpoint, path} = item;
+      setEndpointLogTarget(endpoint, path);
+      binding.bind();
+    }
+  } catch (error) {
+    const disposalErrors = await disposeEndpointConnectionBindings(bindings);
+
+    if (disposalErrors.length === 0) {
+      throw error;
+    }
+
+    throw new AggregateError(
+      [error, ...disposalErrors],
+      'Failed to bind endpoint connections.',
+      {cause: error},
+    );
   }
 }
 

@@ -3,7 +3,7 @@ import type {MiotProperty} from '../miot/index.js';
 
 import {
   CloudDeviceChannel,
-  type CloudDeviceObserver,
+  type CloudDeviceListener,
   type CloudDeviceSubscription,
 } from './device.js';
 import {CloudMqttClient} from './mqtt.js';
@@ -22,7 +22,7 @@ export class CloudClient {
       accessToken: backendClient.accessToken,
       cloudServer: backendClient.cloudServer,
     });
-    this.mqttClient.observeConnectionState(connected => {
+    this.mqttClient.addConnectionStateListener(connected => {
       for (const channel of this.deviceChannelMap.values()) {
         channel.handleConnectionState(connected);
       }
@@ -45,7 +45,7 @@ export class CloudClient {
   async subscribeDevice(
     did: string,
     properties: readonly MiotProperty[],
-    observer: CloudDeviceObserver,
+    listener: CloudDeviceListener,
   ): Promise<CloudDeviceSubscription> {
     let channel = this.deviceChannelMap.get(did);
 
@@ -66,6 +66,6 @@ export class CloudClient {
       this.deviceChannelMap.set(did, channel);
     }
 
-    return channel.subscribe(properties, observer);
+    return channel.subscribe(properties, listener);
   }
 }

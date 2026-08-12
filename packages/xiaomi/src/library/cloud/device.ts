@@ -7,7 +7,7 @@ import type {
 } from './mqtt.js';
 
 export class CloudDeviceChannel {
-  private readonly observerEntrySet = new Set<CloudDeviceObserverEntry>();
+  private readonly listenerEntrySet = new Set<CloudDeviceListenerEntry>();
 
   private readonly propertyCacheMap = new Map<string, CloudPropertyUpdate>();
 
@@ -31,13 +31,13 @@ export class CloudDeviceChannel {
 
   private unsubscribePromise: Promise<void> | undefined;
 
-  private refreshAfterReconnect = false;
+  private stateRefreshRequest: CloudDeviceStateRefreshRequest | undefined;
 
   private brokerConnected = true;
 
-  private reconnectRefreshPromise: Promise<void> | undefined;
+  private stateRefreshPromise: Promise<void> | undefined;
 
-  private reconnectRetryTimeout: ReturnType<typeof setTimeout> | undefined;
+  private stateRefreshRetryTimeout: ReturnType<typeof setTimeout> | undefined;
 
   private readonly messageHandler: CloudMqttDeviceMessageHandler;
 
@@ -55,32 +55,32 @@ export class CloudDeviceChannel {
 
   async subscribe(
     properties: readonly MiotProperty[],
-    observer: CloudDeviceObserver,
+    listener: CloudDeviceListener,
   ): Promise<CloudDeviceSubscription> {
-    const observerEntry: CloudDeviceObserverEntry = {
+    const listenerEntry: CloudDeviceListenerEntry = {
       propertyMap: createPropertyMap(this.did, properties),
-      observer,
+      listener,
       initialized: false,
     };
 
-    this.observerEntrySet.add(observerEntry);
+    this.listenerEntrySet.add(listenerEntry);
 
     try {
       await this.ensureSubscribed();
 
-      if (!observerEntry.initialized) {
-        if (observerEntry.refreshOperation === undefined) {
-          void this.refreshEntries([observerEntry]).catch(() => undefined);
+      if (!listenerEntry.initialized) {
+        if (listenerEntry.refreshOperation === undefined) {
+          void this.refreshEntries([listenerEntry]).catch(() => undefined);
         }
 
-        await this.waitForEntryRefresh(observerEntry);
+        await this.waitForEntryRefresh(listenerEntry);
       }
 
-      if (!observerEntry.initialized) {
+      if (!listenerEntry.initialized) {
         throw new Error(`Cloud device ${this.did} state was not initialized.`);
       }
     } catch (error) {
-      await this.removeObserver(observerEntry);
+      await this.removeListener(listenerEntry);
       throw error;
     }
 
@@ -92,8 +92,8 @@ export class CloudDeviceChannel {
           throw new Error(`Cloud device subscription ${this.did} is disposed.`);
         }
 
-        void this.refreshEntries([observerEntry]).catch(() => undefined);
-        await this.waitForEntryRefresh(observerEntry);
+        void this.refreshEntries([listenerEntry]).catch(() => undefined);
+        await this.waitForEntryRefresh(listenerEntry);
       },
       dispose: async () => {
         if (disposed) {
@@ -101,7 +101,7 @@ export class CloudDeviceChannel {
         }
 
         disposed = true;
-        await this.removeObserver(observerEntry);
+        await this.removeListener(listenerEntry);
       },
     };
   }
@@ -110,88 +110,99 @@ export class CloudDeviceChannel {
     if (!connected) {
       this.stateGeneration++;
       this.brokerConnected = false;
-      this.refreshAfterReconnect = true;
-      this.stopReconnectRefresh();
+      this.requestStateRefresh();
       return;
     }
 
     this.brokerConnected = true;
-    this.startReconnectRefresh();
+    this.startStateRefresh();
   }
 
-  private startReconnectRefresh(): void {
+  private requestStateRefresh(onlineOverride?: boolean): void {
+    this.stateRefreshRequest = {onlineOverride};
+    this.stopStateRefresh();
+    this.startStateRefresh();
+  }
+
+  private startStateRefresh(): void {
+    const request = this.stateRefreshRequest;
+
     if (
-      !this.refreshAfterReconnect ||
+      request === undefined ||
       !this.brokerConnected ||
-      this.observerEntrySet.size === 0 ||
-      this.reconnectRefreshPromise !== undefined ||
-      this.reconnectRetryTimeout !== undefined
+      this.listenerEntrySet.size === 0 ||
+      this.stateRefreshPromise !== undefined ||
+      this.stateRefreshRetryTimeout !== undefined
     ) {
       return;
     }
 
-    const entries = [...this.observerEntrySet];
+    const entries = [...this.listenerEntrySet];
 
-    void this.refreshEntries(entries).catch(() => undefined);
+    void this.refreshEntries(entries, request.onlineOverride).catch(
+      () => undefined,
+    );
 
     const promise = Promise.all(
       entries.map(entry => this.waitForEntryRefresh(entry)),
     ).then(() => undefined);
-    this.reconnectRefreshPromise = promise;
+    this.stateRefreshPromise = promise;
 
     void promise.then(
       () => {
-        if (this.reconnectRefreshPromise !== promise) {
+        if (this.stateRefreshPromise !== promise) {
           return;
         }
 
-        this.reconnectRefreshPromise = undefined;
+        this.stateRefreshPromise = undefined;
 
-        if (!this.brokerConnected || this.observerEntrySet.size === 0) {
-          return;
+        if (this.stateRefreshRequest === request) {
+          this.stateRefreshRequest = undefined;
         }
-
-        this.refreshAfterReconnect = false;
       },
       error => {
-        if (this.reconnectRefreshPromise !== promise) {
+        if (this.stateRefreshPromise !== promise) {
           return;
         }
 
-        this.reconnectRefreshPromise = undefined;
+        this.stateRefreshPromise = undefined;
 
-        if (!this.brokerConnected || this.observerEntrySet.size === 0) {
+        if (
+          this.stateRefreshRequest !== request ||
+          !this.brokerConnected ||
+          this.listenerEntrySet.size === 0
+        ) {
           return;
         }
 
         this.notifyError(error);
-        this.scheduleReconnectRefresh();
+        this.scheduleStateRefresh();
       },
     );
   }
 
-  private scheduleReconnectRefresh(): void {
+  private scheduleStateRefresh(): void {
     if (
-      this.reconnectRetryTimeout !== undefined ||
-      !this.refreshAfterReconnect ||
+      this.stateRefreshRetryTimeout !== undefined ||
+      this.stateRefreshRequest === undefined ||
       !this.brokerConnected ||
-      this.observerEntrySet.size === 0
+      this.listenerEntrySet.size === 0
     ) {
       return;
     }
 
-    this.reconnectRetryTimeout = setTimeout(() => {
-      this.reconnectRetryTimeout = undefined;
-      this.startReconnectRefresh();
+    this.stateRefreshRetryTimeout = setTimeout(() => {
+      this.stateRefreshRetryTimeout = undefined;
+      this.startStateRefresh();
     }, CLOUD_MQTT_RECONNECT_INTERVAL);
   }
 
-  private stopReconnectRefresh(): void {
-    this.reconnectRefreshPromise = undefined;
+  private stopStateRefresh(): void {
+    this.stateRefreshPromise = undefined;
 
-    if (this.reconnectRetryTimeout !== undefined) {
-      clearTimeout(this.reconnectRetryTimeout);
-      this.reconnectRetryTimeout = undefined;
+    if (this.stateRefreshRetryTimeout !== undefined) {
+      clearTimeout(this.stateRefreshRetryTimeout);
+      this.stateRefreshRetryTimeout = undefined;
     }
   }
 
@@ -227,11 +238,11 @@ export class CloudDeviceChannel {
   }
 
   private refreshEntries(
-    requestedEntries: readonly CloudDeviceObserverEntry[],
+    requestedEntries: readonly CloudDeviceListenerEntry[],
     onlineOverride?: boolean,
   ): Promise<void> {
     const entries = requestedEntries.filter(entry =>
-      this.observerEntrySet.has(entry),
+      this.listenerEntrySet.has(entry),
     );
 
     if (entries.length === 0) {
@@ -263,7 +274,7 @@ export class CloudDeviceChannel {
   }
 
   private async waitForEntryRefresh(
-    entry: CloudDeviceObserverEntry,
+    entry: CloudDeviceListenerEntry,
   ): Promise<void> {
     while (true) {
       const operation = entry.refreshOperation;
@@ -280,7 +291,7 @@ export class CloudDeviceChannel {
         operation.replaced.then(() => ({type: 'replaced'}) as const),
       ]);
 
-      if (!this.observerEntrySet.has(entry)) {
+      if (!this.listenerEntrySet.has(entry)) {
         return;
       } else if (
         outcome.type === 'replaced' ||
@@ -296,7 +307,7 @@ export class CloudDeviceChannel {
   }
 
   private async readAndPublishState(
-    entries: readonly CloudDeviceObserverEntry[],
+    entries: readonly CloudDeviceListenerEntry[],
     refreshToken: object,
     refreshSequence: number,
     onlineOverride: boolean | undefined,
@@ -430,7 +441,7 @@ export class CloudDeviceChannel {
       }
     }
 
-    const successfulEntries: CloudDeviceObserverEntry[] = [];
+    const successfulEntries: CloudDeviceListenerEntry[] = [];
     const refreshErrors: unknown[] = [];
 
     for (const entry of currentEntries) {
@@ -496,7 +507,7 @@ export class CloudDeviceChannel {
         });
 
         try {
-          publishObserverState(entry, {
+          publishListenerState(entry, {
             did: this.did,
             online: true,
             properties,
@@ -513,23 +524,23 @@ export class CloudDeviceChannel {
   }
 
   private getCurrentRefreshEntries(
-    entries: readonly CloudDeviceObserverEntry[],
+    entries: readonly CloudDeviceListenerEntry[],
     refreshToken: object,
     generation: number,
-  ): CloudDeviceObserverEntry[] {
+  ): CloudDeviceListenerEntry[] {
     if (generation !== this.stateGeneration) {
       return [];
     }
 
     return entries.filter(
       entry =>
-        this.observerEntrySet.has(entry) &&
+        this.listenerEntrySet.has(entry) &&
         entry.refreshOperation?.token === refreshToken,
     );
   }
 
   private isRefreshCurrent(
-    entries: readonly CloudDeviceObserverEntry[],
+    entries: readonly CloudDeviceListenerEntry[],
     refreshToken: object,
     generation: number,
   ): boolean {
@@ -558,7 +569,7 @@ export class CloudDeviceChannel {
   }
 
   private publishState(
-    entries: readonly CloudDeviceObserverEntry[],
+    entries: readonly CloudDeviceListenerEntry[],
     online: false,
     propertyMap: ReadonlyMap<string, CloudPropertyUpdate>,
   ): void {
@@ -571,7 +582,7 @@ export class CloudDeviceChannel {
       });
 
       try {
-        publishObserverState(entry, {did: this.did, online, properties});
+        publishListenerState(entry, {did: this.did, online, properties});
       } catch (error) {
         errors.push(error);
       }
@@ -598,9 +609,9 @@ export class CloudDeviceChannel {
       );
       const key = getPropertyKey(update);
 
-      for (const entry of this.observerEntrySet) {
+      for (const entry of this.listenerEntrySet) {
         if (entry.initialized && entry.propertyMap.has(key)) {
-          callObserver(entry.observer, 'onPropertyChanged', update);
+          callListener(entry.listener, 'onPropertyChanged', update);
         }
       }
     } else if (message.type === 'event') {
@@ -611,23 +622,12 @@ export class CloudDeviceChannel {
         arguments: message.arguments,
       };
 
-      for (const {observer} of this.observerEntrySet) {
-        callObserver(observer, 'onEventOccurred', event);
+      for (const {listener} of this.listenerEntrySet) {
+        callListener(listener, 'onEventOccurred', event);
       }
-    } else if (!message.online) {
-      this.stateGeneration++;
-      void this.refreshEntries([...this.observerEntrySet], false).catch(
-        error => {
-          this.notifyError(error);
-        },
-      );
     } else {
       this.stateGeneration++;
-      void this.refreshEntries([...this.observerEntrySet], true).catch(
-        error => {
-          this.notifyError(error);
-        },
-      );
+      this.requestStateRefresh(message.online);
     }
   }
 
@@ -656,15 +656,15 @@ export class CloudDeviceChannel {
     return update;
   }
 
-  private async removeObserver(
-    observerEntry: CloudDeviceObserverEntry,
+  private async removeListener(
+    listenerEntry: CloudDeviceListenerEntry,
   ): Promise<void> {
-    if (!this.observerEntrySet.delete(observerEntry)) {
+    if (!this.listenerEntrySet.delete(listenerEntry)) {
       return;
     }
 
-    observerEntry.refreshOperation?.replace();
-    observerEntry.refreshOperation = undefined;
+    listenerEntry.refreshOperation?.replace();
+    listenerEntry.refreshOperation = undefined;
 
     const subscribePromise = this.subscribePromise;
 
@@ -672,12 +672,12 @@ export class CloudDeviceChannel {
       await subscribePromise.catch(() => undefined);
     }
 
-    if (this.observerEntrySet.size > 0) {
+    if (this.listenerEntrySet.size > 0) {
       return;
     }
 
-    this.refreshAfterReconnect = false;
-    this.stopReconnectRefresh();
+    this.stateRefreshRequest = undefined;
+    this.stopStateRefresh();
 
     if (!this.subscribed) {
       this.onEmpty();
@@ -694,10 +694,10 @@ export class CloudDeviceChannel {
       if (this.unsubscribePromise === unsubscribePromise) {
         this.unsubscribePromise = undefined;
       }
-    }
 
-    if (this.observerEntrySet.size === 0) {
-      this.onEmpty();
+      if (this.listenerEntrySet.size === 0) {
+        this.onEmpty();
+      }
     }
   }
 
@@ -713,8 +713,8 @@ export class CloudDeviceChannel {
   }
 
   private notifyError(error: unknown): void {
-    for (const {observer} of this.observerEntrySet) {
-      notifyObserverError(observer, error);
+    for (const {listener} of this.listenerEntrySet) {
+      notifyListenerError(listener, error);
     }
   }
 }
@@ -724,7 +724,7 @@ export type CloudDeviceSubscription = {
   dispose(): Promise<void>;
 };
 
-export type CloudDeviceObserver = {
+export type CloudDeviceListener = {
   readonly onStateChanged?: (state: CloudDeviceState) => void;
   readonly onPropertyChanged?: (update: CloudPropertyUpdate) => void;
   readonly onEventOccurred?: (event: CloudEvent) => void;
@@ -771,11 +771,15 @@ export type CloudDeviceMessageSource = {
   unsubscribeDevice(did: string): Promise<void>;
 };
 
-type CloudDeviceObserverEntry = {
+type CloudDeviceListenerEntry = {
   readonly propertyMap: ReadonlyMap<string, MiotProperty>;
-  readonly observer: CloudDeviceObserver;
+  readonly listener: CloudDeviceListener;
   initialized: boolean;
   refreshOperation?: CloudDeviceRefreshOperation;
+};
+
+type CloudDeviceStateRefreshRequest = {
+  readonly onlineOverride: boolean | undefined;
 };
 
 type CloudDeviceRefreshOperation = {
@@ -805,7 +809,7 @@ function settlePromise<T>(promise: Promise<T>): Promise<PromiseOutcome<T>> {
 }
 
 function createEntryPropertyMap(
-  entries: readonly CloudDeviceObserverEntry[],
+  entries: readonly CloudDeviceListenerEntry[],
 ): Map<string, MiotProperty> {
   const propertyMap = new Map<string, MiotProperty>();
 
@@ -868,7 +872,7 @@ function createPropertyMap(
   for (const property of properties) {
     if (property.did !== did) {
       throw new Error(
-        `Cloud device ${did} cannot observe property for ${property.did}.`,
+        `Cloud device ${did} cannot subscribe to property for ${property.did}.`,
       );
     }
 
@@ -885,15 +889,13 @@ function getPropertyKey(property: {
   return `${property.siid}.${property.piid}`;
 }
 
-function callObserver<
-  TName extends 'onStateChanged' | 'onPropertyChanged' | 'onEventOccurred',
->(
-  observer: CloudDeviceObserver,
+function callListener<TName extends 'onPropertyChanged' | 'onEventOccurred'>(
+  listener: CloudDeviceListener,
   name: TName,
-  value: Parameters<NonNullable<CloudDeviceObserver[TName]>>[0],
+  value: Parameters<NonNullable<CloudDeviceListener[TName]>>[0],
 ): void {
-  const callback = observer[name] as
-    | ((value: Parameters<NonNullable<CloudDeviceObserver[TName]>>[0]) => void)
+  const callback = listener[name] as
+    | ((value: Parameters<NonNullable<CloudDeviceListener[TName]>>[0]) => void)
     | undefined;
 
   if (callback === undefined) {
@@ -903,36 +905,31 @@ function callObserver<
   try {
     callback(value);
   } catch (error) {
-    console.error(error);
+    notifyListenerError(listener, error);
   }
 }
 
-function publishObserverState(
-  entry: CloudDeviceObserverEntry,
+function publishListenerState(
+  entry: CloudDeviceListenerEntry,
   state: CloudDeviceState,
 ): void {
-  if (entry.initialized) {
-    callObserver(entry.observer, 'onStateChanged', state);
-    return;
-  }
-
-  entry.observer.onStateChanged?.(state);
+  entry.listener.onStateChanged?.(state);
   entry.initialized = true;
 }
 
-function notifyObserverError(
-  observer: CloudDeviceObserver,
+function notifyListenerError(
+  listener: CloudDeviceListener,
   error: unknown,
 ): void {
-  if (observer.onError === undefined) {
+  if (listener.onError === undefined) {
     console.error(error);
     return;
   }
 
   try {
-    observer.onError(error);
-  } catch (observerError) {
-    console.error(observerError);
+    listener.onError(error);
+  } catch (listenerError) {
+    console.error(listenerError);
   }
 }
 

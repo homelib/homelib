@@ -19,7 +19,18 @@ export class CloudMqttClient {
 
   private connectPromise: Promise<void> | undefined;
 
-  private readyPromise: Promise<void> | undefined;
+  private readyOperation:
+    | {
+        readonly generation: number;
+        readonly promise: Promise<void>;
+      }
+    | undefined;
+
+  private nextConnectionGeneration = 0;
+
+  private activeConnectionGeneration: number | undefined;
+
+  private operationGeneration = 0;
 
   private readyRetryToken: object | undefined;
 
@@ -34,8 +45,8 @@ export class CloudMqttClient {
 
   private readonly subscribedDeviceSet = new Set<string>();
 
-  private readonly connectionStateHandlerSet =
-    new Set<CloudMqttConnectionStateHandler>();
+  private readonly connectionStateListenerSet =
+    new Set<CloudMqttConnectionStateListener>();
 
   constructor(
     private readonly options: CloudMqttClientOptions,
@@ -58,8 +69,10 @@ export class CloudMqttClient {
     }
 
     if (this.mqttClient !== undefined) {
-      await this.waitUntilConnected(this.mqttClient);
-      await this.markReady();
+      const mqttClient = this.mqttClient;
+      await this.waitUntilConnected(mqttClient);
+      const generation = this.startConnectionSession(mqttClient);
+      await this.markReady(mqttClient, generation);
       return;
     }
 
@@ -80,6 +93,7 @@ export class CloudMqttClient {
   }
 
   async disconnect(): Promise<void> {
+    this.operationGeneration++;
     this.stopReadyRetry();
 
     const connectPromise = this.connectPromise;
@@ -90,6 +104,7 @@ export class CloudMqttClient {
 
     const mqttClient = this.mqttClient;
     this.mqttClient = undefined;
+    this.activeConnectionGeneration = undefined;
     this.subscribedDeviceSet.clear();
     this.setReady(false);
 
@@ -103,6 +118,7 @@ export class CloudMqttClient {
     handler: CloudMqttDeviceMessageHandler,
   ): Promise<void> {
     validateDid(did);
+    const operationGeneration = this.operationGeneration;
 
     const existingHandler = this.deviceHandlerMap.get(did);
 
@@ -113,10 +129,41 @@ export class CloudMqttClient {
     this.deviceHandlerMap.set(did, handler);
 
     try {
-      await this.connect();
+      while (!this.subscribedDeviceSet.has(did)) {
+        this.assertOperationGeneration(operationGeneration);
+        await this.connect();
+        this.assertOperationGeneration(operationGeneration);
 
-      if (!this.subscribedDeviceSet.has(did)) {
-        await this.subscribeTopics(getDeviceTopics(did));
+        if (this.subscribedDeviceSet.has(did)) {
+          break;
+        }
+
+        const mqttClient = this.mqttClient;
+
+        if (mqttClient === undefined) {
+          continue;
+        }
+
+        const generation = this.startConnectionSession(mqttClient);
+
+        try {
+          await this.subscribeTopics(
+            getDeviceTopics(did),
+            mqttClient,
+            generation,
+          );
+        } catch (error) {
+          if (
+            this.mqttClient === mqttClient &&
+            !this.isActiveConnectionSession(mqttClient, generation)
+          ) {
+            continue;
+          }
+
+          throw error;
+        }
+
+        this.assertActiveConnectionSession(mqttClient, generation);
         this.subscribedDeviceSet.add(did);
       }
     } catch (error) {
@@ -131,7 +178,7 @@ export class CloudMqttClient {
   async unsubscribeDevice(did: string): Promise<void> {
     this.deviceHandlerMap.delete(did);
 
-    const readyPromise = this.readyPromise;
+    const readyPromise = this.readyOperation?.promise;
 
     if (readyPromise !== undefined) {
       await readyPromise.catch(() => undefined);
@@ -146,11 +193,13 @@ export class CloudMqttClient {
     }
   }
 
-  observeConnectionState(handler: CloudMqttConnectionStateHandler): () => void {
-    this.connectionStateHandlerSet.add(handler);
+  addConnectionStateListener(
+    listener: CloudMqttConnectionStateListener,
+  ): () => void {
+    this.connectionStateListenerSet.add(listener);
 
     return () => {
-      this.connectionStateHandlerSet.delete(handler);
+      this.connectionStateListenerSet.delete(listener);
     };
   }
 
@@ -172,29 +221,45 @@ export class CloudMqttClient {
     this.mqttClient = mqttClient;
 
     mqttClient.on('connect', () => {
-      this.startReadyRetry(mqttClient);
+      if (this.mqttClient !== mqttClient || !mqttClient.connected) {
+        return;
+      }
+
+      const generation = this.startConnectionSession(mqttClient);
+      this.startReadyRetry(mqttClient, generation);
     });
     mqttClient.on('message', (topic, payload) => {
       this.handleMessage(topic, payload);
     });
     mqttClient.on('close', () => {
+      if (this.mqttClient !== mqttClient) {
+        return;
+      }
+
+      this.activeConnectionGeneration = undefined;
       this.stopReadyRetry();
       this.subscribedDeviceSet.clear();
       this.setReady(false);
     });
     mqttClient.on('error', console.error);
 
-    await this.markReady();
+    await this.waitUntilConnected(mqttClient);
+    const generation = this.startConnectionSession(mqttClient);
+    await this.markReady(mqttClient, generation);
   }
 
-  private startReadyRetry(mqttClient: MqttClient): void {
-    if (this.ready || this.readyRetryToken !== undefined) {
+  private startReadyRetry(mqttClient: MqttClient, generation: number): void {
+    if (
+      this.ready ||
+      this.readyRetryToken !== undefined ||
+      !this.isActiveConnectionSession(mqttClient, generation)
+    ) {
       return;
     }
 
     const token = {};
     this.readyRetryToken = token;
-    void this.retryReady(mqttClient, token).finally(() => {
+    void this.retryReady(mqttClient, generation, token).finally(() => {
       if (this.readyRetryToken === token) {
         this.readyRetryToken = undefined;
       }
@@ -203,28 +268,26 @@ export class CloudMqttClient {
 
   private async retryReady(
     mqttClient: MqttClient,
+    generation: number,
     token: object,
   ): Promise<void> {
     while (
       this.readyRetryToken === token &&
-      this.mqttClient === mqttClient &&
-      mqttClient.connected &&
+      this.isActiveConnectionSession(mqttClient, generation) &&
       !this.ready
     ) {
       try {
-        await this.markReady();
+        await this.markReady(mqttClient, generation);
       } catch (error) {
-        console.error(error);
-
         if (
           this.readyRetryToken !== token ||
-          this.mqttClient !== mqttClient ||
-          !mqttClient.connected ||
+          !this.isActiveConnectionSession(mqttClient, generation) ||
           this.ready
         ) {
           return;
         }
 
+        console.error(error);
         await this.waitBeforeReadyRetry(token);
       }
     }
@@ -256,36 +319,45 @@ export class CloudMqttClient {
     this.readyRetryDelayCancel?.();
   }
 
-  private async markReady(): Promise<void> {
+  private async markReady(
+    mqttClient: MqttClient,
+    generation: number,
+  ): Promise<void> {
+    this.assertActiveConnectionSession(mqttClient, generation);
+
     if (this.ready) {
       return;
     }
 
-    let readyPromise = this.readyPromise;
+    let readyOperation = this.readyOperation;
 
-    if (readyPromise === undefined) {
-      readyPromise = this.subscribeAllDevices();
-      this.readyPromise = readyPromise;
+    if (
+      readyOperation === undefined ||
+      readyOperation.generation !== generation
+    ) {
+      readyOperation = {
+        generation,
+        promise: this.subscribeAllDevices(mqttClient, generation),
+      };
+      this.readyOperation = readyOperation;
     }
 
     try {
-      await readyPromise;
+      await readyOperation.promise;
 
-      const mqttClient = this.mqttClient;
-
-      if (mqttClient === undefined || !mqttClient.connected) {
-        throw new Error('Cloud MQTT disconnected while subscribing.');
-      }
-
+      this.assertActiveConnectionSession(mqttClient, generation);
       this.setReady(true);
     } finally {
-      if (this.readyPromise === readyPromise) {
-        this.readyPromise = undefined;
+      if (this.readyOperation === readyOperation) {
+        this.readyOperation = undefined;
       }
     }
   }
 
-  private async subscribeAllDevices(): Promise<void> {
+  private async subscribeAllDevices(
+    mqttClient: MqttClient,
+    generation: number,
+  ): Promise<void> {
     const deviceIds = [...this.deviceHandlerMap.keys()];
     const topicBatches = chunk(
       deviceIds.flatMap(getDeviceTopics),
@@ -293,12 +365,15 @@ export class CloudMqttClient {
     );
 
     for (const [index, topics] of topicBatches.entries()) {
-      await this.subscribeTopics(topics);
+      await this.subscribeTopics(topics, mqttClient, generation);
 
       if (index < topicBatches.length - 1) {
         await delay(CLOUD_MQTT_SUBSCRIPTION_BATCH_INTERVAL);
+        this.assertActiveConnectionSession(mqttClient, generation);
       }
     }
+
+    this.assertActiveConnectionSession(mqttClient, generation);
 
     for (const did of deviceIds) {
       if (this.deviceHandlerMap.has(did)) {
@@ -307,18 +382,19 @@ export class CloudMqttClient {
     }
   }
 
-  private async subscribeTopics(topics: readonly string[]): Promise<void> {
+  private async subscribeTopics(
+    topics: readonly string[],
+    mqttClient: MqttClient,
+    generation: number,
+  ): Promise<void> {
     if (topics.length === 0) {
       return;
     }
 
-    const mqttClient = this.mqttClient;
-
-    if (mqttClient === undefined || !mqttClient.connected) {
-      throw new Error('Cloud MQTT is not connected.');
-    }
+    this.assertActiveConnectionSession(mqttClient, generation);
 
     const grants = await mqttClient.subscribeAsync([...topics], {qos: 2});
+    this.assertActiveConnectionSession(mqttClient, generation);
     const grantedTopicSet = new Set(
       grants.filter(grant => grant.qos !== 128).map(grant => grant.topic),
     );
@@ -327,6 +403,47 @@ export class CloudMqttClient {
       if (!grantedTopicSet.has(topic)) {
         throw new Error(`Cloud MQTT subscription was rejected: ${topic}.`);
       }
+    }
+  }
+
+  private startConnectionSession(mqttClient: MqttClient): number {
+    if (this.mqttClient !== mqttClient || !mqttClient.connected) {
+      throw new Error('Cloud MQTT is not connected.');
+    }
+
+    let generation = this.activeConnectionGeneration;
+
+    if (generation === undefined) {
+      generation = ++this.nextConnectionGeneration;
+      this.activeConnectionGeneration = generation;
+    }
+
+    return generation;
+  }
+
+  private isActiveConnectionSession(
+    mqttClient: MqttClient,
+    generation: number,
+  ): boolean {
+    return (
+      this.mqttClient === mqttClient &&
+      this.activeConnectionGeneration === generation &&
+      mqttClient.connected
+    );
+  }
+
+  private assertActiveConnectionSession(
+    mqttClient: MqttClient,
+    generation: number,
+  ): void {
+    if (!this.isActiveConnectionSession(mqttClient, generation)) {
+      throw new Error('Cloud MQTT disconnected while subscribing.');
+    }
+  }
+
+  private assertOperationGeneration(generation: number): void {
+    if (this.operationGeneration !== generation) {
+      throw new Error('Cloud MQTT disconnected while subscribing.');
     }
   }
 
@@ -380,9 +497,9 @@ export class CloudMqttClient {
       this.stopReadyRetry();
     }
 
-    for (const handler of this.connectionStateHandlerSet) {
+    for (const listener of this.connectionStateListenerSet) {
       try {
-        handler(ready);
+        listener(ready);
       } catch (error) {
         console.error(error);
       }
@@ -425,7 +542,7 @@ export type CloudMqttDeviceMessageHandler = (
   message: CloudMqttDeviceMessage,
 ) => void;
 
-export type CloudMqttConnectionStateHandler = (connected: boolean) => void;
+export type CloudMqttConnectionStateListener = (connected: boolean) => void;
 
 export type CloudMqttConnector = (
   url: string,

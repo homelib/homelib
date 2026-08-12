@@ -5,6 +5,7 @@ import {
   Endpoint,
   type EndpointConnection,
   EndpointConnectionError,
+  createEndpointConnectionBinding,
 } from './endpoint.js';
 import {setEndpointLogTarget} from './log.js';
 
@@ -251,6 +252,73 @@ test('replaces a connection without exposing an unbound state', () => {
   dispose();
 });
 
+test('disposes an endpoint connection binding once without unbinding a replacement', async () => {
+  const endpoint = new TestEndpoint();
+  const firstConnection = new TestEndpointConnection();
+  const secondConnection = new TestEndpointConnection();
+  const disposeConnection = import.meta.jest.fn();
+  const binding = createEndpointConnectionBinding(
+    endpoint,
+    firstConnection,
+    disposeConnection,
+  );
+
+  binding.bind();
+  endpoint.bindConnection(secondConnection);
+  await binding.dispose();
+  await binding.dispose();
+
+  expect(endpoint.boundConnection).toBe(secondConnection);
+  expect(disposeConnection).toHaveBeenCalledTimes(1);
+  expect(() => binding.bind()).toThrow(
+    'Cannot bind a disposed endpoint connection.',
+  );
+});
+
+test('disposes a connection after endpoint binding partially succeeds', async () => {
+  const endpoint = new PartiallyFailingTestEndpoint();
+  const connection = new TestEndpointConnection();
+  const disposeConnection = import.meta.jest.fn();
+  const binding = createEndpointConnectionBinding(
+    endpoint,
+    connection,
+    disposeConnection,
+  );
+
+  expect(() => binding.bind()).toThrow('Endpoint binding failed.');
+  expect(endpoint.boundConnection).toBe(connection);
+
+  await binding.dispose();
+
+  expect(endpoint.boundConnection).toBeUndefined();
+  expect(disposeConnection).toHaveBeenCalledTimes(1);
+});
+
+test('disposes a connection and aggregates errors when endpoint unbinding throws', async () => {
+  const unbindingError = new Error('Endpoint unbinding failed.');
+  const connectionDisposalError = new Error('Connection disposal failed.');
+  const endpoint = new UnbindingFailingTestEndpoint(unbindingError);
+  const connection = new TestEndpointConnection();
+  const disposeConnection = import.meta.jest.fn(() => {
+    throw connectionDisposalError;
+  });
+  const binding = createEndpointConnectionBinding(
+    endpoint,
+    connection,
+    disposeConnection,
+  );
+
+  binding.bind();
+  const disposal = binding.dispose();
+
+  expect(binding.dispose()).toBe(disposal);
+  await expect(disposal).rejects.toMatchObject({
+    errors: [unbindingError, connectionDisposalError],
+  });
+  expect(endpoint.boundConnection).toBeUndefined();
+  expect(disposeConnection).toHaveBeenCalledTimes(1);
+});
+
 class TestCommand extends Command {
   constructor(
     readonly value: number,
@@ -271,6 +339,29 @@ class TestEndpoint extends Endpoint<TestCommand, TestEndpointConnection> {
 
   send(value: number, target = 'default'): void {
     this.enqueueCommand(new TestCommand(value, target));
+  }
+}
+
+class PartiallyFailingTestEndpoint extends TestEndpoint {
+  override bindConnection(
+    connection: TestEndpointConnection | undefined,
+  ): void {
+    super.bindConnection(connection);
+
+    if (connection !== undefined) {
+      throw new Error('Endpoint binding failed.');
+    }
+  }
+}
+
+class UnbindingFailingTestEndpoint extends TestEndpoint {
+  constructor(private readonly unbindingError: Error) {
+    super();
+  }
+
+  override unbindConnection(connection: TestEndpointConnection): void {
+    super.unbindConnection(connection);
+    throw this.unbindingError;
   }
 }
 

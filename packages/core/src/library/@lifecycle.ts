@@ -6,22 +6,22 @@ export function assertDeclaring(): void {
   }
 }
 
-export function beginRun(): void {
+export function beginBootstrap(): void {
   assertDeclaring();
   phase = 'starting';
 }
 
-export function completeRun(): void {
+export function completeBootstrap(): void {
   if (phase !== 'starting') {
-    throw new Error(`Cannot complete homelib run from phase: ${phase}.`);
+    throw new Error(`Cannot complete homelib bootstrap from phase: ${phase}.`);
   }
 
   phase = 'running';
 }
 
-export function failRun(): void {
+export function failBootstrap(): void {
   if (phase !== 'starting') {
-    throw new Error(`Cannot fail homelib run from phase: ${phase}.`);
+    throw new Error(`Cannot fail homelib bootstrap from phase: ${phase}.`);
   }
 
   phase = 'failed';

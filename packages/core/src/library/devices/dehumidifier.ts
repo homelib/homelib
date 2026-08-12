@@ -1,11 +1,8 @@
 import {computed} from 'mobx';
 
+import type {Temperature} from '../atomics/index.js';
 import {Command} from '../command.js';
-import type {
-  HumiditySensor,
-  Temperature,
-  TemperatureSensor,
-} from '../device/index.js';
+import type {HumiditySensor, TemperatureSensor} from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
   Endpoint,

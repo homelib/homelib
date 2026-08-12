@@ -1,3 +1,4 @@
+export * from './atomics/index.js';
 export * from './command.js';
 export * from './device.js';
 export * from './device/index.js';

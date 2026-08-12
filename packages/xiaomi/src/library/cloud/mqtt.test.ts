@@ -2,7 +2,10 @@ import {EventEmitter} from 'node:events';
 
 import type {IClientOptions, MqttClient} from 'mqtt';
 
-import {CLOUD_MQTT_RECONNECT_INTERVAL} from './constants.js';
+import {
+  CLOUD_MQTT_RECONNECT_INTERVAL,
+  CLOUD_MQTT_SUBSCRIPTION_BATCH_INTERVAL,
+} from './constants.js';
 import {CloudMqttClient, type CloudMqttDeviceMessage} from './mqtt.js';
 
 test('subscribes once per device and routes cloud messages', async () => {
@@ -26,7 +29,7 @@ test('subscribes once per device and routes cloud messages', async () => {
   const handler = (message: CloudMqttDeviceMessage): void => {
     messages.push(message);
   };
-  client.observeConnectionState(connected => {
+  client.addConnectionStateListener(connected => {
     connectionStates.push(connected);
   });
 
@@ -114,7 +117,7 @@ test('retries device subscriptions once while a reconnected socket stays connect
   console.error = () => undefined;
 
   try {
-    client.observeConnectionState(connected => {
+    client.addConnectionStateListener(connected => {
       connectionStates.push(connected);
     });
     await client.subscribeDevice('device-1', () => undefined);
@@ -181,6 +184,139 @@ test('stops retrying device subscriptions after disconnect', async () => {
   }
 });
 
+test('ignores an obsolete batched subscription after a rapid reconnect', async () => {
+  import.meta.jest.useFakeTimers();
+
+  const mqttClient = new TestMqttClient();
+  const client = createClient(mqttClient);
+  const connectionStates: boolean[] = [];
+
+  try {
+    client.addConnectionStateListener(connected => {
+      connectionStates.push(connected);
+    });
+
+    for (let index = 1; index <= 101; index++) {
+      await client.subscribeDevice(`device-${index}`, () => undefined);
+    }
+
+    mqttClient.subscribeCalls.length = 0;
+    mqttClient.connected = false;
+    mqttClient.emit('close');
+    mqttClient.connected = true;
+    mqttClient.emit('connect');
+    await flushMicrotasks();
+
+    expect(mqttClient.subscribeCalls).toHaveLength(1);
+    expect(mqttClient.subscribeCalls[0]?.topics).toHaveLength(300);
+    expect(connectionStates).toEqual([true, false]);
+
+    mqttClient.connected = false;
+    mqttClient.emit('close');
+    mqttClient.connected = true;
+    mqttClient.emit('connect');
+    await flushMicrotasks();
+
+    expect(mqttClient.subscribeCalls).toHaveLength(2);
+    expect(mqttClient.subscribeCalls[1]?.topics).toHaveLength(300);
+    expect(connectionStates).toEqual([true, false]);
+
+    await import.meta.jest.advanceTimersByTimeAsync(
+      CLOUD_MQTT_SUBSCRIPTION_BATCH_INTERVAL,
+    );
+    await waitFor(() => connectionStates.length === 3);
+
+    expect(mqttClient.subscribeCalls).toHaveLength(3);
+    expect(mqttClient.subscribeCalls[2]?.topics).toHaveLength(3);
+    expect(connectionStates).toEqual([true, false, true]);
+  } finally {
+    await client.disconnect();
+    import.meta.jest.useRealTimers();
+  }
+});
+
+test('waits for the current session when a single-device subscription resolves late', async () => {
+  const mqttClient = new TestMqttClient();
+  const client = createClient(mqttClient);
+
+  try {
+    await client.subscribeDevice('device-1', () => undefined);
+
+    const obsoleteSubscription = mqttClient.deferNextSubscription();
+    let subscriptionSettled = false;
+    const subscription = client
+      .subscribeDevice('device-2', () => undefined)
+      .finally(() => {
+        subscriptionSettled = true;
+      });
+    await waitFor(() => mqttClient.subscribeCalls.length === 2);
+
+    const currentSubscription = mqttClient.deferNextSubscription();
+    mqttClient.connected = false;
+    mqttClient.emit('close');
+    mqttClient.connected = true;
+    mqttClient.emit('connect');
+    await waitFor(() => mqttClient.subscribeCalls.length === 3);
+
+    obsoleteSubscription.resolve();
+    await flushMicrotasks();
+    expect(subscriptionSettled).toBe(false);
+
+    currentSubscription.resolve();
+    await subscription;
+    expect(subscriptionSettled).toBe(true);
+  } finally {
+    await client.disconnect();
+  }
+});
+
+test('does not reconnect a pending subscription after an explicit disconnect', async () => {
+  const firstMqttClient = new TestMqttClient();
+  const secondMqttClient = new TestMqttClient();
+  const mqttClients = [firstMqttClient, secondMqttClient];
+  let connectionCount = 0;
+  const client = new CloudMqttClient(
+    {
+      uuid: 'test-uuid',
+      accessToken: 'test-access-token',
+      cloudServer: 'cn',
+    },
+    async (_url, options) => {
+      const mqttClient = mqttClients[connectionCount++];
+
+      if (mqttClient === undefined) {
+        throw new Error('Unexpected MQTT connection.');
+      }
+
+      mqttClient.options = options;
+      return mqttClient as unknown as MqttClient;
+    },
+  );
+  const handler = (): void => undefined;
+
+  try {
+    await client.subscribeDevice('device-1', handler);
+
+    const pendingSubscription = firstMqttClient.deferNextSubscription();
+    const subscription = client.subscribeDevice('device-2', handler);
+    await waitFor(() => firstMqttClient.subscribeCalls.length === 2);
+
+    await client.disconnect();
+    pendingSubscription.resolve();
+
+    await expect(subscription).rejects.toThrow(
+      'Cloud MQTT disconnected while subscribing.',
+    );
+    expect(connectionCount).toBe(1);
+    expect(secondMqttClient.subscribeCalls).toHaveLength(0);
+
+    await client.subscribeDevice('device-2', handler);
+    expect(connectionCount).toBe(2);
+  } finally {
+    await client.disconnect();
+  }
+});
+
 function createClient(mqttClient: TestMqttClient): CloudMqttClient {
   return new CloudMqttClient(
     {
@@ -209,6 +345,14 @@ class TestMqttClient extends EventEmitter {
 
   rejectedSubscriptionCount = 0;
 
+  private readonly deferredSubscriptionQueue: Array<Deferred<void>> = [];
+
+  deferNextSubscription(): Deferred<void> {
+    const deferred = createDeferred<void>();
+    this.deferredSubscriptionQueue.push(deferred);
+    return deferred;
+  }
+
   async subscribeAsync(
     topics: string[],
     options: unknown,
@@ -219,6 +363,8 @@ class TestMqttClient extends EventEmitter {
       this.rejectedSubscriptionCount--;
       throw new Error('Test MQTT subscription failed.');
     }
+
+    await this.deferredSubscriptionQueue.shift()?.promise;
 
     return topics.map(topic => ({topic, qos: 2}));
   }
@@ -231,6 +377,20 @@ class TestMqttClient extends EventEmitter {
     this.connected = false;
     this.emit('close');
   }
+}
+
+type Deferred<T> = {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+};
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve = (_value: T): void => undefined;
+  const promise = new Promise<T>(resolvePromise => {
+    resolve = resolvePromise;
+  });
+
+  return {promise, resolve};
 }
 
 async function flushMicrotasks(): Promise<void> {
