@@ -5,8 +5,14 @@
   "author": "vilicvane",
   "type": "module",
   "exports": {
-    "types": "./bld/library/index.d.ts",
-    "default": "./bld/library/index.js"
+    ".": {
+      "types": "./bld/library/index.d.ts",
+      "default": "./bld/library/index.js"
+    },
+    "./mobx": {
+      "types": "./bld/exports/mobx.d.ts",
+      "default": "./bld/exports/mobx.js"
+    }
   },
   "scripts": {
     "web": "vite serve --config src/web/vite.config.js --logLevel info",
