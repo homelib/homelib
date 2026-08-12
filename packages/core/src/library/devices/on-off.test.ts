@@ -13,6 +13,7 @@ import {
   type AirConditionerEndpointConnection,
   SetAirConditionerModeCommand,
   SetAirConditionerOnCommand,
+  SetAirConditionerTargetHumidityCommand,
   SetAirConditionerTargetTemperatureCommand,
 } from './air-conditioner.js';
 import {
@@ -51,6 +52,7 @@ test('air conditioner exposes state and on/off commands', async () => {
       endpoint.bindConnection(connection);
       connection.initialize(
         false,
+        undefined,
         undefined,
         undefined,
         Temperature.fromCelsius(20),
@@ -117,7 +119,7 @@ test('fan exposes state and on/off commands', async () => {
   );
 });
 
-test('air conditioner exposes mode, target temperature, and commands', async () => {
+test('air conditioner exposes mode, targets, and commands', async () => {
   const entry = new DeviceEntry('air conditioner');
   const airConditioner = entry.createInstance(AirConditioner);
   const endpoint = entry.getEndpoint();
@@ -127,6 +129,7 @@ test('air conditioner exposes mode, target temperature, and commands', async () 
   expect(airConditioner.on).toBe(false);
   expect(airConditioner.mode).toBeUndefined();
   expect(airConditioner.targetTemperature).toBeUndefined();
+  expect(airConditioner.targetHumidity).toBeUndefined();
   expect(airConditioner.temperature).toBeUndefined();
   expect(airConditioner.humidity).toBeUndefined();
 
@@ -137,11 +140,20 @@ test('air conditioner exposes mode, target temperature, and commands', async () 
   const connection = new TestAirConditionerEndpointConnection();
 
   endpoint.bindConnection(connection);
-  connection.initialize(true, 'heat', targetTemperature, temperature, 0.52);
+  connection.initialize(
+    true,
+    'heat',
+    targetTemperature,
+    0.48,
+    temperature,
+    0.52,
+  );
 
   expect(airConditioner.on).toBe(true);
   expect(airConditioner.mode).toBe('heat');
   expect(airConditioner.targetTemperature).toBe(targetTemperature);
+  expect(airConditioner.targetHumidity).toBe(0.48);
+  expect(endpoint.targetHumidity).toBe(0.48);
   expect(airConditioner.temperature).toBe(temperature);
   expect(airConditioner.humidity).toBe(0.52);
   expect(endpoint.temperature).toBe(temperature);
@@ -150,11 +162,13 @@ test('air conditioner exposes mode, target temperature, and commands', async () 
   airConditioner.setMode('cool');
   const nextTargetTemperature = Temperature.fromCelsius(24);
   airConditioner.setTargetTemperature(nextTargetTemperature);
+  airConditioner.setTargetHumidity(0.6);
   await flushMicrotasks();
 
   expect(connection.commands).toEqual([
     new SetAirConditionerModeCommand('cool'),
     new SetAirConditionerTargetTemperatureCommand(nextTargetTemperature),
+    new SetAirConditionerTargetHumidityCommand(0.6),
   ]);
 });
 
@@ -226,6 +240,7 @@ test('publishes sensor state and readiness atomically', () => {
       true,
       'cool',
       Temperature.fromCelsius(24),
+      0.48,
       Temperature.fromCelsius(23.25),
       0.52,
     );
@@ -327,6 +342,10 @@ test.each([0, 0.5, 1])('accepts target humidity %p', value => {
   expect(new SetDehumidifierTargetHumidityCommand(value).value).toBe(value);
 });
 
+test.each([0, 0.5, 1])('accepts air conditioner target humidity %p', value => {
+  expect(new SetAirConditionerTargetHumidityCommand(value).value).toBe(value);
+});
+
 test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 1.1, Infinity])(
   'rejects invalid target humidity %p',
   value => {
@@ -336,10 +355,28 @@ test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 1.1, Infinity])(
   },
 );
 
+test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 1.1, Infinity])(
+  'rejects invalid air conditioner target humidity %p',
+  value => {
+    expect(() => new SetAirConditionerTargetHumidityCommand(value)).toThrow(
+      RangeError,
+    );
+
+    const airConditioner = new DeviceEntry('air conditioner').createInstance(
+      AirConditioner,
+    );
+
+    expect(() => airConditioner.setTargetHumidity(value)).toThrow(RangeError);
+  },
+);
+
 test('new device commands only supersede commands of the same class', () => {
   const airConditionerMode = new SetAirConditionerModeCommand('cool');
   const airConditionerTemperature =
     new SetAirConditionerTargetTemperatureCommand(Temperature.fromCelsius(24));
+  const airConditionerHumidity = new SetAirConditionerTargetHumidityCommand(
+    0.5,
+  );
   const dehumidifierMode = new SetDehumidifierModeCommand('auto');
   const dehumidifierHumidity = new SetDehumidifierTargetHumidityCommand(0.5);
   const fanWindMode = new SetFanWindModeCommand('normal');
@@ -350,6 +387,7 @@ test('new device commands only supersede commands of the same class', () => {
     airConditionerMode.supersedes(new SetAirConditionerModeCommand('dry')),
   ).toBe(true);
   expect(airConditionerMode.supersedes(airConditionerTemperature)).toBe(false);
+  expect(airConditionerMode.supersedes(airConditionerHumidity)).toBe(false);
   expect(
     airConditionerTemperature.supersedes(
       new SetAirConditionerTargetTemperatureCommand(
@@ -357,6 +395,17 @@ test('new device commands only supersede commands of the same class', () => {
       ),
     ),
   ).toBe(true);
+  expect(airConditionerTemperature.supersedes(airConditionerHumidity)).toBe(
+    false,
+  );
+  expect(
+    airConditionerHumidity.supersedes(
+      new SetAirConditionerTargetHumidityCommand(0.6),
+    ),
+  ).toBe(true);
+  expect(airConditionerHumidity.supersedes(airConditionerTemperature)).toBe(
+    false,
+  );
   expect(
     dehumidifierMode.supersedes(new SetDehumidifierModeCommand('sleep')),
   ).toBe(true);
@@ -386,6 +435,9 @@ test('new device commands have semantic log strings', () => {
       Temperature.fromCelsius(24),
     ).toLogString(),
   ).toBe('set targetTemperatureCelsius=24');
+  expect(new SetAirConditionerTargetHumidityCommand(0.5).toLogString()).toBe(
+    'set targetHumidity=0.5',
+  );
   expect(new SetDehumidifierModeCommand('laundry').toLogString()).toBe(
     'set mode=laundry',
   );
@@ -426,13 +478,14 @@ test('air conditioner logs temperature and humidity state', () => {
       true,
       'heat',
       Temperature.fromCelsius(21.5),
+      0.48,
       Temperature.fromCelsius(23.25),
       0.52,
     );
 
     expect(logMessages).toEqual([
       '[homelib] home · device air conditioner state ready=false',
-      '[homelib] home · device air conditioner state ready=true on=true mode="heat" targetTemperatureCelsius=21.5 temperatureCelsius=23.25 humidity=0.52',
+      '[homelib] home · device air conditioner state ready=true on=true mode="heat" targetTemperatureCelsius=21.5 targetHumidity=0.48 temperatureCelsius=23.25 humidity=0.52',
     ]);
   } finally {
     console.info = originalInfo;
@@ -552,6 +605,8 @@ class TestAirConditionerEndpointConnection
   @observable.ref
   accessor targetTemperature: AirConditionerEndpointConnection['targetTemperature'];
 
+  @observable accessor targetHumidity: number | undefined;
+
   @observable.ref
   accessor temperature: AirConditionerEndpointConnection['temperature'] =
     Temperature.fromKelvin(0);
@@ -563,12 +618,14 @@ class TestAirConditionerEndpointConnection
     on: boolean,
     mode: AirConditionerEndpointConnection['mode'],
     targetTemperature: AirConditionerEndpointConnection['targetTemperature'],
+    targetHumidity: number | undefined,
     temperature: AirConditionerEndpointConnection['temperature'],
     humidity: number | undefined,
   ): void {
     this.on = on;
     this.mode = mode;
     this.targetTemperature = targetTemperature;
+    this.targetHumidity = targetHumidity;
     this.temperature = temperature;
     this.humidity = humidity;
     this.ready = true;

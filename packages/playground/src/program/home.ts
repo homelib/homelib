@@ -51,6 +51,7 @@ while (true) {
     humidity > idealHumidityUpperLimit
   ) {
     客厅空调.setMode('dry');
+    客厅空调.setTargetHumidity(idealHumidityLowerLimit);
   }
 
   // 1. 温度高，湿度高：只开空调除湿。

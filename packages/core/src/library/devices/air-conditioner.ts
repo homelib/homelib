@@ -33,6 +33,12 @@ export class AirConditioner
     return this.endpoint.targetTemperature;
   }
 
+  /** Target relative humidity as a normalized ratio from 0 to 1. */
+  @computed
+  get targetHumidity(): number | undefined {
+    return this.endpoint.targetHumidity;
+  }
+
   @computed
   get temperature(): Temperature | undefined {
     return this.endpoint.temperature;
@@ -64,6 +70,11 @@ export class AirConditioner
   setTargetTemperature(value: Temperature): void {
     this.endpoint.setTargetTemperature(value);
   }
+
+  /** Sets target relative humidity using a normalized ratio from 0 to 1. */
+  setTargetHumidity(value: number): void {
+    this.endpoint.setTargetHumidity(value);
+  }
 }
 
 export class AirConditionerEndpoint<
@@ -88,6 +99,12 @@ export class AirConditionerEndpoint<
     return this.connection?.targetTemperature;
   }
 
+  /** Target relative humidity as a normalized ratio from 0 to 1. */
+  @computed
+  get targetHumidity(): number | undefined {
+    return this.connection?.targetHumidity;
+  }
+
   @computed
   get temperature(): Temperature | undefined {
     return this.connection?.temperature;
@@ -109,6 +126,7 @@ export class AirConditionerEndpoint<
       on: this.on,
       mode: this.mode,
       targetTemperatureCelsius: this.targetTemperature?.celsius,
+      targetHumidity: this.targetHumidity,
       temperatureCelsius: this.temperature?.celsius,
       humidity: this.humidity,
     };
@@ -129,6 +147,11 @@ export class AirConditionerEndpoint<
   setTargetTemperature(value: Temperature): void {
     this.enqueueCommand(new SetAirConditionerTargetTemperatureCommand(value));
   }
+
+  /** Sets target relative humidity using a normalized ratio from 0 to 1. */
+  setTargetHumidity(value: number): void {
+    this.enqueueCommand(new SetAirConditionerTargetHumidityCommand(value));
+  }
 }
 
 export type AirConditionerEndpointConnection =
@@ -138,6 +161,8 @@ export type AirConditionerEndpointConnection =
       readonly on: boolean;
       readonly mode: AirConditionerMode | undefined;
       readonly targetTemperature: Temperature | undefined;
+      /** Target relative humidity as a normalized ratio from 0 to 1. */
+      readonly targetHumidity: number | undefined;
     };
 
 export abstract class AirConditionerCommand extends Command {}
@@ -184,7 +209,29 @@ export class SetAirConditionerTargetTemperatureCommand extends AirConditionerCom
   }
 }
 
+export class SetAirConditionerTargetHumidityCommand extends AirConditionerCommand {
+  /** `value` is a normalized relative-humidity ratio from 0 to 1. */
+  constructor(readonly value: number) {
+    super();
+
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      throw new RangeError(
+        'Target humidity must be a finite number from 0 to 1.',
+      );
+    }
+  }
+
+  override supersedes(command: Command): boolean {
+    return command instanceof SetAirConditionerTargetHumidityCommand;
+  }
+
+  override toLogString(): string {
+    return `set targetHumidity=${this.value}`;
+  }
+}
+
 export type AirConditionerEndpointCommand =
   | SetAirConditionerOnCommand
   | SetAirConditionerModeCommand
-  | SetAirConditionerTargetTemperatureCommand;
+  | SetAirConditionerTargetTemperatureCommand
+  | SetAirConditionerTargetHumidityCommand;

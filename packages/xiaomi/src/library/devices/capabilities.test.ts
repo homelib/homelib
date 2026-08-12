@@ -1,6 +1,7 @@
 import {
   CommandError,
   SetAirConditionerModeCommand,
+  SetAirConditionerTargetHumidityCommand,
   SetAirConditionerTargetTemperatureCommand,
   SetDehumidifierModeCommand,
   SetDehumidifierTargetHumidityCommand,
@@ -40,7 +41,7 @@ import {MiotFanEndpointConnection, miotFanEndpointAdapter} from './fan.js';
 const READ_WRITE_NOTIFY = ['read', 'write', 'notify'] as const;
 
 describe('MIoT air conditioner capabilities', () => {
-  test('matches and projects optional mode and target temperature', () => {
+  test('matches and projects optional mode, target temperature, and target humidity', () => {
     const metadata = findMetadata(
       miotAirConditionerEndpointAdapter,
       createAirConditionerSpec(),
@@ -55,6 +56,7 @@ describe('MIoT air conditioner capabilities', () => {
       on: {iid: 1},
       mode: {iid: 2},
       targetTemperature: {iid: 3},
+      targetHumidity: {iid: 4},
     });
     expect(metadata.resources).toMatchObject([
       {service: {iid: 2}},
@@ -63,18 +65,21 @@ describe('MIoT air conditioner capabilities', () => {
         properties: {temperature: {iid: 7}, humidity: {iid: 9}},
       },
     ]);
-    expect(connection.stateProperties).toHaveLength(5);
+    expect(connection.stateProperties).toHaveLength(6);
     expect(connection.mode).toBe('cool');
     expect(connection.targetTemperature?.kelvin).toBe(0);
+    expect(connection.targetHumidity).toBe(0);
     expect(connection.temperature?.kelvin).toBe(0);
     expect(connection.humidity).toBe(0);
 
     updateProperty(connection, metadata, 'mode', 2);
     updateProperty(connection, metadata, 'targetTemperature', 23);
+    updateProperty(connection, metadata, 'targetHumidity', 55);
     updateProperty(connection, metadata, 'temperature', 24.5);
     updateProperty(connection, metadata, 'humidity', 61);
     expect(connection.mode).toBe('cool');
     expect(connection.targetTemperature?.celsius).toBeCloseTo(23);
+    expect(connection.targetHumidity).toBe(0.55);
     expect(connection.temperature?.celsius).toBeCloseTo(24.5);
     expect(connection.humidity).toBe(0.61);
 
@@ -83,9 +88,12 @@ describe('MIoT air conditioner capabilities', () => {
     expect(() => updateProperty(connection, metadata, 'mode', 1)).toThrow(
       TypeError,
     );
+    expect(() =>
+      updateProperty(connection, metadata, 'targetHumidity', 71),
+    ).toThrow(TypeError);
   });
 
-  test('maps modes and quantizes target temperature writes', async () => {
+  test('maps modes and quantizes target temperature and humidity writes', async () => {
     const metadata = findMetadata(
       miotAirConditionerEndpointAdapter,
       createAirConditionerSpec(),
@@ -106,6 +114,12 @@ describe('MIoT air conditioner capabilities', () => {
         Temperature.fromCelsius(23.6),
       ),
     );
+    await connection.processCommand(
+      new SetAirConditionerTargetHumidityCommand(0.3),
+    );
+    await connection.processCommand(
+      new SetAirConditionerTargetHumidityCommand(0.584),
+    );
 
     expect(transport.requests).toEqual([
       createExpectedRequest(metadata, 'mode', 2),
@@ -113,6 +127,8 @@ describe('MIoT air conditioner capabilities', () => {
       createExpectedRequest(metadata, 'mode', 4),
       createExpectedRequest(metadata, 'mode', 5),
       createExpectedRequest(metadata, 'targetTemperature', 23.5),
+      createExpectedRequest(metadata, 'targetHumidity', 30),
+      createExpectedRequest(metadata, 'targetHumidity', 58),
     ]);
 
     await expect(
@@ -125,7 +141,12 @@ describe('MIoT air conditioner capabilities', () => {
         ),
       ),
     ).rejects.toBeInstanceOf(CommandError);
-    expect(transport.requests).toHaveLength(5);
+    await expect(
+      connection.processCommand(
+        new SetAirConditionerTargetHumidityCommand(0.29),
+      ),
+    ).rejects.toBeInstanceOf(CommandError);
+    expect(transport.requests).toHaveLength(7);
   });
 
   test('routes writes by property alias when the control service is not first', async () => {
@@ -203,6 +224,12 @@ describe('MIoT air conditioner capabilities', () => {
         ),
       ),
     ).rejects.toBeInstanceOf(CommandError);
+    await expect(
+      connection.processCommand(
+        new SetAirConditionerTargetHumidityCommand(0.5),
+      ),
+    ).rejects.toBeInstanceOf(CommandError);
+    expect(connection.targetHumidity).toBeUndefined();
     expect(transport.requests).toEqual([]);
   });
 
@@ -238,6 +265,7 @@ describe('MIoT air conditioner capabilities', () => {
 
       expect(connection.temperature).toBeUndefined();
       expect(connection.humidity).toBeUndefined();
+      expect(connection.targetHumidity).toBeUndefined();
     }
   });
 
@@ -256,6 +284,7 @@ describe('MIoT air conditioner capabilities', () => {
         ready: boolean,
         on: boolean,
         targetTemperature: number,
+        targetHumidity: number | undefined,
         temperature: number,
         humidity: number | undefined,
       ]
@@ -265,6 +294,7 @@ describe('MIoT air conditioner capabilities', () => {
         connection.ready,
         connection.on,
         connection.targetTemperature?.kelvin ?? Number.NaN,
+        connection.targetHumidity,
         connection.temperature?.kelvin ?? Number.NaN,
         connection.humidity,
       ]);
@@ -277,14 +307,15 @@ describe('MIoT air conditioner capabilities', () => {
         on: true,
         mode: 2,
         targetTemperature: 23,
+        targetHumidity: 55,
         temperature: 24.5,
         humidity: 61,
       }),
     });
 
     expect(values).toEqual([
-      [false, false, 0, 0, 0],
-      [true, true, 296.15, 297.65, 0.61],
+      [false, false, 0, 0, 0, 0],
+      [true, true, 296.15, 0.55, 297.65, 0.61],
     ]);
     dispose();
   });
@@ -555,6 +586,13 @@ function createAirConditionerSpec(): MiotSpecInstance {
       'float',
       'celsius',
       [16, 31, 0.5],
+    ),
+    createRangeProperty(
+      4,
+      'urn:miot-spec-v2:property:target-humidity:00000022:test:1',
+      'uint8',
+      'percentage',
+      [30, 70, 1],
     ),
   );
   spec.services.push(createEnvironmentService(4, 7, [-50, 150, 0.1], 9));

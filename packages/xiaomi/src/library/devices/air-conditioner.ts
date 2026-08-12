@@ -6,6 +6,7 @@ import {
   CommandError,
   SetAirConditionerModeCommand,
   SetAirConditionerOnCommand,
+  SetAirConditionerTargetHumidityCommand,
   SetAirConditionerTargetTemperatureCommand,
   Temperature,
 } from '@homelib/core';
@@ -58,6 +59,13 @@ const MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER: MiotAirConditionerEndpointMatcher =
         format: 'float',
         access: ['read', 'write', 'notify'],
         unit: 'celsius',
+        valueRange: true,
+      },
+      targetHumidity: {
+        type: 'urn:miot-spec-v2:property:target-humidity:00000022',
+        format: 'uint8',
+        access: ['read', 'write', 'notify'],
+        unit: 'percentage',
         valueRange: true,
       },
     },
@@ -173,6 +181,28 @@ export class MiotAirConditionerEndpointConnection
   }
 
   @computed
+  get targetHumidity(): number | undefined {
+    const {targetHumidity} = this.properties;
+
+    if (targetHumidity === undefined) {
+      return undefined;
+    }
+
+    const value = getOptionalNumberState(this.getState('targetHumidity'));
+
+    if (value === undefined) {
+      return 0;
+    }
+
+    assertValueInRange(
+      'air conditioner target humidity',
+      value,
+      getPropertyValueRange('air conditioner', targetHumidity),
+    );
+    return value / 100;
+  }
+
+  @computed
   get temperature(): Temperature | undefined {
     const {temperature} = this.properties;
 
@@ -256,6 +286,7 @@ type MiotAirConditionerEndpointMatcher = Omit<
     {
       readonly mode: MiotPropertyMatcher;
       readonly targetTemperature: MiotPropertyMatcher;
+      readonly targetHumidity: MiotPropertyMatcher;
     }
   >,
   'device'
@@ -265,6 +296,7 @@ type MiotAirConditionerEndpointProperties = {
   readonly on: MiotSpecProperty;
   readonly mode?: MiotSpecProperty;
   readonly targetTemperature?: MiotSpecProperty;
+  readonly targetHumidity?: MiotSpecProperty;
   readonly temperature?: MiotSpecProperty;
   readonly humidity?: MiotSpecProperty;
 };
@@ -328,6 +360,30 @@ function createMiotAirConditionerRequest(
       metadata,
       'targetTemperature',
       quantizeValue(value, valueRange),
+    );
+  } else if (command instanceof SetAirConditionerTargetHumidityCommand) {
+    const property = properties.targetHumidity;
+
+    if (property === undefined) {
+      throw new CommandError(
+        'MIoT air conditioner does not support target humidity.',
+      );
+    }
+
+    const valueRange = getPropertyValueRange('air conditioner', property);
+    const [minimum, maximum] = valueRange;
+    const rawValue = command.value * 100;
+
+    if (rawValue < minimum || rawValue > maximum) {
+      throw new CommandError(
+        `MIoT air conditioner target humidity must be between ${minimum / 100} and ${maximum / 100}.`,
+      );
+    }
+
+    return createSetPropertyRequest(
+      metadata,
+      'targetHumidity',
+      quantizeValue(rawValue, valueRange),
     );
   }
 
