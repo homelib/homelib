@@ -229,7 +229,7 @@ export abstract class MiotEndpointConnection<
       throw new TypeError('Unexpected MIoT endpoint property update.');
     }
 
-    assertMiotPropertyValue(stateProperty, update.value);
+    assertMiotPropertyValue(stateProperty, update.value, stateName, update);
     return {name: stateName, value: update.value};
   }
 }
@@ -337,6 +337,8 @@ function getMiotEndpointPropertyCount(
 function assertMiotPropertyValue(
   property: MiotSpecProperty,
   value: unknown,
+  stateName: string,
+  update: MiotPropertyUpdate,
 ): void {
   const {format} = property;
   let numericValue: number | undefined;
@@ -378,15 +380,13 @@ function assertMiotPropertyValue(
     return;
   }
 
-  const [minimum, maximum, step] = valueRange;
-  const stepOffset = (numericValue - minimum) / step;
-  const tolerance = Number.EPSILON * Math.max(1, Math.abs(stepOffset)) * 8;
+  // The third value describes control precision. A device may report a finer
+  // sensor value, so state validation only applies the declared boundaries.
+  const [minimum, maximum] = valueRange;
 
-  if (
-    numericValue < minimum ||
-    numericValue > maximum ||
-    Math.abs(stepOffset - Math.round(stepOffset)) > tolerance
-  ) {
-    throw new TypeError('Invalid MIoT ranged property state.');
+  if (numericValue < minimum || numericValue > maximum) {
+    throw new TypeError(
+      `Invalid MIoT ranged property state. ${stateName}=${numericValue} at did ${update.did}, siid ${update.siid}, piid ${update.piid}; expected ${minimum}..${maximum}.`,
+    );
   }
 }

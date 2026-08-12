@@ -321,11 +321,13 @@ describe('MIoT dehumidifier capabilities', () => {
 
     updateProperty(connection, metadata, 'mode', 1);
     updateProperty(connection, metadata, 'targetHumidity', 55);
-    updateProperty(connection, metadata, 'temperature', 21);
+    // The MIoT step describes write precision. Devices may still report a
+    // finer-grained floating-point sensor state.
+    updateProperty(connection, metadata, 'temperature', 21.5);
     updateProperty(connection, metadata, 'humidity', 58);
     expect(connection.mode).toBe('sleep');
     expect(connection.targetHumidity).toBe(0.55);
-    expect(connection.temperature?.celsius).toBeCloseTo(21);
+    expect(connection.temperature?.celsius).toBeCloseTo(21.5);
     expect(connection.humidity).toBe(0.58);
 
     updateProperty(connection, metadata, 'mode', 2);

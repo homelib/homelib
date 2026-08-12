@@ -402,14 +402,8 @@ function assertValueInRange(
   valueRange: MiotSpecValueRange,
 ): void {
   const [minimum, maximum] = valueRange;
-  const quantizedValue = quantizeValue(value, valueRange);
-  const tolerance = Number.EPSILON * Math.max(1, Math.abs(value)) * 8;
 
-  if (
-    value < minimum ||
-    value > maximum ||
-    Math.abs(value - quantizedValue) > tolerance
-  ) {
+  if (value < minimum || value > maximum) {
     throw new TypeError(`Invalid MIoT ${name} state.`);
   }
 }

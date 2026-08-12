@@ -896,10 +896,29 @@ test('rejects optional property state outside its declared value range', () => {
     connection.handlePropertyUpdate({
       did: TEST_DIMMABLE_METADATA.device.did,
       siid: TEST_DIMMABLE_PRIMARY_RESOURCE.service.iid,
-      piid: 3,
-      value: 4_049,
+      piid: 2,
+      value: 101,
     }),
-  ).toThrow('Invalid MIoT ranged property state.');
+  ).toThrow(
+    'Invalid MIoT ranged property state. brightness=101 at did device-1, siid 2, piid 2; expected 1..100.',
+  );
+});
+
+test('accepts ranged property state that is not aligned to the command step', () => {
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_DIMMABLE_METADATA,
+    [new TestTransport()],
+  );
+
+  connection.handlePropertyUpdate({
+    did: TEST_DIMMABLE_METADATA.device.did,
+    siid: TEST_DIMMABLE_PRIMARY_RESOURCE.service.iid,
+    piid: 3,
+    value: 4_049,
+  });
+
+  expect(connection.colorTemperature).toBe(4_049);
 });
 
 test('accepts only declared value-list property state', () => {
