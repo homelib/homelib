@@ -177,6 +177,66 @@ test('gets and sets properties', async () => {
   }
 });
 
+test('gets a device online state with an exact device query', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Record<string, unknown>[] = [];
+
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    requests.push(body);
+
+    return jsonResponse({
+      list: [{did: 'device-1', isOnline: false}],
+      has_more: false,
+    });
+  };
+
+  try {
+    const online = await new BackendClient({
+      uuid: 'test-uuid',
+      accessToken: 'test-access-token',
+    }).getDeviceOnline('device-1');
+
+    expect(online).toBe(false);
+    expect(requests).toEqual([
+      {
+        limit: 200,
+        get_split_device: true,
+        get_third_device: true,
+        dids: ['device-1'],
+      },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test.each([
+  {
+    result: {list: [], has_more: false},
+    error: 'Cloud device was not returned: device-1.',
+  },
+  {
+    result: {list: [{did: 'device-1'}], has_more: false},
+    error: 'Cloud device device-1 returned invalid online state.',
+  },
+])('rejects an unavailable device online state', async ({result, error}) => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => jsonResponse(result);
+
+  try {
+    await expect(
+      new BackendClient({
+        uuid: 'test-uuid',
+        accessToken: 'test-access-token',
+      }).getDeviceOnline('device-1'),
+    ).rejects.toThrow(error);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('rejects an ambiguous paginated home id', async () => {
   const originalFetch = globalThis.fetch;
 

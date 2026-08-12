@@ -10,8 +10,10 @@ import {
 import {
   type MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResource,
   type MiotEndpointConnectionTransports,
   getMiotEndpointConnectionResourceKey,
+  getPrimaryMiotEndpointConnectionResource,
 } from './endpoint-connection.js';
 import {
   type MiotEndpointMatch,
@@ -55,6 +57,16 @@ export type MiotEndpointAdapterBinding = {
   readonly binding: EndpointConnectionBinding;
 };
 
+export type MiotEndpointProfile = {
+  readonly primary: MiotEndpointMatcher;
+  readonly supplements?: readonly MiotEndpointProfileSupplement[];
+};
+
+export type MiotEndpointProfileSupplement = {
+  readonly matcher: MiotEndpointMatcher;
+  readonly required?: boolean;
+};
+
 export class MiotEndpointAdapterRegistry {
   private readonly adapterMap = new Map<Function, MiotEndpointAdapter>();
 
@@ -96,14 +108,17 @@ export function defineMiotEndpointAdapter<
     ): MiotEndpointConnection<TCommand> & TEndpointConnection;
     assertMetadata(metadata: MiotEndpointConnectionMetadata): void;
   };
-  readonly endpointMatchers: readonly MiotEndpointMatcher[];
+  readonly endpointMatchers?: readonly MiotEndpointMatcher[];
+  readonly endpointProfiles?: readonly MiotEndpointProfile[];
 }): MiotEndpointAdapter {
   const {
     type,
     Endpoint: EndpointConstructor,
     Connection,
     endpointMatchers,
+    endpointProfiles,
   } = definition;
+  const profiles = getMiotEndpointProfiles(endpointMatchers, endpointProfiles);
 
   return {
     type,
@@ -113,35 +128,50 @@ export function defineMiotEndpointAdapter<
         string,
         MiotEndpointMetadataCandidate
       >();
+      const claimedPrimaryServiceIidSet = new Set<number>();
 
-      for (const matcher of endpointMatchers) {
-        for (const match of findMiotEndpointMatches(spec, matcher)) {
+      for (const profile of profiles) {
+        for (const match of findMiotEndpointMatches(spec, profile.primary)) {
+          if (claimedPrimaryServiceIidSet.has(match.service.iid)) {
+            continue;
+          }
+
+          claimedPrimaryServiceIidSet.add(match.service.iid);
+          const supplementResources = findMiotSupplementResources(
+            spec,
+            match.service.iid,
+            profile.supplements,
+          );
+
+          if (supplementResources === undefined) {
+            continue;
+          }
+
           const metadata = MiotEndpointConnectionMetadata.satisfies({
             device: {did: device.did, model: device.model, urn: spec.type},
-            service: match.service,
-            properties: match.properties,
+            resources: [
+              {
+                service: match.service,
+                properties: match.properties,
+                exclusive: true,
+              },
+              ...supplementResources,
+            ],
           });
+          const resourceKey = getMiotEndpointConnectionResourceKey(metadata);
+
+          if (resourceCandidateMap.has(resourceKey)) {
+            continue;
+          }
 
           Connection.assertMetadata(metadata);
-
-          const resourceKey = getMiotEndpointConnectionResourceKey(metadata);
           const candidate = {
             key: getMetadataCandidateKey(type, metadata),
             label: match.service.description,
             metadata,
           };
-          const existingCandidate = resourceCandidateMap.get(resourceKey);
 
-          if (existingCandidate === undefined) {
-            resourceCandidateMap.set(resourceKey, candidate);
-          } else if (
-            getStableValueKey(existingCandidate.metadata) !==
-            getStableValueKey(metadata)
-          ) {
-            throw new TypeError(
-              `Ambiguous MIoT ${type} endpoint metadata for one service.`,
-            );
-          }
+          resourceCandidateMap.set(resourceKey, candidate);
         }
       }
 
@@ -172,29 +202,163 @@ export function defineMiotEndpointAdapter<
 
 export function getValidatedMiotEndpointProperties<
   TProperties extends Record<string, MiotPropertyMatcher>,
+  TOptionalProperties extends Record<string, MiotPropertyMatcher> = {},
 >(
   endpointType: string,
   metadata: MiotEndpointConnectionMetadata,
-  matchers: readonly MiotEndpointMatcher<TProperties>[],
-): MiotEndpointMatch<TProperties>['properties'] {
+  matchers: readonly MiotEndpointMatcher<TProperties, TOptionalProperties>[],
+): MiotEndpointMatch<TProperties, TOptionalProperties>['properties'] {
+  return getValidatedMiotEndpointResources(endpointType, metadata, matchers)[0]
+    .properties as MiotEndpointMatch<
+    TProperties,
+    TOptionalProperties
+  >['properties'];
+}
+
+export function getValidatedMiotEndpointResources(
+  endpointType: string,
+  metadata: MiotEndpointConnectionMetadata,
+  profilesOrMatchers:
+    readonly MiotEndpointProfile[] | readonly MiotEndpointMatcher[],
+): readonly MiotEndpointConnectionResource[] {
   const spec: MiotSpecInstance = {
     type: metadata.device.urn,
     description: metadata.device.model,
-    services: [metadata.service],
+    services: metadata.resources.map(resource => resource.service),
   };
+  const primaryResource = getPrimaryMiotEndpointConnectionResource(metadata);
+  const profiles = normalizeMiotEndpointProfiles(profilesOrMatchers);
 
-  for (const matcher of matchers) {
-    for (const match of findMiotEndpointMatches(spec, matcher)) {
-      if (
-        match.service.iid === metadata.service.iid &&
-        propertiesEqual(match.properties, metadata.properties)
-      ) {
-        return match.properties;
-      }
+  for (const profile of profiles) {
+    const primaryMatch = findMiotEndpointMatches(spec, profile.primary).find(
+      candidate => {
+        return candidate.service.iid === primaryResource.service.iid;
+      },
+    );
+
+    if (primaryMatch === undefined) {
+      continue;
+    } else if (
+      !propertiesEqual(primaryMatch.properties, primaryResource.properties)
+    ) {
+      break;
     }
+
+    const expectedResources: MiotEndpointConnectionResource[] = [
+      {
+        service: primaryMatch.service,
+        properties: primaryMatch.properties,
+        exclusive: true,
+      },
+    ];
+    let profileApplies = true;
+
+    for (const supplement of profile.supplements ?? []) {
+      const matches = findMiotEndpointMatches(spec, supplement.matcher).filter(
+        match => match.service.iid !== primaryMatch.service.iid,
+      );
+
+      if (matches.length === 0) {
+        if (supplement.required) {
+          profileApplies = false;
+          break;
+        }
+
+        continue;
+      } else if (matches.length !== 1) {
+        profileApplies = false;
+        break;
+      }
+
+      const [match] = matches;
+
+      if (match === undefined) {
+        throw new TypeError('Missing MIoT endpoint supplement match.');
+      }
+
+      expectedResources.push({
+        service: match.service,
+        properties: match.properties,
+        exclusive: false,
+      });
+    }
+
+    if (!profileApplies) {
+      break;
+    } else if (!resourcesEqual(expectedResources, metadata.resources)) {
+      break;
+    }
+
+    return expectedResources;
   }
 
   throw new TypeError(`Invalid MIoT ${endpointType} endpoint metadata.`);
+}
+
+function getMiotEndpointProfiles(
+  endpointMatchers: readonly MiotEndpointMatcher[] | undefined,
+  endpointProfiles: readonly MiotEndpointProfile[] | undefined,
+): readonly MiotEndpointProfile[] {
+  if (endpointProfiles !== undefined && endpointMatchers === undefined) {
+    return endpointProfiles;
+  } else if (endpointMatchers !== undefined && endpointProfiles === undefined) {
+    return endpointMatchers.map(primary => ({primary}));
+  }
+
+  throw new TypeError(
+    'MIoT endpoint adapter requires either matchers or profiles.',
+  );
+}
+
+function normalizeMiotEndpointProfiles(
+  profilesOrMatchers:
+    readonly MiotEndpointProfile[] | readonly MiotEndpointMatcher[],
+): readonly MiotEndpointProfile[] {
+  return profilesOrMatchers.map(profileOrMatcher => {
+    if ('primary' in profileOrMatcher) {
+      return profileOrMatcher;
+    }
+
+    return {primary: profileOrMatcher};
+  });
+}
+
+function findMiotSupplementResources(
+  spec: MiotSpecInstance,
+  primaryServiceIid: number,
+  supplements: readonly MiotEndpointProfileSupplement[] | undefined,
+): readonly MiotEndpointConnectionResource[] | undefined {
+  const resources: MiotEndpointConnectionResource[] = [];
+
+  for (const supplement of supplements ?? []) {
+    const matches = findMiotEndpointMatches(spec, supplement.matcher).filter(
+      match => match.service.iid !== primaryServiceIid,
+    );
+
+    if (matches.length === 0) {
+      if (supplement.required) {
+        return undefined;
+      }
+
+      continue;
+    } else if (matches.length !== 1) {
+      return undefined;
+    }
+
+    const [match] = matches;
+
+    if (match === undefined) {
+      throw new TypeError('Missing MIoT endpoint supplement match.');
+    }
+
+    resources.push({
+      service: match.service,
+      properties: match.properties,
+      exclusive: false,
+    });
+  }
+
+  return resources;
 }
 
 type MiotEndpointConstructor = abstract new (
@@ -205,40 +369,64 @@ function getMetadataCandidateKey(
   adapterType: string,
   metadata: MiotEndpointConnectionMetadata,
 ): string {
-  const propertyKeys = Object.entries(metadata.properties)
-    .map(([name, property]) => [name, property.iid] as const)
-    .sort(([left], [right]) => compareStrings(left, right));
+  const resourceKeys = metadata.resources.map(resource => {
+    const propertyKeys = Object.entries(resource.properties)
+      .map(([name, property]) => [name, property.iid] as const)
+      .sort(([left], [right]) => compareStrings(left, right));
+
+    return [resource.service.iid, propertyKeys];
+  });
+  const [primaryResourceKey, ...supplementResourceKeys] = resourceKeys;
+
+  if (primaryResourceKey === undefined) {
+    throw new TypeError('MIoT endpoint metadata has no primary resource.');
+  }
+  const [primaryServiceIid, primaryPropertyKeys] = primaryResourceKey;
 
   return JSON.stringify([
     adapterType,
     metadata.device.did,
-    metadata.service.iid,
-    propertyKeys,
+    primaryServiceIid,
+    primaryPropertyKeys,
+    ...supplementResourceKeys,
   ]);
 }
 
-function getStableValueKey(value: unknown): string {
-  return JSON.stringify(normalizeValue(value));
+function resourcesEqual(
+  expected: readonly MiotEndpointConnectionResource[],
+  actual: readonly MiotEndpointConnectionResource[],
+): boolean {
+  return (
+    expected.length === actual.length &&
+    expected.every((expectedResource, index) => {
+      const actualResource = actual.at(index);
+
+      return (
+        actualResource !== undefined &&
+        expectedResource.exclusive === actualResource.exclusive &&
+        serviceEqual(expectedResource.service, actualResource.service) &&
+        propertiesEqual(expectedResource.properties, actualResource.properties)
+      );
+    })
+  );
 }
 
-function normalizeValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(item => normalizeValue(item));
-  } else if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([left], [right]) => compareStrings(left, right))
-        .map(([key, item]) => [key, normalizeValue(item)]),
-    );
-  }
-
-  return value;
+function serviceEqual(
+  expected: MiotEndpointConnectionResource['service'],
+  actual: MiotEndpointConnectionResource['service'],
+): boolean {
+  return (
+    expected.iid === actual.iid &&
+    expected.type === actual.type &&
+    expected.description === actual.description
+  );
 }
 
 function propertiesEqual<
   TProperties extends Record<string, MiotPropertyMatcher>,
+  TOptionalProperties extends Record<string, MiotPropertyMatcher>,
 >(
-  expected: MiotEndpointMatch<TProperties>['properties'],
+  expected: MiotEndpointMatch<TProperties, TOptionalProperties>['properties'],
   actual: Readonly<Record<string, MiotSpecProperty>>,
 ): boolean {
   const expectedNames = Object.keys(expected);
@@ -268,8 +456,66 @@ function propertyEqual(
     left.iid === right.iid &&
     left.type === right.type &&
     left.format === right.format &&
+    left.unit === right.unit &&
+    valueRangesEqual(left['value-range'], right['value-range']) &&
+    valueListsEqual(left['value-list'], right['value-list']) &&
     uniqueStringArraysEqual(left.access, right.access)
   );
+}
+
+function valueRangesEqual(
+  left: MiotSpecProperty['value-range'],
+  right: MiotSpecProperty['value-range'],
+): boolean {
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+function valueListsEqual(
+  left: MiotSpecProperty['value-list'],
+  right: MiotSpecProperty['value-list'],
+): boolean {
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+
+  const leftEntryMap = createValueListEntryMap(left);
+  const rightEntryMap = createValueListEntryMap(right);
+
+  if (
+    leftEntryMap === undefined ||
+    rightEntryMap === undefined ||
+    leftEntryMap.size !== rightEntryMap.size
+  ) {
+    return false;
+  }
+
+  return [...leftEntryMap].every(([value, description]) => {
+    return rightEntryMap.get(value) === description;
+  });
+}
+
+function createValueListEntryMap(
+  valueList: NonNullable<MiotSpecProperty['value-list']>,
+): ReadonlyMap<number, string> | undefined {
+  if (valueList.length === 0) {
+    return undefined;
+  }
+
+  const entryMap = new Map<number, string>();
+
+  for (const {value, description} of valueList) {
+    if (!Number.isFinite(value) || entryMap.has(value)) {
+      return undefined;
+    }
+
+    entryMap.set(value, description);
+  }
+
+  return entryMap;
 }
 
 function uniqueStringArraysEqual(

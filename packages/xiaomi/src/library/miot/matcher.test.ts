@@ -18,8 +18,22 @@ const DIMMABLE_LIGHT_MATCHER = {
   optionalProperties: {
     brightness: {
       type: 'urn:miot-spec-v2:property:brightness:0000000D',
-      format: 'uint8',
+      format: ['uint8', 'uint16'],
       access: ['read', 'write'],
+      unit: 'percentage',
+      valueRange: true,
+    },
+  },
+} as const satisfies MiotEndpointMatcher;
+
+const FAN_MODE_MATCHER = {
+  ...LIGHT_MATCHER,
+  optionalProperties: {
+    mode: {
+      type: 'urn:miot-spec-v2:property:mode:00000008',
+      format: 'uint8',
+      access: ['read', 'write', 'notify'],
+      valueList: [1, 0],
     },
   },
 } as const satisfies MiotEndpointMatcher;
@@ -83,8 +97,10 @@ test('includes a matching optional property', () => {
             iid: 2,
             type: 'urn:miot-spec-v2:property:brightness:0000000D:test:1',
             description: 'Brightness',
-            format: 'uint8',
+            format: 'uint16',
             access: ['read', 'write', 'notify'],
+            unit: 'percentage',
+            'value-range': [1, 100, 1],
           },
         ],
       },
@@ -106,6 +122,64 @@ test('does not reject a service without an optional property', () => {
   expect(Object.hasOwn(match?.properties ?? {}, 'brightness')).toBe(false);
 });
 
+test('matches an exact value-list independent of entry order', () => {
+  const [match] = findMiotEndpointMatches(
+    createSpecWithModeValueList([
+      {value: 0, description: 'Straight Wind'},
+      {value: 1, description: 'Natural Wind'},
+    ]),
+    FAN_MODE_MATCHER,
+  );
+
+  expect(match?.properties.mode?.iid).toBe(2);
+});
+
+test('matches any valid value-list when requested', () => {
+  const matcher = {
+    ...FAN_MODE_MATCHER,
+    optionalProperties: {
+      mode: {...FAN_MODE_MATCHER.optionalProperties.mode, valueList: true},
+    },
+  } as const satisfies MiotEndpointMatcher;
+  const [match] = findMiotEndpointMatches(
+    createSpecWithModeValueList([
+      {value: 7, description: 'First'},
+      {value: 9, description: 'Second'},
+    ]),
+    matcher,
+  );
+
+  expect(match?.properties.mode?.iid).toBe(2);
+});
+
+test.each([
+  ['a missing value-list', undefined],
+  ['an empty value-list', []],
+  ['a non-finite value', [{value: NaN, description: 'Invalid'}]],
+  [
+    'a duplicate value',
+    [
+      {value: 0, description: 'First'},
+      {value: 0, description: 'Second'},
+    ],
+  ],
+  [
+    'a different value set',
+    [
+      {value: 0, description: 'Straight Wind'},
+      {value: 2, description: 'Natural Wind'},
+    ],
+  ],
+] as const)('omits an optional property with %s', (_name, valueList) => {
+  const [match] = findMiotEndpointMatches(
+    createSpecWithModeValueList(valueList),
+    FAN_MODE_MATCHER,
+  );
+
+  expect(match?.service.iid).toBe(2);
+  expect(match?.properties.mode).toBeUndefined();
+});
+
 test('omits an ambiguous optional property', () => {
   const service = LIGHT_GROUP_SPEC.services.at(0);
 
@@ -119,6 +193,8 @@ test('omits an ambiguous optional property', () => {
     description: 'Brightness',
     format: 'uint8',
     access: ['read', 'write'],
+    unit: 'percentage',
+    'value-range': [1, 100, 1] as [number, number, number],
   }));
   const spec: MiotSpecInstance = {
     ...LIGHT_GROUP_SPEC,
@@ -126,6 +202,58 @@ test('omits an ambiguous optional property', () => {
       {
         ...service,
         properties: [...(service.properties ?? []), ...brightnessProperties],
+      },
+    ],
+  };
+  const [match] = findMiotEndpointMatches(spec, DIMMABLE_LIGHT_MATCHER);
+
+  expect(match?.service.iid).toBe(2);
+  expect(match?.properties.brightness).toBeUndefined();
+});
+
+test.each([
+  ['a missing unit', {unit: undefined, 'value-range': [1, 100, 1]}],
+  ['a different unit', {unit: 'kelvin', 'value-range': [1, 100, 1]}],
+  ['a missing value range', {unit: 'percentage', 'value-range': undefined}],
+  [
+    'a non-finite value range',
+    {unit: 'percentage', 'value-range': [1, 100, NaN]},
+  ],
+  ['an inverted value range', {unit: 'percentage', 'value-range': [100, 1, 1]}],
+  ['a zero step', {unit: 'percentage', 'value-range': [1, 100, 0]}],
+  [
+    'a fractional uint step',
+    {unit: 'percentage', 'value-range': [1, 100, 0.5]},
+  ],
+  ['an unaligned step', {unit: 'percentage', 'value-range': [1, 100, 2]}],
+  ['a uint16 overflow', {unit: 'percentage', 'value-range': [1, 65_536, 1]}],
+] as const)('omits an optional property with %s', (_name, definition) => {
+  const service = LIGHT_GROUP_SPEC.services.at(0);
+
+  if (service === undefined) {
+    throw new Error('Light group spec has no light service.');
+  }
+
+  const spec: MiotSpecInstance = {
+    ...LIGHT_GROUP_SPEC,
+    services: [
+      {
+        ...service,
+        properties: [
+          ...(service.properties ?? []),
+          {
+            iid: 2,
+            type: 'urn:miot-spec-v2:property:brightness:0000000D:test:1',
+            description: 'Brightness',
+            format: 'uint16',
+            access: ['read', 'write'],
+            unit: definition.unit,
+            'value-range':
+              definition['value-range'] === undefined
+                ? undefined
+                : ([...definition['value-range']] as [number, number, number]),
+          },
+        ],
       },
     ],
   };
@@ -184,3 +312,35 @@ const LIGHT_GROUP_SPEC: MiotSpecInstance = {
     },
   ],
 };
+
+function createSpecWithModeValueList(
+  valueList:
+    | readonly {readonly value: number; readonly description: string}[]
+    | undefined,
+): MiotSpecInstance {
+  const service = LIGHT_GROUP_SPEC.services.at(0);
+
+  if (service === undefined) {
+    throw new Error('Light group spec has no light service.');
+  }
+
+  return {
+    ...LIGHT_GROUP_SPEC,
+    services: [
+      {
+        ...service,
+        properties: [
+          ...(service.properties ?? []),
+          {
+            iid: 2,
+            type: 'urn:miot-spec-v2:property:mode:00000008:test:1',
+            description: 'Mode',
+            format: 'uint8',
+            access: ['read', 'write', 'notify'],
+            'value-list': valueList === undefined ? undefined : [...valueList],
+          },
+        ],
+      },
+    ],
+  };
+}

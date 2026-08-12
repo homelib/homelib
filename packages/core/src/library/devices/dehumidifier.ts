@@ -1,15 +1,51 @@
 import {computed} from 'mobx';
 
 import {Command} from '../command.js';
+import type {
+  HumiditySensor,
+  Temperature,
+  TemperatureSensor,
+} from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
-import {Endpoint, type EndpointConnection} from '../endpoint.js';
+import {
+  Endpoint,
+  type EndpointConnection,
+  type EndpointLogState,
+} from '../endpoint.js';
 
-export class Dehumidifier extends Device {
+export type DehumidifierMode = 'auto' | 'sleep' | 'laundry';
+
+export class Dehumidifier
+  extends Device
+  implements TemperatureSensor, HumiditySensor
+{
   protected readonly endpoint: DehumidifierEndpoint;
 
   @computed
-  get on(): boolean | undefined {
+  get on(): boolean {
     return this.endpoint.on;
+  }
+
+  @computed
+  get mode(): DehumidifierMode | undefined {
+    return this.endpoint.mode;
+  }
+
+  /** Target relative humidity as a normalized ratio from 0 to 1. */
+  @computed
+  get targetHumidity(): number | undefined {
+    return this.endpoint.targetHumidity;
+  }
+
+  @computed
+  get temperature(): Temperature | undefined {
+    return this.endpoint.temperature;
+  }
+
+  /** Relative humidity as a normalized ratio from 0 to 1. */
+  @computed
+  get humidity(): number | undefined {
+    return this.endpoint.humidity;
   }
 
   constructor(entry: DeviceEntry) {
@@ -24,15 +60,64 @@ export class Dehumidifier extends Device {
   turnOff(): void {
     this.endpoint.turnOff();
   }
+
+  setMode(value: DehumidifierMode): void {
+    this.endpoint.setMode(value);
+  }
+
+  /** Sets target relative humidity using a normalized ratio from 0 to 1. */
+  setTargetHumidity(value: number): void {
+    this.endpoint.setTargetHumidity(value);
+  }
 }
 
 export class DehumidifierEndpoint<
   TConnection extends DehumidifierEndpointConnection =
     DehumidifierEndpointConnection,
-> extends Endpoint<DehumidifierEndpointCommand, TConnection> {
+>
+  extends Endpoint<DehumidifierEndpointCommand, TConnection>
+  implements TemperatureSensor, HumiditySensor
+{
   @computed
-  get on(): boolean | undefined {
-    return this.connection?.on;
+  get on(): boolean {
+    return this.connection?.on ?? false;
+  }
+
+  @computed
+  get mode(): DehumidifierMode | undefined {
+    return this.connection?.mode;
+  }
+
+  /** Target relative humidity as a normalized ratio from 0 to 1. */
+  @computed
+  get targetHumidity(): number | undefined {
+    return this.connection?.targetHumidity;
+  }
+
+  @computed
+  get temperature(): Temperature | undefined {
+    return this.connection?.temperature;
+  }
+
+  /** Relative humidity as a normalized ratio from 0 to 1. */
+  @computed
+  get humidity(): number | undefined {
+    return this.connection?.humidity;
+  }
+
+  protected override get logState(): EndpointLogState {
+    if (!this.ready) {
+      return {ready: false};
+    }
+
+    return {
+      ready: true,
+      on: this.on,
+      mode: this.mode,
+      targetHumidity: this.targetHumidity,
+      temperatureCelsius: this.temperature?.celsius,
+      humidity: this.humidity,
+    };
   }
 
   turnOn(): void {
@@ -42,12 +127,26 @@ export class DehumidifierEndpoint<
   turnOff(): void {
     this.enqueueCommand(new SetDehumidifierOnCommand(false));
   }
+
+  setMode(value: DehumidifierMode): void {
+    this.enqueueCommand(new SetDehumidifierModeCommand(value));
+  }
+
+  /** Sets target relative humidity using a normalized ratio from 0 to 1. */
+  setTargetHumidity(value: number): void {
+    this.enqueueCommand(new SetDehumidifierTargetHumidityCommand(value));
+  }
 }
 
 export type DehumidifierEndpointConnection =
-  EndpointConnection<DehumidifierEndpointCommand> & {
-    readonly on: boolean | undefined;
-  };
+  EndpointConnection<DehumidifierEndpointCommand> &
+    TemperatureSensor &
+    HumiditySensor & {
+      readonly on: boolean;
+      readonly mode: DehumidifierMode | undefined;
+      /** Target relative humidity as a normalized ratio from 0 to 1. */
+      readonly targetHumidity: number | undefined;
+    };
 
 export abstract class DehumidifierCommand extends Command {}
 
@@ -59,6 +158,48 @@ export class SetDehumidifierOnCommand extends DehumidifierCommand {
   override supersedes(command: Command): boolean {
     return command instanceof SetDehumidifierOnCommand;
   }
+
+  override toLogString(): string {
+    return `set on=${this.value}`;
+  }
 }
 
-export type DehumidifierEndpointCommand = SetDehumidifierOnCommand;
+export class SetDehumidifierModeCommand extends DehumidifierCommand {
+  constructor(readonly value: DehumidifierMode) {
+    super();
+  }
+
+  override supersedes(command: Command): boolean {
+    return command instanceof SetDehumidifierModeCommand;
+  }
+
+  override toLogString(): string {
+    return `set mode=${this.value}`;
+  }
+}
+
+export class SetDehumidifierTargetHumidityCommand extends DehumidifierCommand {
+  /** `value` is a normalized relative-humidity ratio from 0 to 1. */
+  constructor(readonly value: number) {
+    super();
+
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      throw new RangeError(
+        'Target humidity must be a finite number from 0 to 1.',
+      );
+    }
+  }
+
+  override supersedes(command: Command): boolean {
+    return command instanceof SetDehumidifierTargetHumidityCommand;
+  }
+
+  override toLogString(): string {
+    return `set targetHumidity=${this.value}`;
+  }
+}
+
+export type DehumidifierEndpointCommand =
+  | SetDehumidifierOnCommand
+  | SetDehumidifierModeCommand
+  | SetDehumidifierTargetHumidityCommand;

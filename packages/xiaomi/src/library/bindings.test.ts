@@ -15,6 +15,7 @@ import {
 import {
   MiotEndpointConnectionMetadata,
   getMiotEndpointConnectionResourceKey,
+  getPrimaryMiotEndpointConnectionResource,
 } from './endpoint-connection.js';
 import type {MiotSpecInstance} from './miot/index.js';
 
@@ -67,8 +68,13 @@ test('discovers physical devices and matching services for a logical endpoint', 
     discovery.devices[0]?.endpoints[0]?.services[0]?.metadata,
   ).toMatchObject({
     device: {did: 'first', model: 'test.light', urn: LIGHT_SPEC.type},
-    service: {iid: 2},
-    properties: {on: {iid: 1}},
+    resources: [
+      {
+        service: {iid: 2},
+        properties: {on: {iid: 1}},
+        exclusive: true,
+      },
+    ],
   });
 });
 
@@ -183,6 +189,46 @@ test('automatically resolves the unique whole-device assignment', () => {
       getMiotEndpointConnectionResourceKey(binding.metadata),
     ),
   ).toEqual([JSON.stringify(['physical', 2]), JSON.stringify(['physical', 3])]);
+});
+
+test('does not treat metadata rejected by the current endpoint adapter as existing', () => {
+  const currentService = createCurrentLightBindingServiceCandidate(2);
+  const endpoint = createBindingEndpointCandidate('main', []);
+  const device = createBindingDeviceCandidate([
+    {...endpoint, services: [currentService]},
+  ]);
+  const validProposal = resolveMiotBindingDeviceProposal(device, [
+    {
+      endpoint: endpoint.endpoint.path,
+      metadata: currentService.metadata,
+    },
+  ]);
+  const currentPrimaryResource = getPrimaryMiotEndpointConnectionResource(
+    currentService.metadata,
+  );
+  const oldMetadata = MiotEndpointConnectionMetadata.satisfies({
+    ...currentService.metadata,
+    resources: [
+      {
+        ...currentPrimaryResource,
+        properties: {on: currentPrimaryResource.properties.on},
+      },
+    ],
+  });
+  const oldProposal = resolveMiotBindingDeviceProposal(device, [
+    {endpoint: endpoint.endpoint.path, metadata: oldMetadata},
+  ]);
+
+  expect(validProposal.endpoints.map(item => item.status)).toEqual([
+    'existing',
+  ]);
+  expect(oldProposal.endpoints.map(item => item.status)).toEqual(['automatic']);
+  expect(oldProposal.bindings).toEqual([
+    {
+      endpoint: endpoint.endpoint.path,
+      metadata: currentService.metadata,
+    },
+  ]);
 });
 
 test('does not silently choose a shared single service', () => {
@@ -316,33 +362,90 @@ function createBindingServiceCandidate(
 ): MiotBindingServiceCandidate {
   const metadata = MiotEndpointConnectionMetadata.satisfies({
     device: {did: 'physical', model: 'test.light', urn: LIGHT_SPEC.type},
-    service: {
-      iid: serviceId,
-      type: 'urn:miot-spec-v2:service:light:00007802:test-light:1',
-      description: `Light ${serviceId}`,
-      properties: [
-        {
-          iid: 1,
-          type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
-          description: 'Switch Status',
-          format: 'bool',
-          access: ['read', 'write', 'notify'],
+    resources: [
+      {
+        service: {
+          iid: serviceId,
+          type: 'urn:miot-spec-v2:service:light:00007802:test-light:1',
+          description: `Light ${serviceId}`,
+          properties: [
+            {
+              iid: 1,
+              type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
+              description: 'Switch Status',
+              format: 'bool',
+              access: ['read', 'write', 'notify'],
+            },
+          ],
         },
-      ],
-    },
-    properties: {
-      on: {
-        iid: 1,
-        type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
-        description: 'Switch Status',
-        format: 'bool',
-        access: ['read', 'write', 'notify'],
+        properties: {
+          on: {
+            iid: 1,
+            type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
+            description: 'Switch Status',
+            format: 'bool',
+            access: ['read', 'write', 'notify'],
+          },
+        },
+        exclusive: true,
       },
-    },
+    ],
   });
 
   return {
     key: `service-${serviceId}`,
+    resourceKey: getMiotEndpointConnectionResourceKey(metadata),
+    label: `Light ${serviceId}`,
+    metadata,
+  };
+}
+
+function createCurrentLightBindingServiceCandidate(
+  serviceId: number,
+): MiotBindingServiceCandidate {
+  const on = {
+    iid: 1,
+    type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
+    description: 'Switch Status',
+    format: 'bool',
+    access: ['read', 'write', 'notify'],
+  };
+  const brightness = {
+    iid: 2,
+    type: 'urn:miot-spec-v2:property:brightness:0000000D:test-light:1',
+    description: 'Brightness',
+    format: 'uint8',
+    access: ['read', 'write', 'notify'],
+    unit: 'percentage',
+    'value-range': [1, 100, 1],
+  };
+  const colorTemperature = {
+    iid: 3,
+    type: 'urn:miot-spec-v2:property:color-temperature:0000000F:test-light:1',
+    description: 'Color Temperature',
+    format: 'uint32',
+    access: ['read', 'write', 'notify'],
+    unit: 'kelvin',
+    'value-range': [2700, 6500, 1],
+  };
+  const metadata = MiotEndpointConnectionMetadata.satisfies({
+    device: {did: 'physical', model: 'test.light', urn: LIGHT_SPEC.type},
+    resources: [
+      {
+        service: {
+          iid: serviceId,
+          type: 'urn:miot-spec-v2:service:light:00007802:test-light:1',
+          description: `Light ${serviceId}`,
+          properties: [on, brightness, colorTemperature],
+        },
+        properties: {on, brightness, colorTemperature},
+        exclusive: true,
+      },
+    ],
+  });
+
+  return {
+    key: `current-light-service-${serviceId}`,
     resourceKey: getMiotEndpointConnectionResourceKey(metadata),
     label: `Light ${serviceId}`,
     metadata,

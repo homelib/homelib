@@ -14,6 +14,7 @@ import {
   MiotEndpointConnectionMetadata,
   MiotEndpointConnectionTransport,
   type MiotPropertyUpdate,
+  getPrimaryMiotEndpointConnectionResource,
 } from '../endpoint-connection.js';
 import {
   type MiotExecutionRequest,
@@ -90,7 +91,7 @@ defineOnOffEndpointTests({
 });
 
 type OnOffConnection = {
-  readonly on: boolean | undefined;
+  readonly on: boolean;
   readonly stateProperties: readonly MiotProperty[];
   readonly handlePropertyUpdate: (update: MiotPropertyUpdate) => void;
 };
@@ -127,8 +128,13 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
         label: options.name,
         metadata: {
           device: {did: 'device-1', urn: spec.type},
-          service: {iid: 2},
-          properties: {on: {iid: 1}},
+          resources: [
+            {
+              service: {iid: 2},
+              properties: {on: {iid: 1}},
+              exclusive: true,
+            },
+          ],
         },
       });
 
@@ -160,15 +166,35 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
 
     test('rejects metadata with an extra property alias', () => {
       const metadata = createMetadata(options);
-      const onProperty = metadata.properties.on;
-
-      if (onProperty === undefined) {
-        throw new Error('Test metadata has no on property.');
-      }
+      const primaryResource =
+        getPrimaryMiotEndpointConnectionResource(metadata);
+      const aliasProperty = {
+        iid: 2,
+        type: 'urn:miot-spec-v2:property:mode:00000008:test:1',
+        description: 'Mode',
+        format: 'uint8',
+        access: ['read', 'write', 'notify'],
+        'value-list': [{value: 0, description: 'Default'}],
+      };
 
       const invalidMetadata = MiotEndpointConnectionMetadata.satisfies({
         ...metadata,
-        properties: {on: onProperty, alias: onProperty},
+        resources: [
+          {
+            ...primaryResource,
+            service: {
+              ...primaryResource.service,
+              properties: [
+                ...(primaryResource.service.properties ?? []),
+                aliasProperty,
+              ],
+            },
+            properties: {
+              ...primaryResource.properties,
+              alias: aliasProperty,
+            },
+          },
+        ],
       });
 
       expect(() => options.adapter.assertMetadata(invalidMetadata)).toThrow(
@@ -202,7 +228,7 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
         metadata,
         new TestTransport(),
       );
-      const values: Array<boolean | undefined> = [];
+      const values: boolean[] = [];
       const disposeAutorun = autorun(() => {
         values.push(connection.on);
       });
@@ -215,7 +241,7 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
       connection.handlePropertyUpdate({...property, value: true});
       connection.handlePropertyUpdate({...property, value: false});
 
-      expect(values).toEqual([undefined, true, false]);
+      expect(values).toEqual([false, true, false]);
       disposeAutorun();
     });
   });

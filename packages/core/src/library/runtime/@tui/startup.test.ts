@@ -37,9 +37,9 @@ const OTHER_DEVICE_PATH = EndpointPath.satisfies({
   deviceName: 'other light',
   endpointName: 'main',
 });
-const MAIN_ENDPOINT: EndpointReference = {name: 'main', online: false};
-const AMBIENT_ENDPOINT: EndpointReference = {name: 'ambient', online: false};
-const OTHER_DEVICE_ENDPOINT: EndpointReference = {name: 'main', online: false};
+const MAIN_ENDPOINT: EndpointReference = {name: 'main', ready: false};
+const AMBIENT_ENDPOINT: EndpointReference = {name: 'ambient', ready: false};
+const OTHER_DEVICE_ENDPOINT: EndpointReference = {name: 'main', ready: false};
 const DEVICE: ProviderBindingDevice = {
   name: 'light',
   endpoints: [

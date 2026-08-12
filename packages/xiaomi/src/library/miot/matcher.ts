@@ -2,7 +2,20 @@ import type {
   MiotSpecInstance,
   MiotSpecProperty,
   MiotSpecService,
+  MiotSpecValueList,
+  MiotSpecValueRange,
 } from './spec.js';
+
+const MIOT_INTEGER_FORMAT_RANGES: Readonly<
+  Record<string, readonly [minimum: number, maximum: number]>
+> = {
+  int8: [-128, 127],
+  int16: [-32_768, 32_767],
+  int32: [-2_147_483_648, 2_147_483_647],
+  uint8: [0, 255],
+  uint16: [0, 65_535],
+  uint32: [0, 4_294_967_295],
+};
 
 export function findMiotEndpointMatches<
   TProperties extends Record<string, MiotPropertyMatcher>,
@@ -66,8 +79,11 @@ export type MiotEndpointMatch<
 
 export type MiotPropertyMatcher = {
   readonly type: string;
-  readonly format: string;
+  readonly format: string | readonly string[];
   readonly access: readonly MiotPropertyAccess[];
+  readonly unit?: string;
+  readonly valueRange?: true;
+  readonly valueList?: true | readonly number[];
 };
 
 export type MiotPropertyAccess = 'read' | 'write' | 'notify';
@@ -156,8 +172,67 @@ function findPropertyCandidates(
   return (service.properties ?? []).filter(
     property =>
       matchesType(property.type, matcher.type) &&
-      property.format === matcher.format &&
-      matcher.access.every(access => property.access.includes(access)),
+      matchesValue(property.format, matcher.format) &&
+      matcher.access.every(access => property.access.includes(access)) &&
+      (matcher.unit === undefined || property.unit === matcher.unit) &&
+      (matcher.valueRange !== true ||
+        isValidMiotSpecValueRange(property['value-range'], property.format)) &&
+      (matcher.valueList === undefined ||
+        matchesValueList(property['value-list'], matcher.valueList)),
+  );
+}
+
+export function isValidMiotSpecValueList(
+  valueList: MiotSpecValueList | undefined,
+): valueList is MiotSpecValueList {
+  if (valueList === undefined || valueList.length === 0) {
+    return false;
+  }
+
+  return isValidUniqueNumberSet(valueList.map(entry => entry.value));
+}
+
+export function isValidMiotSpecValueRange(
+  valueRange: MiotSpecValueRange | undefined,
+  format?: string,
+): valueRange is MiotSpecValueRange {
+  if (valueRange === undefined) {
+    return false;
+  }
+
+  const [minimum, maximum, step] = valueRange;
+
+  if (
+    !Number.isFinite(minimum) ||
+    !Number.isFinite(maximum) ||
+    !Number.isFinite(step) ||
+    minimum >= maximum ||
+    step <= 0
+  ) {
+    return false;
+  }
+
+  const stepCount = (maximum - minimum) / step;
+
+  if (!isApproximatelyInteger(stepCount)) {
+    return false;
+  }
+
+  const formatRange =
+    format === undefined ? undefined : MIOT_INTEGER_FORMAT_RANGES[format];
+
+  if (formatRange === undefined) {
+    return true;
+  }
+
+  const [formatMinimum, formatMaximum] = formatRange;
+
+  return (
+    Number.isInteger(minimum) &&
+    Number.isInteger(maximum) &&
+    Number.isInteger(step) &&
+    minimum >= formatMinimum &&
+    maximum <= formatMaximum
   );
 }
 
@@ -170,4 +245,52 @@ function matchesType(
   }
 
   return expected.some(type => matchesType(actual, type));
+}
+
+function matchesValue(
+  actual: string,
+  expected: string | readonly string[],
+): boolean {
+  if (typeof expected === 'string') {
+    return actual === expected;
+  }
+
+  return expected.includes(actual);
+}
+
+function matchesValueList(
+  actual: MiotSpecValueList | undefined,
+  expected: true | readonly number[],
+): boolean {
+  if (!isValidMiotSpecValueList(actual)) {
+    return false;
+  } else if (expected === true) {
+    return true;
+  }
+
+  const actualValues = actual.map(entry => entry.value);
+
+  return (
+    isValidUniqueNumberSet(expected) &&
+    actualValues.length === expected.length &&
+    actualValues.every(value => expected.includes(value))
+  );
+}
+
+function isValidUniqueNumberSet(values: readonly number[]): boolean {
+  return (
+    values.every(value => Number.isFinite(value)) &&
+    new Set(values).size === values.length
+  );
+}
+
+function isApproximatelyInteger(value: number): boolean {
+  if (!Number.isFinite(value)) {
+    return false;
+  }
+
+  const nearestInteger = Math.round(value);
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(value)) * 8;
+
+  return Math.abs(value - nearestInteger) <= tolerance;
 }

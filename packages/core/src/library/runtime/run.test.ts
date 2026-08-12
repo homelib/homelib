@@ -168,7 +168,7 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
 }
 
 class TestEndpointConnection implements EndpointConnection<TestCommand> {
-  get online(): boolean {
+  get ready(): boolean {
     return true;
   }
 

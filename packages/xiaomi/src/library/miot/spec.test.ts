@@ -1,4 +1,69 @@
-import {MiotSpecClient, type MiotSpecInstance} from './spec.js';
+import {
+  MiotSpecClient,
+  type MiotSpecInstance,
+  MiotSpecProperty,
+} from './spec.js';
+
+test('preserves a property unit and value range', () => {
+  const property = MiotSpecProperty.satisfies({
+    iid: 2,
+    type: 'urn:miot-spec-v2:property:brightness:0000000D:test:1',
+    description: 'Brightness',
+    format: 'uint8',
+    access: ['read', 'write', 'notify'],
+    unit: 'percentage',
+    'value-range': [1, 100, 1],
+  });
+
+  expect(property.unit).toBe('percentage');
+  expect(property['value-range']).toEqual([1, 100, 1]);
+});
+
+test('preserves typed property value-list entries', () => {
+  const property = MiotSpecProperty.satisfies({
+    iid: 3,
+    type: 'urn:miot-spec-v2:property:mode:00000008:test:1',
+    description: 'Mode',
+    format: 'uint8',
+    access: ['read', 'write', 'notify'],
+    'value-list': [
+      {value: 0, description: 'Straight Wind'},
+      {value: 1, description: 'Natural Wind'},
+    ],
+  });
+
+  expect(property['value-list']).toEqual([
+    {value: 0, description: 'Straight Wind'},
+    {value: 1, description: 'Natural Wind'},
+  ]);
+});
+
+test('rejects an invalid property value-list entry', () => {
+  expect(() =>
+    MiotSpecProperty.satisfies({
+      iid: 3,
+      type: 'urn:miot-spec-v2:property:mode:00000008:test:1',
+      description: 'Mode',
+      format: 'uint8',
+      access: ['read', 'write'],
+      'value-list': [{value: 0, description: 0}],
+    }),
+  ).toThrow();
+});
+
+test('rejects a value range with the wrong tuple length', () => {
+  expect(() =>
+    MiotSpecProperty.satisfies({
+      iid: 2,
+      type: 'urn:miot-spec-v2:property:brightness:0000000D:test:1',
+      description: 'Brightness',
+      format: 'uint8',
+      access: ['read', 'write'],
+      unit: 'percentage',
+      'value-range': [1, 100],
+    }),
+  ).toThrow();
+});
 
 test('shares in-flight MIoT spec requests and caches successful results', async () => {
   const originalFetch = globalThis.fetch;

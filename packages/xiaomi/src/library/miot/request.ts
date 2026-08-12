@@ -1,5 +1,9 @@
 export abstract class MiotRequest {
   declare private readonly requestBrand: void;
+
+  toLogString(): string {
+    return this.constructor.name;
+  }
 }
 
 export class MiotSetPropertyRequest extends MiotRequest {
@@ -8,6 +12,12 @@ export class MiotSetPropertyRequest extends MiotRequest {
     readonly value: unknown,
   ) {
     super();
+  }
+
+  override toLogString(): string {
+    const {did, siid, piid} = this.property;
+
+    return `miot set did=${did} siid=${siid} piid=${piid}`;
   }
 }
 

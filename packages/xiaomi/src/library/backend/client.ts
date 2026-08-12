@@ -108,6 +108,18 @@ export class BackendClient {
     };
   }
 
+  async getDeviceOnline(did: string): Promise<boolean> {
+    const device = (await this.getDeviceListPage([did])).get(did);
+
+    if (device === undefined) {
+      throw new Error(`Cloud device was not returned: ${did}.`);
+    } else if (device.online === undefined) {
+      throw new Error(`Cloud device ${did} returned invalid online state.`);
+    }
+
+    return device.online;
+  }
+
   async getProperties(
     properties: readonly MiotProperty[],
   ): Promise<readonly BackendPropertyResult[]> {

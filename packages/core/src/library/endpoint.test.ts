@@ -6,8 +6,9 @@ import {
   type EndpointConnection,
   EndpointConnectionError,
 } from './endpoint.js';
+import {setEndpointLogTarget} from './log.js';
 
-test('consumes pending commands after binding becomes online', async () => {
+test('consumes pending commands after binding becomes ready', async () => {
   const endpoint = new TestEndpoint();
   const connection = new TestEndpointConnection();
 
@@ -17,7 +18,7 @@ test('consumes pending commands after binding becomes online', async () => {
 
   expect(connection.processedValues).toEqual([]);
 
-  connection.setOnline(true);
+  connection.setReady(true);
   await flushMicrotasks();
 
   expect(connection.processedValues).toEqual([2]);
@@ -30,13 +31,13 @@ test('keeps a command pending when the connection becomes unavailable', async ()
   endpoint.bindConnection(connection);
   endpoint.send(1);
   connection.deferNextCommand = true;
-  connection.setOnline(true);
+  connection.setReady(true);
   await flushMicrotasks();
 
   expect(connection.processedValues).toEqual([]);
 
   await wait(150);
-  connection.setOnline(true);
+  connection.setReady(true);
   await flushMicrotasks();
 
   expect(connection.processedValues).toEqual([1]);
@@ -51,14 +52,14 @@ test('continues pending commands after rebinding during consumption', async () =
   firstConnection.processCommandWith = async () => {
     await firstCommand.promise;
   };
-  firstConnection.setOnline(true);
+  firstConnection.setReady(true);
   endpoint.bindConnection(firstConnection);
   endpoint.send(1);
   await flushMicrotasks();
 
-  firstConnection.setOnline(false);
+  firstConnection.setReady(false);
   endpoint.bindConnection(secondConnection);
-  secondConnection.setOnline(true);
+  secondConnection.setReady(true);
   endpoint.send(2);
   firstCommand.resolve();
   await flushMicrotasks();
@@ -79,7 +80,7 @@ test('does not repeat an in-flight command when the queue changes', async () => 
       await firstCommand.promise;
     }
   };
-  connection.setOnline(true);
+  connection.setReady(true);
   endpoint.bindConnection(connection);
   endpoint.send(1, 'first');
   await flushMicrotasks();
@@ -100,15 +101,136 @@ test('does not immediately retry a connection error', async () => {
     attempts++;
     throw new EndpointConnectionError('Connection unavailable.');
   };
-  connection.setOnline(true);
+  connection.setReady(true);
   endpoint.bindConnection(connection);
   endpoint.send(1);
   await flushMicrotasks();
 
   expect(attempts).toBe(1);
 
-  connection.setOnline(false);
+  connection.setReady(false);
   endpoint.bindConnection(undefined);
+});
+
+test('logs every command attempt while retrying connection errors', async () => {
+  const endpoint = new TestEndpoint();
+  const connection = new TestEndpointConnection();
+  const logMessages: string[] = [];
+  const originalInfo = console.info;
+  let attempts = 0;
+
+  try {
+    console.info = message => logMessages.push(message);
+    setEndpointLogTarget(endpoint, {
+      scopePath: ['home', 'room'],
+      deviceName: 'device',
+      endpointName: 'main',
+    });
+    connection.processCommandWith = async command => {
+      attempts++;
+
+      if (attempts === 1) {
+        throw new EndpointConnectionError('Connection unavailable.');
+      }
+
+      connection.processedValues.push(command.value);
+    };
+    connection.setReady(true);
+    endpoint.bindConnection(connection);
+    endpoint.send(1);
+
+    await wait(150);
+    await flushMicrotasks();
+
+    expect(attempts).toBe(2);
+    expect(connection.processedValues).toEqual([1]);
+    expect(
+      logMessages.filter(message => message.includes(' command ')),
+    ).toEqual([
+      '[homelib] home › room · device device · endpoint main command TestCommand',
+      '[homelib] home › room · device device · endpoint main command TestCommand',
+    ]);
+  } finally {
+    console.info = originalInfo;
+  }
+});
+
+test('does not let logging failures prevent command processing', async () => {
+  const endpoint = new TestEndpoint();
+  const connection = new TestEndpointConnection();
+  const originalInfo = console.info;
+
+  try {
+    console.info = () => {
+      throw new Error('Log sink failed.');
+    };
+    setEndpointLogTarget(endpoint, {
+      scopePath: ['home'],
+      deviceName: 'device',
+      endpointName: '',
+    });
+    connection.setReady(true);
+    endpoint.bindConnection(connection);
+    endpoint.send(1);
+    await flushMicrotasks();
+
+    expect(connection.processedValues).toEqual([1]);
+  } finally {
+    console.info = originalInfo;
+  }
+});
+
+test('logs an initially unready endpoint state', () => {
+  const endpoint = new TestEndpoint();
+  const connection = new TestEndpointConnection();
+  const logMessages: string[] = [];
+  const originalInfo = console.info;
+
+  try {
+    console.info = message => logMessages.push(message);
+    setEndpointLogTarget(endpoint, {
+      scopePath: ['home'],
+      deviceName: 'device',
+      endpointName: '',
+    });
+    endpoint.bindConnection(connection);
+
+    expect(logMessages).toEqual([
+      '[homelib] home · device device state ready=false',
+    ]);
+  } finally {
+    console.info = originalInfo;
+  }
+});
+
+test('does not let error logging failures stall command processing', async () => {
+  const endpoint = new TestEndpoint();
+  const connection = new TestEndpointConnection();
+  const originalError = console.error;
+
+  try {
+    console.error = () => {
+      throw new Error('Log sink failed.');
+    };
+    connection.processCommandWith = async command => {
+      if (command.value === 1) {
+        throw new Error('Command failed.');
+      }
+
+      connection.processedValues.push(command.value);
+    };
+    connection.setReady(true);
+    endpoint.bindConnection(connection);
+    endpoint.send(1);
+    await flushMicrotasks();
+
+    endpoint.send(2);
+    await flushMicrotasks();
+
+    expect(connection.processedValues).toEqual([2]);
+  } finally {
+    console.error = originalError;
+  }
 });
 
 test('replaces a connection without exposing an unbound state', () => {
@@ -153,7 +275,7 @@ class TestEndpoint extends Endpoint<TestCommand, TestEndpointConnection> {
 }
 
 class TestEndpointConnection implements EndpointConnection<TestCommand> {
-  @observable accessor online = false;
+  @observable accessor ready = false;
 
   deferNextCommand = false;
 
@@ -169,7 +291,7 @@ class TestEndpointConnection implements EndpointConnection<TestCommand> {
 
     if (this.deferNextCommand) {
       this.deferNextCommand = false;
-      this.setOnline(false);
+      this.setReady(false);
       throw new EndpointConnectionError('Connection unavailable.');
     }
 
@@ -177,8 +299,8 @@ class TestEndpointConnection implements EndpointConnection<TestCommand> {
   }
 
   @action
-  setOnline(online: boolean): void {
-    this.online = online;
+  setReady(ready: boolean): void {
+    this.ready = ready;
   }
 }
 

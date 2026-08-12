@@ -67,8 +67,13 @@ test('confirms the default device match as one batch and returns after saving', 
       replaceExisting: false,
       metadata: {
         device: {did: 'physical-light', urn: spec.type},
-        service: {iid: 2},
-        properties: {on: {iid: 1}},
+        resources: [
+          {
+            service: {iid: 2},
+            properties: {on: {iid: 1}},
+            exclusive: true,
+          },
+        ],
       },
     });
     expect(terminal.frame()).toContain('saving device match…');

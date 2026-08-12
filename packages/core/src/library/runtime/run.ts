@@ -2,6 +2,7 @@ import {basename} from 'node:path';
 
 import {beginRun, completeRun, failRun} from '../@lifecycle.js';
 import type {EndpointReference} from '../endpoint.js';
+import {setEndpointLogTarget} from '../log.js';
 import type {EndpointConnectionBindingPlan} from '../provider.js';
 import {getProvider, getProviderEntries, getRootScopes} from '../registry.js';
 import type {Scope} from '../scope.js';
@@ -9,6 +10,7 @@ import type {Scope} from '../scope.js';
 import {type StartupBindingScope, presentStartup} from './@tui/startup.js';
 import {
   type BindingFile,
+  type EndpointPath,
   getEndpointPath,
   getEndpointPathKey,
   readBindingFile,
@@ -52,11 +54,15 @@ async function runInternal(): Promise<void> {
   // TODO: add a disposal contract before plans may allocate independent
   // resources that need rollback when another plan fails to create.
   const connectionBindings = await Promise.all(
-    connectionBindingPlans.map(async plan => plan.create()),
+    connectionBindingPlans.map(async item => ({
+      ...item,
+      binding: await item.plan.create(),
+    })),
   );
 
-  for (const connectionBinding of connectionBindings) {
-    connectionBinding.bind();
+  for (const {binding, endpoint, path} of connectionBindings) {
+    setEndpointLogTarget(endpoint, path);
+    binding.bind();
   }
 }
 
@@ -114,10 +120,10 @@ function collectBindingScope(
 function createConnectionBindingPlans(
   bindingFile: BindingFile,
   endpointMap: ReadonlyMap<string, EndpointReference>,
-): readonly EndpointConnectionBindingPlan[] {
+): readonly EndpointConnectionBindingPlanEntry[] {
   const bindingPathSet = new Set<string>();
   const providerResourceKeySet = new Set<string>();
-  const plans: EndpointConnectionBindingPlan[] = [];
+  const plans: EndpointConnectionBindingPlanEntry[] = [];
 
   for (const binding of bindingFile.bindings) {
     const pathKey = getEndpointPathKey(binding.endpoint);
@@ -166,11 +172,17 @@ function createConnectionBindingPlans(
       providerResourceKeySet.add(providerResourceKey);
     }
 
-    plans.push(plan);
+    plans.push({path: binding.endpoint, endpoint, plan});
   }
 
   return plans;
 }
+
+type EndpointConnectionBindingPlanEntry = {
+  readonly path: EndpointPath;
+  readonly endpoint: EndpointReference;
+  readonly plan: EndpointConnectionBindingPlan;
+};
 
 function getScopePathKey(scope: Scope): string {
   return JSON.stringify(scope.path);

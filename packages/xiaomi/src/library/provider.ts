@@ -28,7 +28,7 @@ import type {MiotEndpointAdapter} from './endpoint-adapter.js';
 import {
   type MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
-  getMiotEndpointConnectionResourceKey,
+  getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
 import type {MiotProperty} from './miot/index.js';
 import {
@@ -104,7 +104,7 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     endpointAdapter.assertMetadata(metadata);
 
     return {
-      resourceKeys: [getMiotEndpointConnectionResourceKey(metadata)],
+      resourceKeys: getMiotEndpointConnectionResourceKeys(metadata),
       create: () =>
         this.createEndpointConnectionBinding(
           endpointAdapter,
@@ -276,6 +276,9 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
           connection.metadata.device.did,
           properties,
           {
+            onStateChanged: state => {
+              connection.handleStateUpdate(state);
+            },
             onPropertyChanged: update => {
               connection.handlePropertyUpdate(update);
             },

@@ -11,8 +11,8 @@ export abstract class Device {
   }
 
   @computed
-  get online(): boolean {
-    return this.entry.endpoints.every(endpoint => endpoint.online);
+  get ready(): boolean {
+    return this.entry.endpoints.every(endpoint => endpoint.ready);
   }
 
   protected getOrCreateEndpoint<TEndpoint extends EndpointReference>(

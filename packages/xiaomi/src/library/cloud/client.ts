@@ -55,6 +55,7 @@ export class CloudClient {
         this.mqttClient,
         requestedProperties =>
           this.backendClient.getProperties(requestedProperties),
+        () => this.backendClient.getDeviceOnline(did),
         () => {
           if (this.deviceChannelMap.get(did) === newChannel) {
             this.deviceChannelMap.delete(did);

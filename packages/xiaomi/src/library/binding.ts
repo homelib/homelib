@@ -401,6 +401,13 @@ function findExistingService(
 
   try {
     const metadata = MiotEndpointConnectionMetadata.satisfies(metadataValue);
+    const endpointAdapter = getMiotEndpointAdapter(endpoint.endpoint.endpoint);
+
+    if (endpointAdapter === undefined) {
+      return undefined;
+    }
+
+    endpointAdapter.assertMetadata(metadata);
     const resourceKey = getMiotEndpointConnectionResourceKey(metadata);
 
     return endpoint.services.find(

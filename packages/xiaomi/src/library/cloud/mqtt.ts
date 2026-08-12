@@ -21,6 +21,10 @@ export class CloudMqttClient {
 
   private readyPromise: Promise<void> | undefined;
 
+  private readyRetryToken: object | undefined;
+
+  private readyRetryDelayCancel: (() => void) | undefined;
+
   private ready = false;
 
   private readonly deviceHandlerMap = new Map<
@@ -76,6 +80,8 @@ export class CloudMqttClient {
   }
 
   async disconnect(): Promise<void> {
+    this.stopReadyRetry();
+
     const connectPromise = this.connectPromise;
 
     if (connectPromise !== undefined) {
@@ -160,25 +166,94 @@ export class CloudMqttClient {
         clean: true,
         reconnectPeriod: CLOUD_MQTT_RECONNECT_INTERVAL,
         connectTimeout: CLOUD_MQTT_CONNECT_TIMEOUT,
-        rejectUnauthorized: false,
         resubscribe: false,
       },
     );
     this.mqttClient = mqttClient;
 
     mqttClient.on('connect', () => {
-      void this.markReady().catch(console.error);
+      this.startReadyRetry(mqttClient);
     });
     mqttClient.on('message', (topic, payload) => {
       this.handleMessage(topic, payload);
     });
     mqttClient.on('close', () => {
+      this.stopReadyRetry();
       this.subscribedDeviceSet.clear();
       this.setReady(false);
     });
     mqttClient.on('error', console.error);
 
     await this.markReady();
+  }
+
+  private startReadyRetry(mqttClient: MqttClient): void {
+    if (this.ready || this.readyRetryToken !== undefined) {
+      return;
+    }
+
+    const token = {};
+    this.readyRetryToken = token;
+    void this.retryReady(mqttClient, token).finally(() => {
+      if (this.readyRetryToken === token) {
+        this.readyRetryToken = undefined;
+      }
+    });
+  }
+
+  private async retryReady(
+    mqttClient: MqttClient,
+    token: object,
+  ): Promise<void> {
+    while (
+      this.readyRetryToken === token &&
+      this.mqttClient === mqttClient &&
+      mqttClient.connected &&
+      !this.ready
+    ) {
+      try {
+        await this.markReady();
+      } catch (error) {
+        console.error(error);
+
+        if (
+          this.readyRetryToken !== token ||
+          this.mqttClient !== mqttClient ||
+          !mqttClient.connected ||
+          this.ready
+        ) {
+          return;
+        }
+
+        await this.waitBeforeReadyRetry(token);
+      }
+    }
+  }
+
+  private waitBeforeReadyRetry(token: object): Promise<void> {
+    return new Promise(resolve => {
+      const complete = (): void => {
+        clearTimeout(timeout);
+
+        if (this.readyRetryDelayCancel === complete) {
+          this.readyRetryDelayCancel = undefined;
+        }
+
+        resolve();
+      };
+      const timeout = setTimeout(complete, CLOUD_MQTT_RECONNECT_INTERVAL);
+
+      this.readyRetryDelayCancel = complete;
+
+      if (this.readyRetryToken !== token) {
+        complete();
+      }
+    });
+  }
+
+  private stopReadyRetry(): void {
+    this.readyRetryToken = undefined;
+    this.readyRetryDelayCancel?.();
   }
 
   private async markReady(): Promise<void> {
@@ -301,6 +376,10 @@ export class CloudMqttClient {
 
     this.ready = ready;
 
+    if (ready) {
+      this.stopReadyRetry();
+    }
+
     for (const handler of this.connectionStateHandlerSet) {
       try {
         handler(ready);
@@ -404,6 +483,10 @@ function parseCloudMqttMessage(
 
     if (deviceId !== did) {
       throw new Error(`Cloud MQTT state message DID mismatch: ${deviceId}.`);
+    }
+
+    if (event !== 'online' && event !== 'offline') {
+      throw new Error(`Cloud MQTT state message has invalid event: ${event}.`);
     }
 
     return {type: 'state', did, online: event === 'online'};

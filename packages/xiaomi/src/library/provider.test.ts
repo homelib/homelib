@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {LightEndpoint} from '@homelib/core';
 
 import {miotLightEndpointAdapter} from './devices/index.js';
-import {getMiotEndpointConnectionResourceKey} from './endpoint-connection.js';
+import {getMiotEndpointConnectionResourceKeys} from './endpoint-connection.js';
 import type {MiotSpecInstance} from './miot/index.js';
 import {$xiaomi, MiotProvider} from './provider.js';
 
@@ -54,9 +54,9 @@ test('routes endpoint binding plans through the exact endpoint adapter', () => {
     candidate.metadata,
   );
 
-  expect(plan.resourceKeys).toEqual([
-    getMiotEndpointConnectionResourceKey(candidate.metadata),
-  ]);
+  expect(plan.resourceKeys).toEqual(
+    getMiotEndpointConnectionResourceKeys(candidate.metadata),
+  );
   expect(() =>
     provider.createEndpointConnectionBindingPlan(
       new SpecializedLightEndpoint(),

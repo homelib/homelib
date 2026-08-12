@@ -1,6 +1,12 @@
-import {action, computed, observable, reaction} from 'mobx';
+import {action, comparer, computed, observable, reaction} from 'mobx';
 
 import {type Command} from './command.js';
+import {
+  hasEndpointLogTarget,
+  logEndpointCommand,
+  logEndpointError,
+  logEndpointState,
+} from './log.js';
 import {ExponentialBackoff} from './utils/index.js';
 
 export abstract class Endpoint<
@@ -18,15 +24,21 @@ export abstract class Endpoint<
 
   private connectionReactionDisposer: (() => void) | undefined;
 
+  private logStateReactionDisposer: (() => void) | undefined;
+
   constructor(readonly name = '') {}
 
   @computed
-  get online(): boolean {
-    return this.connection?.online ?? false;
+  get ready(): boolean {
+    return this.connection?.ready ?? false;
   }
 
   protected get connection(): TConnection | undefined {
     return this.connection_;
+  }
+
+  protected get logState(): EndpointLogState {
+    return {ready: this.ready};
   }
 
   @action
@@ -35,18 +47,29 @@ export abstract class Endpoint<
       return;
     }
 
-    this.connection_ = connection;
+    this.connectionReactionDisposer?.();
+    this.logStateReactionDisposer?.();
 
+    this.connection_ = connection;
     this.connectionErrorBackoff.reset();
 
-    this.connectionReactionDisposer?.();
+    this.logStateReactionDisposer =
+      connection !== undefined && hasEndpointLogTarget(this)
+        ? reaction(
+            () => this.logState,
+            (state, previousState) => {
+              logEndpointState(this, connection, state, previousState);
+            },
+            {equals: comparer.structural, fireImmediately: true},
+          )
+        : undefined;
 
     this.connectionReactionDisposer = connection
       ? reaction(
-          () => connection.online,
-          online => {
-            if (online) {
-              void this.processPendingCommands().catch(console.error);
+          () => connection.ready,
+          ready => {
+            if (ready) {
+              void this.processPendingCommands().catch(logEndpointError);
             }
           },
           {fireImmediately: true},
@@ -61,7 +84,7 @@ export abstract class Endpoint<
 
     this.pendingCommands.push(command);
 
-    void this.processPendingCommands().catch(console.error);
+    void this.processPendingCommands().catch(logEndpointError);
   }
 
   private async processPendingCommands(): Promise<void> {
@@ -71,30 +94,33 @@ export abstract class Endpoint<
 
     this.processingCommands = true;
 
-    while (
-      this.connection &&
-      this.connection.online &&
-      this.pendingCommands.length > 0
-    ) {
-      const command = this.pendingCommands[0];
+    try {
+      while (
+        this.connection &&
+        this.connection.ready &&
+        this.pendingCommands.length > 0
+      ) {
+        const command = this.pendingCommands[0];
 
-      try {
-        await this.connection.processCommand(command);
-      } catch (error) {
-        console.error(error);
+        try {
+          logEndpointCommand(this, this.connection, command);
+          await this.connection.processCommand(command);
+        } catch (error) {
+          if (error instanceof EndpointConnectionError) {
+            await this.connectionErrorBackoff;
+            continue;
+          }
 
-        if (error instanceof EndpointConnectionError) {
-          await this.connectionErrorBackoff;
-          continue;
+          logEndpointError(error);
         }
+
+        consumeCommand(this.pendingCommands, command);
+
+        this.connectionErrorBackoff.reset();
       }
-
-      consumeCommand(this.pendingCommands, command);
-
-      this.connectionErrorBackoff.reset();
+    } finally {
+      this.processingCommands = false;
     }
-
-    this.processingCommands = false;
 
     function consumeCommand(
       pendingCommands: TCommand[],
@@ -109,14 +135,19 @@ export abstract class Endpoint<
 
 export type EndpointConnectionMetadata = {};
 
+export type EndpointLogState = Readonly<
+  Record<string, string | number | boolean | undefined>
+>;
+
 export type EndpointReference = {
   readonly name: string;
-  readonly online: boolean;
+  readonly ready: boolean;
 };
 
 export type EndpointConnection<in TCommand extends Command> = {
-  readonly online: boolean;
+  readonly ready: boolean;
   readonly processCommand: (command: TCommand) => PromiseLike<void>;
+  readonly toLogString?: () => string;
 };
 
 export type EndpointConnectionBinding = {

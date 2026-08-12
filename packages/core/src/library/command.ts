@@ -1,6 +1,10 @@
 export abstract class Command {
   declare private readonly commandBrand: void;
 
+  toLogString(): string {
+    return this.constructor.name;
+  }
+
   supersedes(_command: Command): boolean {
     return false;
   }

@@ -41,12 +41,30 @@ export class MiotSpecClient {
   }
 }
 
+export const MiotSpecValueRange = x.tuple([x.number, x.number, x.number]);
+
+export type MiotSpecValueRange = x.TypeOf<typeof MiotSpecValueRange>;
+
+export const MiotSpecValueListEntry = x.object({
+  value: x.number,
+  description: x.string,
+});
+
+export type MiotSpecValueListEntry = x.TypeOf<typeof MiotSpecValueListEntry>;
+
+export const MiotSpecValueList = x.array(MiotSpecValueListEntry);
+
+export type MiotSpecValueList = x.TypeOf<typeof MiotSpecValueList>;
+
 export const MiotSpecProperty = x.object({
   iid: x.number,
   type: x.string,
   description: x.string,
   format: x.string,
   access: x.array(x.string),
+  unit: x.string.optional(),
+  'value-range': MiotSpecValueRange.optional(),
+  'value-list': MiotSpecValueList.optional(),
 });
 
 export type MiotSpecProperty = x.TypeOf<typeof MiotSpecProperty>;
