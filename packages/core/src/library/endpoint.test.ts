@@ -15,7 +15,7 @@ test('consumes pending commands after binding becomes ready', async () => {
   const endpoint = new TestEndpoint();
   const connection = new TestEndpointConnection();
 
-  endpoint.send(1);
+  expect(endpoint.send(1)).toBe(endpoint);
   endpoint.send(2);
   endpoint.bindConnection(connection);
 
@@ -341,8 +341,8 @@ class TestEndpoint extends Endpoint<TestCommand, TestEndpointConnection> {
     return this.connection;
   }
 
-  send(value: number, target = 'default'): void {
-    this.enqueueCommand(new TestCommand(value, target));
+  send(value: number, target = 'default'): this {
+    return this.enqueueCommand(new TestCommand(value, target));
   }
 }
 

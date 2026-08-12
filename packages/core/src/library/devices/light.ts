@@ -32,24 +32,41 @@ export class Light extends Device {
     this.endpoint = this.getOrCreateEndpoint(LightEndpoint);
   }
 
-  turnOn(): void {
+  turnOn(): this {
     this.endpoint.turnOn();
+    return this;
   }
 
-  turnOff(): void {
+  turnOff(): this {
     this.endpoint.turnOff();
+    return this;
+  }
+
+  /** Enqueues turn-on only when the currently observed `on` state is false. */
+  ensureOn(): this {
+    if (this.on) {
+      return this;
+    }
+
+    return this.turnOn();
   }
 
   /**
    * Sets brightness using a normalized ratio from 0 to 1.
    * A value of 0 turns the light off.
    */
-  setBrightness(value: number): void {
-    this.endpoint.setBrightness(value);
+  setBrightness(value: number): this {
+    if (value === 0) {
+      return this.turnOff();
+    } else {
+      this.endpoint.setBrightness(value);
+      return this;
+    }
   }
 
-  setColorTemperature(value: number): void {
+  setColorTemperature(value: number): this {
     this.endpoint.setColorTemperature(value);
+    return this;
   }
 }
 
@@ -85,28 +102,37 @@ export class LightEndpoint<
     };
   }
 
-  turnOn(): void {
-    this.enqueueCommand(new SetLightOnCommand(true));
+  turnOn(): this {
+    return this.enqueueCommand(new SetLightOnCommand(true));
   }
 
-  turnOff(): void {
-    this.enqueueCommand(new SetLightOnCommand(false));
+  turnOff(): this {
+    return this.enqueueCommand(new SetLightOnCommand(false));
+  }
+
+  /** Enqueues turn-on only when the currently observed `on` state is false. */
+  ensureOn(): this {
+    if (this.on) {
+      return this;
+    }
+
+    return this.turnOn();
   }
 
   /**
    * Sets brightness using a normalized ratio from 0 to 1.
    * A value of 0 turns the light off.
    */
-  setBrightness(value: number): void {
+  setBrightness(value: number): this {
     if (value === 0) {
-      this.enqueueCommand(new SetLightOnCommand(false));
+      return this.turnOff();
     } else {
-      this.enqueueCommand(new SetLightBrightnessCommand(value));
+      return this.enqueueCommand(new SetLightBrightnessCommand(value));
     }
   }
 
-  setColorTemperature(value: number): void {
-    this.enqueueCommand(new SetLightColorTemperatureCommand(value));
+  setColorTemperature(value: number): this {
+    return this.enqueueCommand(new SetLightColorTemperatureCommand(value));
   }
 }
 

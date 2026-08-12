@@ -55,25 +55,39 @@ export class AirConditioner
     this.endpoint = this.getOrCreateEndpoint(AirConditionerEndpoint);
   }
 
-  turnOn(): void {
+  turnOn(): this {
     this.endpoint.turnOn();
+    return this;
   }
 
-  turnOff(): void {
+  /** Enqueues power-on only when the currently observed `on` state is false. */
+  ensureOn(): this {
+    if (this.on) {
+      return this;
+    }
+
+    return this.turnOn();
+  }
+
+  turnOff(): this {
     this.endpoint.turnOff();
+    return this;
   }
 
-  setMode(value: AirConditionerMode): void {
+  setMode(value: AirConditionerMode): this {
     this.endpoint.setMode(value);
+    return this;
   }
 
-  setTargetTemperature(value: Temperature): void {
+  setTargetTemperature(value: Temperature): this {
     this.endpoint.setTargetTemperature(value);
+    return this;
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(value: number): void {
+  setTargetHumidity(value: number): this {
     this.endpoint.setTargetHumidity(value);
+    return this;
   }
 }
 
@@ -132,25 +146,38 @@ export class AirConditionerEndpoint<
     };
   }
 
-  turnOn(): void {
-    this.enqueueCommand(new SetAirConditionerOnCommand(true));
+  turnOn(): this {
+    return this.enqueueCommand(new SetAirConditionerOnCommand(true));
   }
 
-  turnOff(): void {
-    this.enqueueCommand(new SetAirConditionerOnCommand(false));
+  /** Enqueues power-on only when the currently observed `on` state is false. */
+  ensureOn(): this {
+    if (this.on) {
+      return this;
+    }
+
+    return this.turnOn();
   }
 
-  setMode(value: AirConditionerMode): void {
-    this.enqueueCommand(new SetAirConditionerModeCommand(value));
+  turnOff(): this {
+    return this.enqueueCommand(new SetAirConditionerOnCommand(false));
   }
 
-  setTargetTemperature(value: Temperature): void {
-    this.enqueueCommand(new SetAirConditionerTargetTemperatureCommand(value));
+  setMode(value: AirConditionerMode): this {
+    return this.enqueueCommand(new SetAirConditionerModeCommand(value));
+  }
+
+  setTargetTemperature(value: Temperature): this {
+    return this.enqueueCommand(
+      new SetAirConditionerTargetTemperatureCommand(value),
+    );
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(value: number): void {
-    this.enqueueCommand(new SetAirConditionerTargetHumidityCommand(value));
+  setTargetHumidity(value: number): this {
+    return this.enqueueCommand(
+      new SetAirConditionerTargetHumidityCommand(value),
+    );
   }
 }
 

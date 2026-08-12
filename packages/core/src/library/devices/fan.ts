@@ -39,28 +39,46 @@ export class Fan extends Device {
     this.endpoint = this.getOrCreateEndpoint(FanEndpoint);
   }
 
-  turnOn(): void {
+  turnOn(): this {
     this.endpoint.turnOn();
+    return this;
   }
 
-  turnOff(): void {
+  turnOff(): this {
     this.endpoint.turnOff();
+    return this;
   }
 
-  setWindMode(value: FanWindMode): void {
+  /** Enqueues turn-on only when the currently observed `on` state is false. */
+  ensureOn(): this {
+    if (this.on) {
+      return this;
+    }
+
+    return this.turnOn();
+  }
+
+  setWindMode(value: FanWindMode): this {
     this.endpoint.setWindMode(value);
+    return this;
   }
 
   /**
    * Sets fan speed using a normalized ratio from 0 to 1.
    * A value of 0 turns the fan off.
    */
-  setSpeed(value: number): void {
-    this.endpoint.setSpeed(value);
+  setSpeed(value: number): this {
+    if (value === 0) {
+      return this.turnOff();
+    } else {
+      this.endpoint.setSpeed(value);
+      return this;
+    }
   }
 
-  setHorizontalSwing(value: boolean): void {
+  setHorizontalSwing(value: boolean): this {
     this.endpoint.setHorizontalSwing(value);
+    return this;
   }
 }
 
@@ -102,32 +120,41 @@ export class FanEndpoint<
     };
   }
 
-  turnOn(): void {
-    this.enqueueCommand(new SetFanOnCommand(true));
+  turnOn(): this {
+    return this.enqueueCommand(new SetFanOnCommand(true));
   }
 
-  turnOff(): void {
-    this.enqueueCommand(new SetFanOnCommand(false));
+  turnOff(): this {
+    return this.enqueueCommand(new SetFanOnCommand(false));
   }
 
-  setWindMode(value: FanWindMode): void {
-    this.enqueueCommand(new SetFanWindModeCommand(value));
+  /** Enqueues turn-on only when the currently observed `on` state is false. */
+  ensureOn(): this {
+    if (this.on) {
+      return this;
+    }
+
+    return this.turnOn();
+  }
+
+  setWindMode(value: FanWindMode): this {
+    return this.enqueueCommand(new SetFanWindModeCommand(value));
   }
 
   /**
    * Sets fan speed using a normalized ratio from 0 to 1.
    * A value of 0 turns the fan off.
    */
-  setSpeed(value: number): void {
+  setSpeed(value: number): this {
     if (value === 0) {
-      this.enqueueCommand(new SetFanOnCommand(false));
+      return this.turnOff();
     } else {
-      this.enqueueCommand(new SetFanSpeedCommand(value));
+      return this.enqueueCommand(new SetFanSpeedCommand(value));
     }
   }
 
-  setHorizontalSwing(value: boolean): void {
-    this.enqueueCommand(new SetFanHorizontalSwingCommand(value));
+  setHorizontalSwing(value: boolean): this {
+    return this.enqueueCommand(new SetFanHorizontalSwingCommand(value));
   }
 }
 

@@ -84,7 +84,7 @@ export abstract class Endpoint<
     }
   }
 
-  enqueueCommand(command: TCommand): void {
+  enqueueCommand(command: TCommand): this {
     this.pendingCommands = this.pendingCommands.filter(
       pendingCommand => !command.supersedes(pendingCommand),
     );
@@ -92,6 +92,8 @@ export abstract class Endpoint<
     this.pendingCommands.push(command);
 
     void this.processPendingCommands().catch(logEndpointError);
+
+    return this;
   }
 
   private async processPendingCommands(): Promise<void> {

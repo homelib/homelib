@@ -50,21 +50,34 @@ export class Dehumidifier
     this.endpoint = this.getOrCreateEndpoint(DehumidifierEndpoint);
   }
 
-  turnOn(): void {
+  turnOn(): this {
     this.endpoint.turnOn();
+    return this;
   }
 
-  turnOff(): void {
+  turnOff(): this {
     this.endpoint.turnOff();
+    return this;
   }
 
-  setMode(value: DehumidifierMode): void {
+  /** Queues turn-on only when the currently observed state is off. */
+  ensureOn(): this {
+    if (this.on) {
+      return this;
+    }
+
+    return this.turnOn();
+  }
+
+  setMode(value: DehumidifierMode): this {
     this.endpoint.setMode(value);
+    return this;
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(value: number): void {
+  setTargetHumidity(value: number): this {
     this.endpoint.setTargetHumidity(value);
+    return this;
   }
 }
 
@@ -117,21 +130,30 @@ export class DehumidifierEndpoint<
     };
   }
 
-  turnOn(): void {
-    this.enqueueCommand(new SetDehumidifierOnCommand(true));
+  turnOn(): this {
+    return this.enqueueCommand(new SetDehumidifierOnCommand(true));
   }
 
-  turnOff(): void {
-    this.enqueueCommand(new SetDehumidifierOnCommand(false));
+  turnOff(): this {
+    return this.enqueueCommand(new SetDehumidifierOnCommand(false));
   }
 
-  setMode(value: DehumidifierMode): void {
-    this.enqueueCommand(new SetDehumidifierModeCommand(value));
+  /** Queues turn-on only when the currently observed state is off. */
+  ensureOn(): this {
+    if (this.on) {
+      return this;
+    }
+
+    return this.turnOn();
+  }
+
+  setMode(value: DehumidifierMode): this {
+    return this.enqueueCommand(new SetDehumidifierModeCommand(value));
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(value: number): void {
-    this.enqueueCommand(new SetDehumidifierTargetHumidityCommand(value));
+  setTargetHumidity(value: number): this {
+    return this.enqueueCommand(new SetDehumidifierTargetHumidityCommand(value));
   }
 }
 
