@@ -1,3 +1,5 @@
+import {stripVTControlCharacters} from 'node:util';
+
 import {action, observable, reaction} from 'mobx';
 
 import {Command} from './command.js';
@@ -146,7 +148,9 @@ test('logs every command attempt while retrying connection errors', async () => 
     expect(attempts).toBe(2);
     expect(connection.processedValues).toEqual([1]);
     expect(
-      logMessages.filter(message => message.includes(' command ')),
+      logMessages
+        .map(stripVTControlCharacters)
+        .filter(message => message.includes(' command ')),
     ).toEqual([
       '[homelib] home › room · device device · endpoint main command TestCommand',
       '[homelib] home › room · device device · endpoint main command TestCommand',
@@ -196,7 +200,7 @@ test('logs an initially unready endpoint state', () => {
     });
     endpoint.bindConnection(connection);
 
-    expect(logMessages).toEqual([
+    expect(logMessages.map(stripVTControlCharacters)).toEqual([
       '[homelib] home · device device state ready=false',
     ]);
   } finally {

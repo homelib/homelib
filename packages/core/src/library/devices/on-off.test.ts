@@ -1,3 +1,5 @@
+import {stripVTControlCharacters} from 'node:util';
+
 import {action, autorun, observable} from 'mobx';
 
 import {Temperature} from '../atomics/index.js';
@@ -483,7 +485,7 @@ test('air conditioner logs temperature and humidity state', () => {
       0.52,
     );
 
-    expect(logMessages).toEqual([
+    expect(logMessages.map(stripVTControlCharacters)).toEqual([
       '[homelib] home · device air conditioner state ready=false',
       '[homelib] home · device air conditioner state ready=true on=true mode="heat" targetTemperatureCelsius=21.5 targetHumidity=0.48 temperatureCelsius=23.25 humidity=0.52',
     ]);
@@ -521,7 +523,7 @@ test('dehumidifier logs temperature and humidity state', () => {
       0.57,
     );
 
-    expect(logMessages).toEqual([
+    expect(logMessages.map(stripVTControlCharacters)).toEqual([
       '[homelib] home · device dehumidifier state ready=false',
       '[homelib] home · device dehumidifier state ready=true on=true mode="laundry" targetHumidity=0.45 temperatureCelsius=24.5 humidity=0.57',
     ]);

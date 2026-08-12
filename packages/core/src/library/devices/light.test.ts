@@ -1,3 +1,5 @@
+import {stripVTControlCharacters} from 'node:util';
+
 import {action, observable} from 'mobx';
 
 import {DeviceEntry} from '../device.js';
@@ -127,7 +129,7 @@ test('logs an atomic semantic light state update', () => {
     endpoint.bindConnection(connection);
     connection.initialize(true, 0.4, 3_000);
 
-    expect(logMessages).toEqual([
+    expect(logMessages.map(stripVTControlCharacters)).toEqual([
       '[homelib] home › room · device light state ready=false',
       '[homelib] home › room · device light state ready=true on=true brightness=0.4 colorTemperature=3000',
     ]);
