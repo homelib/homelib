@@ -1,4 +1,4 @@
-import {action, observable, reaction} from 'mobx';
+import {action, computed, observable, reaction} from 'mobx';
 
 import {type Command} from './command.js';
 import {ExponentialBackoff} from './utils/index.js';
@@ -19,6 +19,11 @@ export abstract class Endpoint<
   private connectionReactionDisposer: (() => void) | undefined;
 
   constructor(readonly name = '') {}
+
+  @computed
+  get online(): boolean {
+    return this.connection?.online ?? false;
+  }
 
   protected get connection(): TConnection | undefined {
     return this.connection_;
@@ -106,6 +111,7 @@ export type EndpointConnectionMetadata = {};
 
 export type EndpointReference = {
   readonly name: string;
+  readonly online: boolean;
 };
 
 export type EndpointConnection<in TCommand extends Command> = {

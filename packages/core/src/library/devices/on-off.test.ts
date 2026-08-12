@@ -59,6 +59,7 @@ async function expectOnOffDevice<
   const endpoint = entry.getEndpoint();
 
   expect(device.on).toBeUndefined();
+  expect(device.online).toBe(false);
   expect(endpoint).toBeInstanceOf(EndpointConstructor);
 
   if (!(endpoint instanceof EndpointConstructor)) {
@@ -69,6 +70,7 @@ async function expectOnOffDevice<
 
   endpoint.bindConnection(connection);
   expect(device.on).toBe(false);
+  expect(device.online).toBe(true);
 
   device.turnOn();
   await flushMicrotasks();

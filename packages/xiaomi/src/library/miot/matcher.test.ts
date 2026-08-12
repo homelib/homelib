@@ -13,6 +13,17 @@ const LIGHT_MATCHER = {
   },
 } as const satisfies MiotEndpointMatcher;
 
+const DIMMABLE_LIGHT_MATCHER = {
+  ...LIGHT_MATCHER,
+  optionalProperties: {
+    brightness: {
+      type: 'urn:miot-spec-v2:property:brightness:0000000D',
+      format: 'uint8',
+      access: ['read', 'write'],
+    },
+  },
+} as const satisfies MiotEndpointMatcher;
+
 test('matches the light service and property from the light group spec', () => {
   const matches = findMiotEndpointMatches(LIGHT_GROUP_SPEC, LIGHT_MATCHER);
 
@@ -52,6 +63,89 @@ test('requires the declared property format', () => {
   };
 
   expect(findMiotEndpointMatches(spec, LIGHT_MATCHER)).toHaveLength(0);
+});
+
+test('includes a matching optional property', () => {
+  const service = LIGHT_GROUP_SPEC.services.at(0);
+
+  if (service === undefined) {
+    throw new Error('Light group spec has no light service.');
+  }
+
+  const spec: MiotSpecInstance = {
+    ...LIGHT_GROUP_SPEC,
+    services: [
+      {
+        ...service,
+        properties: [
+          ...(service.properties ?? []),
+          {
+            iid: 2,
+            type: 'urn:miot-spec-v2:property:brightness:0000000D:test:1',
+            description: 'Brightness',
+            format: 'uint8',
+            access: ['read', 'write', 'notify'],
+          },
+        ],
+      },
+    ],
+  };
+  const [match] = findMiotEndpointMatches(spec, DIMMABLE_LIGHT_MATCHER);
+
+  expect(match?.properties.brightness?.iid).toBe(2);
+});
+
+test('does not reject a service without an optional property', () => {
+  const [match] = findMiotEndpointMatches(
+    LIGHT_GROUP_SPEC,
+    DIMMABLE_LIGHT_MATCHER,
+  );
+
+  expect(match?.service.iid).toBe(2);
+  expect(match?.properties.brightness).toBeUndefined();
+  expect(Object.hasOwn(match?.properties ?? {}, 'brightness')).toBe(false);
+});
+
+test('omits an ambiguous optional property', () => {
+  const service = LIGHT_GROUP_SPEC.services.at(0);
+
+  if (service === undefined) {
+    throw new Error('Light group spec has no light service.');
+  }
+
+  const brightnessProperties = [2, 3].map(iid => ({
+    iid,
+    type: `urn:miot-spec-v2:property:brightness:0000000D:test:${iid}`,
+    description: 'Brightness',
+    format: 'uint8',
+    access: ['read', 'write'],
+  }));
+  const spec: MiotSpecInstance = {
+    ...LIGHT_GROUP_SPEC,
+    services: [
+      {
+        ...service,
+        properties: [...(service.properties ?? []), ...brightnessProperties],
+      },
+    ],
+  };
+  const [match] = findMiotEndpointMatches(spec, DIMMABLE_LIGHT_MATCHER);
+
+  expect(match?.service.iid).toBe(2);
+  expect(match?.properties.brightness).toBeUndefined();
+});
+
+test('does not map one property to multiple aliases', () => {
+  const matcher = {
+    ...LIGHT_MATCHER,
+    optionalProperties: {
+      duplicateOn: LIGHT_MATCHER.properties.on,
+    },
+  } as const satisfies MiotEndpointMatcher;
+  const [match] = findMiotEndpointMatches(LIGHT_GROUP_SPEC, matcher);
+
+  expect(match?.service.iid).toBe(2);
+  expect(match?.properties.duplicateOn).toBeUndefined();
 });
 
 test('returns every matching service instance', () => {

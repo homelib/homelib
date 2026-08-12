@@ -1,3 +1,5 @@
+import {computed} from 'mobx';
+
 import {assertDeclaring} from './@lifecycle.js';
 import type {EndpointReference} from './endpoint.js';
 
@@ -8,8 +10,9 @@ export abstract class Device {
     return this.entry.name;
   }
 
-  get endpoints(): IterableIterator<EndpointReference> {
-    return this.entry.endpoints;
+  @computed
+  get online(): boolean {
+    return this.entry.endpoints.every(endpoint => endpoint.online);
   }
 
   protected getOrCreateEndpoint<TEndpoint extends EndpointReference>(
@@ -27,7 +30,7 @@ export class DeviceEntry {
 
   constructor(readonly name: string) {}
 
-  get endpoints(): IterableIterator<EndpointReference> {
+  get endpoints(): MapIterator<EndpointReference> {
     return this.endpointMap.values();
   }
 
