@@ -14,7 +14,6 @@ import {
   MiotEndpointConnectionMetadata,
   MiotEndpointConnectionTransport,
   type MiotPropertyUpdate,
-  getPrimaryMiotEndpointConnectionResource,
 } from '../endpoint-connection.js';
 import {
   type MiotExecutionRequest,
@@ -132,7 +131,6 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
             {
               service: {iid: 2},
               properties: {on: {iid: 1}},
-              exclusive: true,
             },
           ],
         },
@@ -166,8 +164,11 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
 
     test('rejects metadata with an extra property alias', () => {
       const metadata = createMetadata(options);
-      const primaryResource =
-        getPrimaryMiotEndpointConnectionResource(metadata);
+      const [resource] = metadata.resources;
+
+      if (resource === undefined) {
+        throw new Error('Test metadata has no resource.');
+      }
       const aliasProperty = {
         iid: 2,
         type: 'urn:miot-spec-v2:property:mode:00000008:test:1',
@@ -181,16 +182,16 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
         ...metadata,
         resources: [
           {
-            ...primaryResource,
+            ...resource,
             service: {
-              ...primaryResource.service,
+              ...resource.service,
               properties: [
-                ...(primaryResource.service.properties ?? []),
+                ...(resource.service.properties ?? []),
                 aliasProperty,
               ],
             },
             properties: {
-              ...primaryResource.properties,
+              ...resource.properties,
               alias: aliasProperty,
             },
           },

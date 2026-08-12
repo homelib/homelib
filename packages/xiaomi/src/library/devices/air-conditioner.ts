@@ -15,13 +15,13 @@ import * as x from 'x-value';
 import {
   type MiotEndpointProfile,
   defineMiotEndpointAdapter,
-  getValidatedMiotEndpointResources,
+  getValidatedMiotEndpointProperties,
 } from '../endpoint-adapter.js';
 import {
   MiotEndpointConnection,
   type MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionTransports,
-  getPrimaryMiotEndpointConnectionResource,
+  getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
 import {
   type MiotEndpointMatcher,
@@ -38,7 +38,6 @@ const MiotAirConditionerOn = x.boolean;
 
 const MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER: MiotAirConditionerEndpointMatcher =
   {
-    device: 'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00:3',
     service: 'urn:miot-spec-v2:service:air-conditioner:0000780F',
     properties: {
       on: {
@@ -78,7 +77,6 @@ const MIOT_AIR_CONDITIONER_FALLBACK_ENDPOINT_MATCHER: MiotAirConditionerEndpoint
 
 const MIOT_AIR_CONDITIONER_ENVIRONMENT_MATCHER: MiotEnvironmentEndpointMatcher =
   {
-    device: 'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00:3',
     service: 'urn:miot-spec-v2:service:environment:0000780A',
     properties: {
       temperature: {
@@ -100,15 +98,13 @@ const MIOT_AIR_CONDITIONER_ENVIRONMENT_MATCHER: MiotEnvironmentEndpointMatcher =
 
 const MIOT_AIR_CONDITIONER_ENDPOINT_PROFILES = [
   {
-    primary: MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER,
-    supplements: [
-      {
-        matcher: MIOT_AIR_CONDITIONER_ENVIRONMENT_MATCHER,
-        required: true,
-      },
+    device: 'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00:3',
+    services: [
+      MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER,
+      MIOT_AIR_CONDITIONER_ENVIRONMENT_MATCHER,
     ],
   },
-  {primary: MIOT_AIR_CONDITIONER_FALLBACK_ENDPOINT_MATCHER},
+  {services: [MIOT_AIR_CONDITIONER_FALLBACK_ENDPOINT_MATCHER]},
 ] as const satisfies readonly MiotEndpointProfile[];
 
 export class MiotAirConditionerEndpointConnection
@@ -252,14 +248,17 @@ export const miotAirConditionerEndpointAdapter = defineMiotEndpointAdapter<
   endpointProfiles: MiotAirConditionerEndpointConnection.endpointProfiles,
 });
 
-type MiotAirConditionerEndpointMatcher = MiotEndpointMatcher<
-  {
-    readonly on: MiotPropertyMatcher;
-  },
-  {
-    readonly mode: MiotPropertyMatcher;
-    readonly targetTemperature: MiotPropertyMatcher;
-  }
+type MiotAirConditionerEndpointMatcher = Omit<
+  MiotEndpointMatcher<
+    {
+      readonly on: MiotPropertyMatcher;
+    },
+    {
+      readonly mode: MiotPropertyMatcher;
+      readonly targetTemperature: MiotPropertyMatcher;
+    }
+  >,
+  'device'
 >;
 
 type MiotAirConditionerEndpointProperties = {
@@ -270,23 +269,21 @@ type MiotAirConditionerEndpointProperties = {
   readonly humidity?: MiotSpecProperty;
 };
 
-type MiotEnvironmentEndpointMatcher = MiotEndpointMatcher<{
-  readonly temperature: MiotPropertyMatcher;
-  readonly humidity: MiotPropertyMatcher;
-}>;
+type MiotEnvironmentEndpointMatcher = Omit<
+  MiotEndpointMatcher<{
+    readonly temperature: MiotPropertyMatcher;
+    readonly humidity: MiotPropertyMatcher;
+  }>,
+  'device'
+>;
 
 function getMiotAirConditionerProperties(
   metadata: MiotEndpointConnectionMetadata,
 ): MiotAirConditionerEndpointProperties {
-  const resources = getValidatedMiotEndpointResources(
+  return getValidatedMiotEndpointProperties(
     'air-conditioner',
     metadata,
     MIOT_AIR_CONDITIONER_ENDPOINT_PROFILES,
-  );
-
-  return Object.assign(
-    {},
-    ...resources.map(resource => resource.properties),
   ) as MiotAirConditionerEndpointProperties;
 }
 
@@ -296,7 +293,7 @@ function createMiotAirConditionerRequest(
   properties: MiotAirConditionerEndpointProperties,
 ): MiotExecutionRequest {
   if (command instanceof SetAirConditionerOnCommand) {
-    return createSetPropertyRequest(metadata, properties.on, command.value);
+    return createSetPropertyRequest(metadata, 'on', command.value);
   } else if (command instanceof SetAirConditionerModeCommand) {
     const property = properties.mode;
 
@@ -306,7 +303,7 @@ function createMiotAirConditionerRequest(
 
     const rawValue = getMiotAirConditionerMode(command.value);
 
-    return createSetPropertyRequest(metadata, property, rawValue);
+    return createSetPropertyRequest(metadata, 'mode', rawValue);
   } else if (command instanceof SetAirConditionerTargetTemperatureCommand) {
     const property = properties.targetTemperature;
 
@@ -329,7 +326,7 @@ function createMiotAirConditionerRequest(
 
     return createSetPropertyRequest(
       metadata,
-      property,
+      'targetTemperature',
       quantizeValue(value, valueRange),
     );
   }
@@ -356,10 +353,13 @@ function getMiotAirConditionerMode(mode: AirConditionerMode): number {
 
 function createSetPropertyRequest(
   metadata: MiotEndpointConnectionMetadata,
-  property: MiotSpecProperty,
+  propertyName: keyof MiotAirConditionerEndpointProperties,
   value: unknown,
 ): MiotSetPropertyRequest {
-  const {service} = getPrimaryMiotEndpointConnectionResource(metadata);
+  const {service, property} = getMiotEndpointConnectionProperty(
+    metadata,
+    propertyName,
+  );
 
   return new MiotSetPropertyRequest(
     {

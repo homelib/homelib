@@ -1,4 +1,5 @@
 import {PassThrough} from 'node:stream';
+import {setTimeout as delay} from 'node:timers/promises';
 
 import {
   EndpointPath,
@@ -21,6 +22,7 @@ test('confirms the default device match as one batch and returns after saving', 
   const bindingOperation = createDeferred<void>();
   const bindingBatches: Array<readonly ProviderBindingRequest[]> = [];
   let backCallCount = 0;
+  let completeCallCount = 0;
   const terminal = renderTestTerminal(
     createElement(MiotProviderBindings, {
       provider,
@@ -32,6 +34,9 @@ test('confirms the default device match as one batch and returns after saving', 
       },
       onBack: () => {
         backCallCount++;
+      },
+      onComplete: () => {
+        completeCallCount++;
       },
     }),
   );
@@ -71,18 +76,19 @@ test('confirms the default device match as one batch and returns after saving', 
           {
             service: {iid: 2},
             properties: {on: {iid: 1}},
-            exclusive: true,
           },
         ],
       },
     });
     expect(terminal.frame()).toContain('saving device match…');
     expect(backCallCount).toBe(0);
+    expect(completeCallCount).toBe(0);
 
     bindingOperation.resolve();
-    await terminal.flushUntil(() => backCallCount === 1);
+    await terminal.flushUntil(() => completeCallCount === 1);
     expect(bindingBatches).toHaveLength(1);
-    expect(backCallCount).toBe(1);
+    expect(backCallCount).toBe(0);
+    expect(completeCallCount).toBe(1);
   } finally {
     bindingOperation.resolve();
     await terminal.close();
@@ -104,6 +110,7 @@ test('opens optional endpoint matching without exposing MIoT identifiers', async
       providerBindings: [],
       onBind: () => Promise.resolve(),
       onBack: () => undefined,
+      onComplete: () => undefined,
     }),
   );
 
@@ -131,6 +138,43 @@ test('opens optional endpoint matching without exposing MIoT identifiers', async
     expect(terminal.frame()).toContain('selected · Main Light');
     await terminal.input('\u001B');
     expect(terminal.frame()).toContain('selected · Main Light');
+  } finally {
+    await terminal.close();
+    restoreFetch();
+  }
+}, 10_000);
+
+test('returns to the logical device on escape without completing', async () => {
+  const spec = createLightSpec('escape', ['Main Light']);
+  const restoreFetch = installSpecFetch(spec);
+  const provider = createFakeProvider('escape', spec);
+  let backCallCount = 0;
+  let completeCallCount = 0;
+  const terminal = renderTestTerminal(
+    createElement(MiotProviderBindings, {
+      provider,
+      device: createLogicalDevice(),
+      providerBindings: [],
+      onBind: () => Promise.resolve(),
+      onBack: () => {
+        backCallCount++;
+      },
+      onComplete: () => {
+        completeCallCount++;
+      },
+    }),
+  );
+
+  try {
+    await terminal.flushUntil(frame =>
+      frame.includes('choose a mi home device'),
+    );
+    await terminal.input('\u001B');
+    await delay(25);
+    await terminal.flushUntil(() => backCallCount === 1);
+
+    expect(backCallCount).toBe(1);
+    expect(completeCallCount).toBe(0);
   } finally {
     await terminal.close();
     restoreFetch();

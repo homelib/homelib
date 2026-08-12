@@ -80,6 +80,9 @@ export class MiotProviderConfiguration {
 
   private readonly dependencies: MiotProviderConfigurationDependencies;
 
+  private completeDiscoveryPromise:
+    Promise<MiotProviderConfigurationDiscovery | undefined> | undefined;
+
   constructor(options: MiotProviderConfigurationOptions) {
     const {providerName, environmentDirectory, dependencies} = options;
 
@@ -158,15 +161,23 @@ export class MiotProviderConfiguration {
     return {
       url,
       wait: () => {
-        completion ??= authorization.wait();
+        completion ??= authorization.wait().then(() => {
+          this.completeDiscoveryPromise = undefined;
+        });
         return completion;
       },
       cancel: () => authorization.cancel(),
     };
   }
 
-  forgetAuthorization(): Promise<void> {
-    return this.dependencies.forgetAuthorization();
+  async forgetAuthorization(): Promise<void> {
+    this.completeDiscoveryPromise = undefined;
+
+    try {
+      await this.dependencies.forgetAuthorization();
+    } finally {
+      this.completeDiscoveryPromise = undefined;
+    }
   }
 
   async saveIncludedHomes(
@@ -196,13 +207,11 @@ export class MiotProviderConfiguration {
 
   private async loadState(): Promise<LoadedState | undefined> {
     const configuration = await this.readConfiguration();
-    const discovered = await this.dependencies.discoverDevices();
+    const discovery = await this.getCompleteDiscovery();
 
-    if (discovered === undefined) {
+    if (discovery === undefined) {
       return undefined;
     }
-
-    const discovery = sanitizeDiscovery(discovered);
 
     if (configuration === undefined) {
       return {
@@ -223,6 +232,41 @@ export class MiotProviderConfiguration {
       selectionSource: 'saved',
       includedHomeKeySet: new Set(configuration.includedHomes.map(getHomeKey)),
     };
+  }
+
+  private getCompleteDiscovery(): Promise<
+    MiotProviderConfigurationDiscovery | undefined
+  > {
+    let discoveryPromise = this.completeDiscoveryPromise;
+
+    if (discoveryPromise === undefined) {
+      discoveryPromise = this.fetchCompleteDiscovery();
+      this.completeDiscoveryPromise = discoveryPromise;
+      void discoveryPromise.then(
+        discovery => {
+          if (
+            discovery === undefined &&
+            this.completeDiscoveryPromise === discoveryPromise
+          ) {
+            this.completeDiscoveryPromise = undefined;
+          }
+        },
+        () => {
+          if (this.completeDiscoveryPromise === discoveryPromise) {
+            this.completeDiscoveryPromise = undefined;
+          }
+        },
+      );
+    }
+
+    return discoveryPromise;
+  }
+
+  private async fetchCompleteDiscovery(): Promise<
+    MiotProviderConfigurationDiscovery | undefined
+  > {
+    const discovery = await this.dependencies.discoverDevices();
+    return discovery === undefined ? undefined : sanitizeDiscovery(discovery);
   }
 
   private async readConfiguration(): Promise<ConfigurationFile | undefined> {

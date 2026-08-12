@@ -94,6 +94,7 @@ export type ProviderBindingComponentProps<TProvider extends RuntimeProvider> = {
     requests: readonly ProviderBindingRequest[],
   ) => Promise<void>;
   readonly onBack: () => void;
+  readonly onComplete: () => void;
 };
 
 export function registerProviderBindingComponent<
@@ -130,6 +131,7 @@ export type ProviderBindingOutletProps = {
     requests: readonly ProviderBindingRequest[],
   ) => Promise<void>;
   readonly onBack: () => void;
+  readonly onComplete: () => void;
 };
 
 export function ProviderBindingOutlet({
@@ -139,6 +141,7 @@ export function ProviderBindingOutlet({
   bindings: endpointBindings,
   onBind,
   onBack,
+  onComplete,
 }: ProviderBindingOutletProps): React.JSX.Element {
   const renderer = PROVIDER_BINDING_RENDERER_MAP.get(provider.constructor);
 
@@ -160,6 +163,7 @@ export function ProviderBindingOutlet({
     providerBindings,
     onBind,
     onBack,
+    onComplete,
   });
 }
 

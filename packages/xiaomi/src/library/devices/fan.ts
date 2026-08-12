@@ -13,6 +13,7 @@ import {computed} from 'mobx';
 import * as x from 'x-value';
 
 import {
+  type MiotEndpointProfile,
   defineMiotEndpointAdapter,
   getValidatedMiotEndpointProperties,
 } from '../endpoint-adapter.js';
@@ -20,7 +21,7 @@ import {
   MiotEndpointConnection,
   type MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionTransports,
-  getPrimaryMiotEndpointConnectionResource,
+  getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
 import {
   type MiotEndpointMatcher,
@@ -35,7 +36,6 @@ const MiotFanOn = x.boolean;
 const MiotFanHorizontalSwing = x.boolean;
 
 const MIOT_FAN_ENDPOINT_MATCHER: MiotFanEndpointMatcher = {
-  device: 'urn:miot-spec-v2:device:fan:0000A005:dmaker-p5c:1',
   service: 'urn:miot-spec-v2:service:fan:00007808',
   properties: {
     on: {
@@ -76,10 +76,13 @@ const MIOT_FAN_FALLBACK_ENDPOINT_MATCHER: MiotFanEndpointMatcher = {
   },
 };
 
-const MIOT_FAN_ENDPOINT_MATCHERS = [
-  MIOT_FAN_ENDPOINT_MATCHER,
-  MIOT_FAN_FALLBACK_ENDPOINT_MATCHER,
-] as const satisfies readonly MiotFanEndpointMatcher[];
+const MIOT_FAN_ENDPOINT_PROFILES = [
+  {
+    device: 'urn:miot-spec-v2:device:fan:0000A005:dmaker-p5c:1',
+    services: [MIOT_FAN_ENDPOINT_MATCHER],
+  },
+  {services: [MIOT_FAN_FALLBACK_ENDPOINT_MATCHER]},
+] as const satisfies readonly MiotEndpointProfile[];
 
 export class MiotFanEndpointConnection
   extends MiotEndpointConnection<FanEndpointCommand>
@@ -87,7 +90,7 @@ export class MiotFanEndpointConnection
 {
   static readonly Endpoint = FanEndpoint;
 
-  static readonly endpointMatchers = MIOT_FAN_ENDPOINT_MATCHERS;
+  static readonly endpointProfiles = MIOT_FAN_ENDPOINT_PROFILES;
 
   private readonly properties: MiotFanEndpointProperties;
 
@@ -161,7 +164,7 @@ export class MiotFanEndpointConnection
     this.properties = getValidatedMiotEndpointProperties(
       'fan',
       metadata,
-      MIOT_FAN_ENDPOINT_MATCHERS,
+      MIOT_FAN_ENDPOINT_PROFILES,
     );
   }
 
@@ -169,7 +172,7 @@ export class MiotFanEndpointConnection
     getValidatedMiotEndpointProperties(
       'fan',
       metadata,
-      MIOT_FAN_ENDPOINT_MATCHERS,
+      MIOT_FAN_ENDPOINT_PROFILES,
     );
   }
 
@@ -187,18 +190,21 @@ export const miotFanEndpointAdapter = defineMiotEndpointAdapter<
   type: 'fan',
   Endpoint: MiotFanEndpointConnection.Endpoint,
   Connection: MiotFanEndpointConnection,
-  endpointMatchers: MiotFanEndpointConnection.endpointMatchers,
+  endpointProfiles: MiotFanEndpointConnection.endpointProfiles,
 });
 
-type MiotFanEndpointMatcher = MiotEndpointMatcher<
-  {
-    readonly on: MiotPropertyMatcher;
-  },
-  {
-    readonly windMode: MiotPropertyMatcher;
-    readonly speed: MiotPropertyMatcher;
-    readonly horizontalSwing: MiotPropertyMatcher;
-  }
+type MiotFanEndpointMatcher = Omit<
+  MiotEndpointMatcher<
+    {
+      readonly on: MiotPropertyMatcher;
+    },
+    {
+      readonly windMode: MiotPropertyMatcher;
+      readonly speed: MiotPropertyMatcher;
+      readonly horizontalSwing: MiotPropertyMatcher;
+    }
+  >,
+  'device'
 >;
 
 type MiotFanEndpointProperties = {
@@ -214,7 +220,7 @@ function createMiotFanRequest(
   properties: MiotFanEndpointProperties,
 ): MiotExecutionRequest {
   if (command instanceof SetFanOnCommand) {
-    return createSetPropertyRequest(metadata, properties.on, command.value);
+    return createSetPropertyRequest(metadata, 'on', command.value);
   } else if (command instanceof SetFanWindModeCommand) {
     const property = properties.windMode;
 
@@ -224,7 +230,7 @@ function createMiotFanRequest(
 
     return createSetPropertyRequest(
       metadata,
-      property,
+      'windMode',
       command.value === 'normal' ? 0 : 1,
     );
   } else if (command instanceof SetFanSpeedCommand) {
@@ -236,7 +242,7 @@ function createMiotFanRequest(
 
     const rawValue = Math.min(4, Math.max(1, Math.round(command.value * 4)));
 
-    return createSetPropertyRequest(metadata, property, rawValue);
+    return createSetPropertyRequest(metadata, 'speed', rawValue);
   } else if (command instanceof SetFanHorizontalSwingCommand) {
     const property = properties.horizontalSwing;
 
@@ -244,7 +250,7 @@ function createMiotFanRequest(
       throw new CommandError('MIoT fan does not support horizontal swing.');
     }
 
-    return createSetPropertyRequest(metadata, property, command.value);
+    return createSetPropertyRequest(metadata, 'horizontalSwing', command.value);
   }
 
   throw new TypeError('Unsupported MIoT fan endpoint command.');
@@ -252,10 +258,13 @@ function createMiotFanRequest(
 
 function createSetPropertyRequest(
   metadata: MiotEndpointConnectionMetadata,
-  property: MiotSpecProperty,
+  propertyName: keyof MiotFanEndpointProperties,
   value: unknown,
 ): MiotSetPropertyRequest {
-  const {service} = getPrimaryMiotEndpointConnectionResource(metadata);
+  const {service, property} = getMiotEndpointConnectionProperty(
+    metadata,
+    propertyName,
+  );
 
   return new MiotSetPropertyRequest(
     {

@@ -20,15 +20,15 @@ import {MiotLightEndpointConnection} from './devices/index.js';
 import {
   MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResource,
   MiotEndpointConnectionTransport,
-  getPrimaryMiotEndpointConnectionResource,
+  getMiotEndpointConnectionProperty,
+  getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
 import {
   type MiotExecutionRequest,
   type MiotExecutionResult,
   MiotSetPropertyRequest,
-  type MiotSpecInstance,
-  findMiotEndpointMatches,
 } from './miot/index.js';
 import {MiotProvider} from './provider.js';
 
@@ -63,13 +63,11 @@ const TEST_METADATA = MiotEndpointConnectionMetadata.satisfies({
           access: ['read', 'write', 'notify'],
         },
       },
-      exclusive: true,
     },
   ],
 });
 
-const TEST_PRIMARY_RESOURCE =
-  getPrimaryMiotEndpointConnectionResource(TEST_METADATA);
+const TEST_PRIMARY_RESOURCE = getResource(TEST_METADATA, 0);
 
 const TEST_DIMMABLE_METADATA = MiotEndpointConnectionMetadata.satisfies({
   ...TEST_METADATA,
@@ -120,14 +118,11 @@ const TEST_DIMMABLE_METADATA = MiotEndpointConnectionMetadata.satisfies({
           'value-range': [2600, 6100, 100],
         },
       },
-      exclusive: true,
     },
   ],
 });
 
-const TEST_DIMMABLE_PRIMARY_RESOURCE = getPrimaryMiotEndpointConnectionResource(
-  TEST_DIMMABLE_METADATA,
-);
+const TEST_DIMMABLE_PRIMARY_RESOURCE = getResource(TEST_DIMMABLE_METADATA, 0);
 
 const TEST_VALUE_LIST_METADATA = MiotEndpointConnectionMetadata.satisfies({
   device: {
@@ -168,13 +163,14 @@ const TEST_VALUE_LIST_METADATA = MiotEndpointConnectionMetadata.satisfies({
           ],
         },
       },
-      exclusive: true,
     },
   ],
 });
 
-const TEST_VALUE_LIST_PRIMARY_RESOURCE =
-  getPrimaryMiotEndpointConnectionResource(TEST_VALUE_LIST_METADATA);
+const TEST_VALUE_LIST_PRIMARY_RESOURCE = getResource(
+  TEST_VALUE_LIST_METADATA,
+  0,
+);
 
 const TEST_ENVIRONMENT_TEMPERATURE_PROPERTY = {
   iid: 1,
@@ -208,14 +204,13 @@ const TEST_ENVIRONMENT_RESOURCE = {
     temperature: TEST_ENVIRONMENT_TEMPERATURE_PROPERTY,
     humidity: TEST_ENVIRONMENT_HUMIDITY_PROPERTY,
   },
-  exclusive: false,
 } as const;
 const TEST_MULTI_RESOURCE_METADATA = MiotEndpointConnectionMetadata.satisfies({
   ...TEST_METADATA,
   resources: [TEST_PRIMARY_RESOURCE, TEST_ENVIRONMENT_RESOURCE],
 });
 
-test('validates a same-device primary and shared environment metadata roundtrip', () => {
+test('validates flat multi-service metadata roundtrip', () => {
   const serialized = JSON.stringify(TEST_MULTI_RESOURCE_METADATA);
   const metadata = MiotEndpointConnectionMetadata.satisfies(
     JSON.parse(serialized) as unknown,
@@ -223,13 +218,37 @@ test('validates a same-device primary and shared environment metadata roundtrip'
 
   expect(metadata).toEqual(TEST_MULTI_RESOURCE_METADATA);
   expect(metadata.resources).toMatchObject([
-    {service: {iid: 2}, properties: {on: {iid: 1}}, exclusive: true},
+    {service: {iid: 2}, properties: {on: {iid: 1}}},
     {
       service: {iid: 3},
       properties: {temperature: {iid: 1}, humidity: {iid: 2}},
-      exclusive: false,
     },
   ]);
+  expect(getMiotEndpointConnectionResourceKeys(metadata)).toEqual([
+    JSON.stringify([TEST_METADATA.device.did, 2]),
+    JSON.stringify([TEST_METADATA.device.did, 3]),
+  ]);
+});
+
+test('resource keys are canonical regardless of metadata order', () => {
+  const metadata = MiotEndpointConnectionMetadata.satisfies({
+    ...TEST_MULTI_RESOURCE_METADATA,
+    resources: [...TEST_MULTI_RESOURCE_METADATA.resources].reverse(),
+  });
+
+  expect(getMiotEndpointConnectionResourceKeys(metadata)).toEqual([
+    JSON.stringify([TEST_METADATA.device.did, 2]),
+    JSON.stringify([TEST_METADATA.device.did, 3]),
+  ]);
+});
+
+test('rejects metadata without any resources', () => {
+  expect(() =>
+    MiotEndpointConnectionMetadata.satisfies({
+      ...TEST_METADATA,
+      resources: [],
+    }),
+  ).toThrow('MIoT endpoint metadata requires at least one resource.');
 });
 
 test('rejects legacy single-service endpoint metadata', () => {
@@ -242,7 +261,7 @@ test('rejects legacy single-service endpoint metadata', () => {
   ).toThrow();
 });
 
-test('flattens state properties across primary and shared resources', () => {
+test('flattens state properties across all resources', () => {
   const connection = createMultiResourceConnection();
 
   expect(connection.stateProperties).toEqual([
@@ -300,34 +319,33 @@ test('rejects duplicate services and state aliases across resources', () => {
   ).toThrow('Ambiguous MIoT endpoint metadata property.');
 });
 
-test('rejects writable properties on a shared supplement', () => {
+test('allows writable properties on every flat resource', () => {
   const writableTemperature = {
     ...TEST_ENVIRONMENT_TEMPERATURE_PROPERTY,
     access: ['read', 'write', 'notify'],
   };
 
-  expect(() =>
-    MiotEndpointConnectionMetadata.satisfies({
-      ...TEST_MULTI_RESOURCE_METADATA,
-      resources: [
-        TEST_PRIMARY_RESOURCE,
-        {
-          ...TEST_ENVIRONMENT_RESOURCE,
-          service: {
-            ...TEST_ENVIRONMENT_RESOURCE.service,
-            properties: [
-              writableTemperature,
-              TEST_ENVIRONMENT_HUMIDITY_PROPERTY,
-            ],
-          },
-          properties: {
-            ...TEST_ENVIRONMENT_RESOURCE.properties,
-            temperature: writableTemperature,
-          },
+  const metadata = MiotEndpointConnectionMetadata.satisfies({
+    ...TEST_MULTI_RESOURCE_METADATA,
+    resources: [
+      TEST_PRIMARY_RESOURCE,
+      {
+        ...TEST_ENVIRONMENT_RESOURCE,
+        service: {
+          ...TEST_ENVIRONMENT_RESOURCE.service,
+          properties: [writableTemperature, TEST_ENVIRONMENT_HUMIDITY_PROPERTY],
         },
-      ],
-    }),
-  ).toThrow('MIoT endpoint supplements must be read-only.');
+        properties: {
+          ...TEST_ENVIRONMENT_RESOURCE.properties,
+          temperature: writableTemperature,
+        },
+      },
+    ],
+  });
+
+  expect(
+    getMiotEndpointConnectionProperty(metadata, 'temperature'),
+  ).toMatchObject({service: {iid: 3}, property: {iid: 1}});
 });
 
 test('commits a full multi-resource initial state and ready flag atomically', () => {
@@ -359,48 +377,23 @@ test('commits a full multi-resource initial state and ready flag atomically', ()
   disposeAutorun();
 });
 
-test('declares the supported endpoint and MIoT matchers', () => {
-  const spec: MiotSpecInstance = {
-    type: TEST_METADATA.device.urn,
-    description: 'Test light',
-    services: [
-      {
-        ...TEST_PRIMARY_RESOURCE.service,
-        properties: Object.values(TEST_PRIMARY_RESOURCE.properties),
-      },
-    ],
-  };
-  const matches = MiotLightEndpointConnection.endpointMatchers.flatMap(
-    matcher => findMiotEndpointMatches(spec, matcher),
-  );
-
+test('declares the supported endpoint', () => {
   expect(MiotLightEndpointConnection.Endpoint).toBe(LightEndpoint);
-  expect(matches).toHaveLength(1);
-  expect(matches[0]?.service.iid).toBe(TEST_PRIMARY_RESOURCE.service.iid);
-  expect(matches[0]?.properties.on.iid).toBe(
-    TEST_PRIMARY_RESOURCE.properties.on?.iid,
-  );
 });
 
-test('discovers supported optional light properties', () => {
-  const spec: MiotSpecInstance = {
-    type: TEST_DIMMABLE_METADATA.device.urn,
-    description: 'Test light',
-    services: [TEST_DIMMABLE_PRIMARY_RESOURCE.service],
-  };
-  const [match] = MiotLightEndpointConnection.endpointMatchers.flatMap(
-    matcher => findMiotEndpointMatches(spec, matcher),
-  );
-
-  expect(match?.properties).toMatchObject({
-    on: {iid: 1},
-    brightness: {iid: 2, unit: 'percentage', 'value-range': [1, 100, 1]},
-    colorTemperature: {
-      iid: 3,
-      unit: 'kelvin',
-      'value-range': [2600, 6100, 100],
-    },
-  });
+test('locates a named property in its owning service', () => {
+  expect(
+    getMiotEndpointConnectionProperty(TEST_MULTI_RESOURCE_METADATA, 'on'),
+  ).toMatchObject({service: {iid: 2}, property: {iid: 1}});
+  expect(
+    getMiotEndpointConnectionProperty(
+      TEST_MULTI_RESOURCE_METADATA,
+      'temperature',
+    ),
+  ).toMatchObject({service: {iid: 3}, property: {iid: 1}});
+  expect(() =>
+    getMiotEndpointConnectionProperty(TEST_MULTI_RESOURCE_METADATA, 'missing'),
+  ).toThrow('Unknown MIoT endpoint property: missing.');
 });
 
 test('rejects light metadata without an on property', () => {
@@ -418,22 +411,17 @@ test('rejects light metadata without an on property', () => {
 });
 
 test('rejects light metadata whose on property is not part of the service', () => {
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
-    ...TEST_METADATA,
-    resources: [
-      {
-        ...TEST_PRIMARY_RESOURCE,
-        service: {...TEST_PRIMARY_RESOURCE.service, properties: []},
-      },
-    ],
-  });
-
-  expect(
-    () =>
-      new MiotLightEndpointConnection(new MiotProvider('provider'), metadata, [
-        new TestTransport(),
-      ]),
-  ).toThrow('Invalid MIoT light endpoint metadata.');
+  expect(() =>
+    MiotEndpointConnectionMetadata.satisfies({
+      ...TEST_METADATA,
+      resources: [
+        {
+          ...TEST_PRIMARY_RESOURCE,
+          service: {...TEST_PRIMARY_RESOURCE.service, properties: []},
+        },
+      ],
+    }),
+  ).toThrow('MIoT endpoint metadata property does not belong to its service.');
 });
 
 test('rejects light metadata with an extra property alias', () => {
@@ -873,7 +861,7 @@ test('normalizes uint16 brightness state against its raw maximum', () => {
 
   connection.handlePropertyUpdate({
     did: metadata.device.did,
-    siid: getPrimaryMiotEndpointConnectionResource(metadata).service.iid,
+    siid: getMiotEndpointConnectionProperty(metadata, 'brightness').service.iid,
     piid: 2,
     value: 1,
   });
@@ -881,7 +869,7 @@ test('normalizes uint16 brightness state against its raw maximum', () => {
 
   connection.handlePropertyUpdate({
     did: metadata.device.did,
-    siid: getPrimaryMiotEndpointConnectionResource(metadata).service.iid,
+    siid: getMiotEndpointConnectionProperty(metadata, 'brightness').service.iid,
     piid: 2,
     value: 65_535,
   });
@@ -976,10 +964,22 @@ function createMetadataWithBrightnessRange(
           properties: [onProperty, brightnessProperty],
         },
         properties: {on: onProperty, brightness: brightnessProperty},
-        exclusive: true,
       },
     ],
   });
+}
+
+function getResource(
+  metadata: MiotEndpointConnectionMetadata,
+  index: number,
+): MiotEndpointConnectionResource {
+  const resource = metadata.resources[index];
+
+  if (resource === undefined) {
+    throw new Error(`Missing test MIoT endpoint resource at index ${index}.`);
+  }
+
+  return resource;
 }
 
 function createMultiResourceConnection(): TestMultiResourceEndpointConnection {

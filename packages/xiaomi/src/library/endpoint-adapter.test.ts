@@ -9,139 +9,103 @@ import {
   MiotEndpointAdapterRegistry,
   type MiotEndpointProfile,
   defineMiotEndpointAdapter,
-  getValidatedMiotEndpointProperties,
   getValidatedMiotEndpointResources,
+  miotEndpointConnectionMetadataEqual,
 } from './endpoint-adapter.js';
 import {
   MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
-  getPrimaryMiotEndpointConnectionResource,
+  getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
-import type {MiotEndpointMatcher, MiotSpecInstance} from './miot/index.js';
+import type {
+  MiotSpecInstance,
+  MiotSpecProperty,
+  MiotSpecService,
+} from './miot/index.js';
+
+const DEVICE_TYPE = 'urn:miot-spec-v2:device:light:0000A001:test-light:1';
+const UNKNOWN_DEVICE_TYPE =
+  'urn:miot-spec-v2:device:light:0000A001:unknown-light:1';
+const LIGHT_SERVICE_TYPE = 'urn:miot-spec-v2:service:light:00007802';
+const ENVIRONMENT_SERVICE_TYPE =
+  'urn:miot-spec-v2:service:environment:0000780A';
+const ON_PROPERTY_TYPE = 'urn:miot-spec-v2:property:on:00000006';
+const MODE_PROPERTY_TYPE = 'urn:miot-spec-v2:property:mode:00000008';
+const TEMPERATURE_PROPERTY_TYPE =
+  'urn:miot-spec-v2:property:temperature:00000020';
 
 const ON_MATCHER = {
-  service: 'urn:miot-spec-v2:service:light:00007802',
+  service: LIGHT_SERVICE_TYPE,
   properties: {
     on: {
-      type: 'urn:miot-spec-v2:property:on:00000006',
+      type: ON_PROPERTY_TYPE,
       format: 'bool',
       access: ['read', 'write', 'notify'],
     },
   },
-} as const satisfies MiotEndpointMatcher;
+} as const;
 
-const ALIAS_MATCHER = {
-  ...ON_MATCHER,
-  properties: {alias: ON_MATCHER.properties.on},
-} as const satisfies MiotEndpointMatcher;
-
-const ENRICHED_MATCHER = {
-  ...ON_MATCHER,
-  device: 'urn:miot-spec-v2:device:light:0000A001:test-light:1',
+const RICH_LIGHT_MATCHER = {
+  service: LIGHT_SERVICE_TYPE,
   properties: {
     ...ON_MATCHER.properties,
     mode: {
-      type: 'urn:miot-spec-v2:property:mode:00000008',
+      type: MODE_PROPERTY_TYPE,
       format: 'uint8',
       access: ['read', 'write', 'notify'],
       valueList: [0, 1],
     },
   },
-} as const satisfies MiotEndpointMatcher;
-
-const MODE_MATCHER = {
-  service: 'urn:miot-spec-v2:service:fan:00007808',
-  properties: {
-    mode: {
-      type: 'urn:miot-spec-v2:property:mode:00000008',
-      format: 'uint8',
-      access: ['read', 'write', 'notify'],
-      valueList: [0, 1],
-    },
-  },
-} as const satisfies MiotEndpointMatcher;
+} as const;
 
 const ENVIRONMENT_MATCHER = {
-  service: 'urn:miot-spec-v2:service:environment:0000780A',
+  service: ENVIRONMENT_SERVICE_TYPE,
   properties: {
     temperature: {
-      type: 'urn:miot-spec-v2:property:temperature:00000020',
+      type: TEMPERATURE_PROPERTY_TYPE,
       format: 'float',
       access: ['read', 'notify'],
+      unit: 'celsius',
+      valueRange: true,
     },
   },
-} as const satisfies MiotEndpointMatcher;
+} as const;
 
 const TEST_PROFILES = [
   {
-    primary: ENRICHED_MATCHER,
-    supplements: [{matcher: ENVIRONMENT_MATCHER, required: true}],
+    device: DEVICE_TYPE,
+    services: [RICH_LIGHT_MATCHER, ENVIRONMENT_MATCHER],
   },
-  {primary: ON_MATCHER},
+  {services: [ON_MATCHER]},
 ] as const satisfies readonly MiotEndpointProfile[];
 
-test('deduplicates identical matcher results with a stable candidate key', () => {
-  const adapter = createTestAdapter('test', [ON_MATCHER, ON_MATCHER]);
-  const candidates = adapter.findMetadataCandidates(TEST_DEVICE, TEST_SPEC);
-
-  expect(candidates).toEqual([
-    {
-      key: JSON.stringify(['test', 'physical', 2, [['on', 1]]]),
-      label: 'Light',
-      metadata: expect.objectContaining({
-        device: expect.objectContaining({did: 'physical'}),
-        resources: [
-          expect.objectContaining({
-            service: expect.objectContaining({iid: 2}),
-            properties: {on: expect.objectContaining({iid: 1})},
-            exclusive: true,
-          }),
-        ],
-      }),
-    },
-  ]);
-
-  const metadata = candidates.at(0)?.metadata;
-
-  if (metadata === undefined) {
-    throw new Error('Test adapter returned no metadata candidate.');
-  }
-
-  expect(getPrimaryMiotEndpointConnectionResource(metadata)).toMatchObject({
-    service: {iid: 2},
-    properties: {on: {iid: 1}},
-  });
-});
-
-test('discovers and self-validates a rich primary with a shared environment supplement', () => {
-  const adapter = createTestProfileAdapter();
-  const [candidate] = adapter.findMetadataCandidates(
-    TEST_DEVICE,
-    TEST_SPEC_WITH_MODE_AND_ENVIRONMENT,
-  );
+test('discovers a complete flat service combination and self-validates it', () => {
+  const adapter = createProfileAdapter();
+  const [candidate] = adapter.findMetadataCandidates(TEST_DEVICE, createSpec());
 
   expect(candidate).toMatchObject({
     key: JSON.stringify([
       'test-profile',
       'physical',
-      2,
       [
-        ['mode', 2],
-        ['on', 1],
+        2,
+        [
+          ['mode', 2],
+          ['on', 1],
+        ],
       ],
-      [3, [['temperature', 1]]],
+      [4, [['temperature', 1]]],
     ]),
+    label: 'Light 2 + Environment 4',
     metadata: {
       resources: [
         {
           service: {iid: 2},
           properties: {on: {iid: 1}, mode: {iid: 2}},
-          exclusive: true,
         },
         {
-          service: {iid: 3},
+          service: {iid: 4},
           properties: {temperature: {iid: 1}},
-          exclusive: false,
         },
       ],
     },
@@ -152,191 +116,280 @@ test('discovers and self-validates a rich primary with a shared environment supp
   }
 
   expect(() => adapter.assertMetadata(candidate.metadata)).not.toThrow();
-});
-
-test('does not fall back when an exact rich profile lacks a required supplement', () => {
-  const adapter = createTestProfileAdapter();
-
-  expect(
-    adapter.findMetadataCandidates(TEST_DEVICE, TEST_SPEC_WITH_MODE),
-  ).toEqual([]);
-});
-
-test('uses generic on-only metadata for an unknown device model', () => {
-  const adapter = createTestProfileAdapter();
-  const unknownSpec = {
-    ...TEST_SPEC_WITH_MODE,
-    type: 'urn:miot-spec-v2:device:light:0000A001:unknown-light:1',
-  };
-
-  expect(
-    adapter.findMetadataCandidates(TEST_DEVICE, unknownSpec),
-  ).toMatchObject([
-    {
-      key: JSON.stringify(['test-profile', 'physical', 2, [['on', 1]]]),
-      metadata: {
-        resources: [
-          {
-            service: {iid: 2},
-            properties: {on: {iid: 1}},
-            exclusive: true,
-          },
-        ],
-      },
-    },
+  expect(getMiotEndpointConnectionResourceKeys(candidate.metadata)).toEqual([
+    JSON.stringify(['physical', 2]),
+    JSON.stringify(['physical', 4]),
   ]);
 });
 
-test('keeps the first matcher metadata for one physical service', () => {
-  const adapter = createTestAdapter('test', [ALIAS_MATCHER, ON_MATCHER]);
-
-  expect(adapter.findMetadataCandidates(TEST_DEVICE, TEST_SPEC)).toMatchObject([
-    {metadata: {resources: [{properties: {alias: {iid: 1}}}]}},
-  ]);
-});
-
-test('prefers an enriched matcher over a generic fallback', () => {
-  const adapter = createTestAdapter('test', [ENRICHED_MATCHER, ON_MATCHER]);
-
-  expect(
-    adapter.findMetadataCandidates(TEST_DEVICE, TEST_SPEC_WITH_MODE),
-  ).toMatchObject([
-    {
-      metadata: {
-        resources: [{properties: {on: {iid: 1}, mode: {iid: 2}}}],
-      },
-    },
-  ]);
-});
-
-test('uses a generic fallback when an enriched matcher does not match', () => {
-  const adapter = createTestAdapter('test', [ENRICHED_MATCHER, ON_MATCHER]);
-
-  expect(adapter.findMetadataCandidates(TEST_DEVICE, TEST_SPEC)).toMatchObject([
-    {metadata: {resources: [{properties: {on: {iid: 1}}}]}},
-  ]);
-});
-
-test('does not validate stale fallback metadata against a richer first profile', () => {
-  const service = TEST_SPEC_WITH_MODE.services.at(0);
-  const onProperty = service?.properties?.at(0);
-
-  if (service === undefined || onProperty === undefined) {
-    throw new Error('Test spec has no light service on property.');
-  }
-
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
-    device: {
-      did: TEST_DEVICE.did,
-      model: TEST_DEVICE.model,
-      urn: TEST_SPEC_WITH_MODE.type,
-    },
-    resources: [{service, properties: {on: onProperty}, exclusive: true}],
+test('validates the same combination regardless of resource order', () => {
+  const adapter = createProfileAdapter();
+  const metadata = requireCandidate(adapter, createSpec()).metadata;
+  const reversed = MiotEndpointConnectionMetadata.satisfies({
+    ...metadata,
+    resources: [...metadata.resources].reverse(),
   });
 
-  expect(() =>
-    getValidatedMiotEndpointProperties('test', metadata, [
-      ENRICHED_MATCHER,
-      ON_MATCHER,
-    ]),
-  ).toThrow('Invalid MIoT test endpoint metadata.');
+  expect(() => adapter.assertMetadata(reversed)).not.toThrow();
 });
 
-test('rejects duplicate endpoint constructors in a registry', () => {
-  const firstAdapter = createTestAdapter('first', [ON_MATCHER]);
-  const secondAdapter = createTestAdapter('second', [ON_MATCHER]);
+test('compares metadata collections by MIoT semantics instead of order', () => {
+  const metadata = requireCandidate(
+    createProfileAdapter(),
+    createSpec(),
+  ).metadata;
+  const reordered = MiotEndpointConnectionMetadata.satisfies({
+    ...metadata,
+    resources: [...metadata.resources].reverse().map(resource => ({
+      service: {
+        ...resource.service,
+        properties: resource.service.properties
+          ?.map(reversePropertyCollections)
+          .reverse(),
+      },
+      properties: Object.fromEntries(
+        Object.entries(resource.properties)
+          .reverse()
+          .map(([alias, property]) => [
+            alias,
+            reversePropertyCollections(property),
+          ]),
+      ),
+    })),
+  });
+
+  expect(miotEndpointConnectionMetadataEqual(metadata, reordered)).toBe(true);
+  expect(miotEndpointConnectionMetadataEqual(reordered, metadata)).toBe(true);
+});
+
+test.each(['did', 'model', 'urn'] as const)(
+  'compares metadata device %s exactly',
+  field => {
+    const metadata = requireCandidate(
+      createProfileAdapter(),
+      createSpec(),
+    ).metadata;
+    const different = MiotEndpointConnectionMetadata.satisfies({
+      ...metadata,
+      device: {
+        ...metadata.device,
+        [field]: `${metadata.device[field]}-different`,
+      },
+    });
+
+    expect(miotEndpointConnectionMetadataEqual(metadata, different)).toBe(
+      false,
+    );
+  },
+);
+
+test('compares value-list descriptions and value-range tuple positions', () => {
+  const metadata = requireCandidate(
+    createProfileAdapter(),
+    createSpec(),
+  ).metadata;
+  const differentValueList = mapMetadataProperties(metadata, property => {
+    const valueList = property['value-list'];
+
+    if (valueList === undefined) {
+      return property;
+    }
+
+    return {
+      ...property,
+      'value-list': valueList.map((entry, index) => {
+        return index === 0
+          ? {...entry, description: `${entry.description} changed`}
+          : entry;
+      }),
+    };
+  });
+  const differentValueRange = mapMetadataProperties(metadata, property => {
+    const valueRange = property['value-range'];
+
+    if (valueRange === undefined) {
+      return property;
+    }
+
+    return {
+      ...property,
+      'value-range': [valueRange[1], valueRange[0], valueRange[2]],
+    };
+  });
 
   expect(
-    () => new MiotEndpointAdapterRegistry([firstAdapter, secondAdapter]),
-  ).toThrow('Duplicate MIoT endpoint adapter Endpoint.');
+    miotEndpointConnectionMetadataEqual(metadata, differentValueList),
+  ).toBe(false);
+  expect(
+    miotEndpointConnectionMetadataEqual(metadata, differentValueRange),
+  ).toBe(false);
 });
 
-test('rejects duplicate adapter types in a registry', () => {
+test('keeps known device profiles fail-closed when a service is missing', () => {
+  const adapter = createProfileAdapter();
+  const spec = createSpec();
+  spec.services = spec.services.filter(service => service.iid !== 4);
+
+  expect(adapter.findMetadataCandidates(TEST_DEVICE, spec)).toEqual([]);
+});
+
+test('uses generic fallback only when no device-specific profile applies', () => {
+  const adapter = createProfileAdapter();
+  const spec = createSpec(UNKNOWN_DEVICE_TYPE);
+  spec.services = spec.services.filter(service => service.iid !== 4);
+  const [candidate] = adapter.findMetadataCandidates(TEST_DEVICE, spec);
+
+  expect(candidate?.metadata.resources).toMatchObject([
+    {service: {iid: 2}, properties: {on: {iid: 1}}},
+  ]);
+});
+
+test('higher-priority combinations suppress every overlapping fallback', () => {
+  const profiles = [
+    {services: [RICH_LIGHT_MATCHER, ENVIRONMENT_MATCHER]},
+    {services: [ON_MATCHER]},
+  ] as const satisfies readonly MiotEndpointProfile[];
+  const adapter = createAdapter('priority', profiles);
+
+  expect(
+    adapter
+      .findMetadataCandidates(TEST_DEVICE, createSpec())
+      .map(({metadata}) => metadata.resources.map(({service}) => service.iid)),
+  ).toEqual([[2, 4]]);
+});
+
+test('an incomplete higher-priority generic combination permits fallback', () => {
+  const profiles = [
+    {services: [RICH_LIGHT_MATCHER, ENVIRONMENT_MATCHER]},
+    {services: [ON_MATCHER]},
+  ] as const satisfies readonly MiotEndpointProfile[];
+  const adapter = createAdapter('fallback', profiles);
+  const spec = createSpec();
+  spec.services = spec.services.filter(service => service.iid !== 4);
+
+  expect(
+    adapter
+      .findMetadataCandidates(TEST_DEVICE, spec)
+      .map(({metadata}) => metadata.resources.map(({service}) => service.iid)),
+  ).toEqual([[2]]);
+});
+
+test('preserves overlapping combinations from the same profile as ambiguity', () => {
+  const spec = createSpec();
+  spec.services.push(createEnvironmentService(5));
+  const adapter = createAdapter('ambiguous', [
+    {services: [RICH_LIGHT_MATCHER, ENVIRONMENT_MATCHER]},
+  ]);
+
+  expect(
+    adapter
+      .findMetadataCandidates(TEST_DEVICE, spec)
+      .map(({metadata}) => metadata.resources.map(({service}) => service.iid)),
+  ).toEqual([
+    [2, 4],
+    [2, 5],
+  ]);
+});
+
+test('rejects metadata that is not reproduced by the common resolver', () => {
+  const adapter = createProfileAdapter();
+  const metadata = requireCandidate(adapter, createSpec()).metadata;
+  const [lightResource, environmentResource] = metadata.resources;
+
+  if (lightResource === undefined || environmentResource === undefined) {
+    throw new Error('Test metadata is incomplete.');
+  }
+
+  const staleMetadata = MiotEndpointConnectionMetadata.satisfies({
+    ...metadata,
+    resources: [
+      {
+        ...lightResource,
+        properties: {on: lightResource.properties.on},
+      },
+      environmentResource,
+    ],
+  });
+
+  expect(() => adapter.assertMetadata(staleMetadata)).toThrow(
+    'Invalid MIoT test-profile endpoint metadata.',
+  );
+});
+
+test('deduplicates identical profile results with a stable candidate key', () => {
+  const profiles = [
+    {services: [ON_MATCHER]},
+    {services: [ON_MATCHER]},
+  ] as const satisfies readonly MiotEndpointProfile[];
+  const adapter = createAdapter('test', profiles);
+
+  expect(
+    adapter.findMetadataCandidates(TEST_DEVICE, createSpec()),
+  ).toHaveLength(1);
+});
+
+test('rejects duplicate endpoint constructors and adapter types', () => {
   class SpecializedLightEndpoint extends LightEndpoint {}
 
-  const firstAdapter = createTestAdapter('light', [ON_MATCHER]);
-  const secondAdapter = createTestAdapter(
-    'light',
-    [ON_MATCHER],
+  const first = createAdapter('first', [{services: [ON_MATCHER]}]);
+  const sameEndpoint = createAdapter('second', [{services: [ON_MATCHER]}]);
+  const sameType = createAdapter(
+    'first',
+    [{services: [ON_MATCHER]}],
     SpecializedLightEndpoint,
   );
 
-  expect(
-    () => new MiotEndpointAdapterRegistry([firstAdapter, secondAdapter]),
-  ).toThrow('Duplicate MIoT endpoint adapter: light.');
+  expect(() => new MiotEndpointAdapterRegistry([first, sameEndpoint])).toThrow(
+    'Duplicate MIoT endpoint adapter Endpoint.',
+  );
+  expect(() => new MiotEndpointAdapterRegistry([first, sameType])).toThrow(
+    'Duplicate MIoT endpoint adapter: first.',
+  );
 });
 
-test('looks up adapters by exact endpoint constructor', () => {
-  class SpecializedLightEndpoint extends LightEndpoint {}
+function createProfileAdapter(): MiotEndpointAdapter {
+  return createAdapter('test-profile', TEST_PROFILES);
+}
 
-  const adapter = createTestAdapter('light', [ON_MATCHER]);
-  const registry = new MiotEndpointAdapterRegistry([adapter]);
-
-  expect(registry.get(new LightEndpoint())).toBe(adapter);
-  expect(registry.get(new SpecializedLightEndpoint())).toBeUndefined();
-});
-
-test('validates value-list metadata independent of entry order', () => {
-  const metadata = createModeMetadata([
-    {value: 1, description: 'Natural Wind'},
-    {value: 0, description: 'Straight Wind'},
-  ]);
-
-  expect(
-    getValidatedMiotEndpointProperties('fan', metadata, [MODE_MATCHER]),
-  ).toMatchObject({mode: {iid: 3}});
-});
-
-test('rejects value-list metadata with a changed description', () => {
-  const metadata = createModeMetadata([
-    {value: 0, description: 'Straight Wind'},
-    {value: 1, description: 'Changed'},
-  ]);
-
-  expect(() =>
-    getValidatedMiotEndpointProperties('fan', metadata, [MODE_MATCHER]),
-  ).toThrow('Invalid MIoT fan endpoint metadata.');
-});
-
-test('rejects value-list metadata with duplicate raw values', () => {
-  const metadata = createModeMetadata([
-    {value: 0, description: 'Straight Wind'},
-    {value: 0, description: 'Natural Wind'},
-  ]);
-
-  expect(() =>
-    getValidatedMiotEndpointProperties('fan', metadata, [MODE_MATCHER]),
-  ).toThrow('Invalid MIoT fan endpoint metadata.');
-});
-
-function createTestAdapter(
+function createAdapter(
   type: string,
-  endpointMatchers: readonly MiotEndpointMatcher[],
+  endpointProfiles: readonly MiotEndpointProfile[],
   Endpoint: new (
     name?: string,
   ) => LightEndpoint<LightEndpointConnection> = LightEndpoint,
 ): MiotEndpointAdapter {
+  class TestConnection extends TestLightEndpointConnection {
+    static override assertMetadata(
+      metadata: MiotEndpointConnectionMetadata,
+    ): void {
+      getValidatedMiotEndpointResources(type, metadata, endpointProfiles);
+    }
+  }
+
   return defineMiotEndpointAdapter<
     LightEndpointCommand,
     LightEndpointConnection
   >({
     type,
     Endpoint,
-    Connection: TestLightEndpointConnection,
-    endpointMatchers,
+    Connection: TestConnection,
+    endpointProfiles,
   });
 }
 
-function createTestProfileAdapter(): MiotEndpointAdapter {
-  return defineMiotEndpointAdapter<
-    LightEndpointCommand,
-    LightEndpointConnection
-  >({
-    type: 'test-profile',
-    Endpoint: LightEndpoint,
-    Connection: TestProfileLightEndpointConnection,
-    endpointProfiles: TEST_PROFILES,
-  });
+function requireCandidate(
+  adapter: MiotEndpointAdapter,
+  spec: MiotSpecInstance,
+): NonNullable<
+  ReturnType<MiotEndpointAdapter['findMetadataCandidates']>[number]
+> {
+  const candidate = adapter.findMetadataCandidates(TEST_DEVICE, spec).at(0);
+
+  if (candidate === undefined) {
+    throw new Error('Test adapter returned no metadata candidate.');
+  }
+
+  return candidate;
 }
 
 class TestLightEndpointConnection
@@ -362,46 +415,32 @@ class TestLightEndpointConnection
   }
 }
 
-class TestProfileLightEndpointConnection extends TestLightEndpointConnection {
-  static override assertMetadata(
-    metadata: MiotEndpointConnectionMetadata,
-  ): void {
-    getValidatedMiotEndpointResources('test-profile', metadata, TEST_PROFILES);
-  }
-}
-
 const TEST_DEVICE = {did: 'physical', model: 'test.light'};
 
-const TEST_SPEC: MiotSpecInstance = {
-  type: 'urn:miot-spec-v2:device:light:0000A001:test-light:1',
-  description: 'Test light',
-  services: [
-    {
-      iid: 2,
-      type: 'urn:miot-spec-v2:service:light:00007802:test-light:1',
-      description: 'Light',
-      properties: [
-        {
-          iid: 1,
-          type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
-          description: 'Switch Status',
-          format: 'bool',
-          access: ['read', 'write', 'notify'],
-        },
-      ],
-    },
-  ],
-};
+function createSpec(type = DEVICE_TYPE): MiotSpecInstance {
+  return {
+    type,
+    description: 'Test light',
+    services: [createLightService(2), createEnvironmentService(4)],
+  };
+}
 
-const TEST_SPEC_WITH_MODE: MiotSpecInstance = {
-  ...TEST_SPEC,
-  services: TEST_SPEC.services.map(service => ({
-    ...service,
+function createLightService(iid: number): MiotSpecService {
+  return {
+    iid,
+    type: `${LIGHT_SERVICE_TYPE}:test-light:1`,
+    description: `Light ${iid}`,
     properties: [
-      ...(service.properties ?? []),
+      {
+        iid: 1,
+        type: `${ON_PROPERTY_TYPE}:test-light:1`,
+        description: 'Switch Status',
+        format: 'bool',
+        access: ['read', 'write', 'notify'],
+      },
       {
         iid: 2,
-        type: 'urn:miot-spec-v2:property:mode:00000008:test-light:1',
+        type: `${MODE_PROPERTY_TYPE}:test-light:1`,
         description: 'Mode',
         format: 'uint8',
         access: ['read', 'write', 'notify'],
@@ -411,69 +450,55 @@ const TEST_SPEC_WITH_MODE: MiotSpecInstance = {
         ],
       },
     ],
-  })),
-};
-
-const TEST_SPEC_WITH_MODE_AND_ENVIRONMENT: MiotSpecInstance = {
-  ...TEST_SPEC_WITH_MODE,
-  services: [
-    ...TEST_SPEC_WITH_MODE.services,
-    {
-      iid: 3,
-      type: 'urn:miot-spec-v2:service:environment:0000780A:test-light:1',
-      description: 'Environment',
-      properties: [
-        {
-          iid: 1,
-          type: 'urn:miot-spec-v2:property:temperature:00000020:test-light:1',
-          description: 'Temperature',
-          format: 'float',
-          access: ['read', 'notify'],
-          unit: 'celsius',
-          'value-range': [-30, 100, 0.1],
-        },
-      ],
-    },
-  ],
-};
-
-function createModeMetadata(
-  metadataValueList: readonly {
-    readonly value: number;
-    readonly description: string;
-  }[],
-): MiotEndpointConnectionMetadata {
-  const serviceProperty = {
-    iid: 3,
-    type: 'urn:miot-spec-v2:property:mode:00000008:test-fan:1',
-    description: 'Mode',
-    format: 'uint8',
-    access: ['read', 'write', 'notify'],
-    'value-list': [
-      {value: 0, description: 'Straight Wind'},
-      {value: 1, description: 'Natural Wind'},
-    ],
   };
+}
 
-  return MiotEndpointConnectionMetadata.satisfies({
-    device: {
-      did: 'physical',
-      model: 'test.fan',
-      urn: 'urn:miot-spec-v2:device:fan:0000A005:test-fan:1',
-    },
-    resources: [
+function createEnvironmentService(iid: number): MiotSpecService {
+  return {
+    iid,
+    type: `${ENVIRONMENT_SERVICE_TYPE}:test-light:1`,
+    description: `Environment ${iid}`,
+    properties: [
       {
-        service: {
-          iid: 2,
-          type: 'urn:miot-spec-v2:service:fan:00007808:test-fan:1',
-          description: 'Fan',
-          properties: [serviceProperty],
-        },
-        properties: {
-          mode: {...serviceProperty, 'value-list': [...metadataValueList]},
-        },
-        exclusive: true,
+        iid: 1,
+        type: `${TEMPERATURE_PROPERTY_TYPE}:test-light:1`,
+        description: 'Temperature',
+        format: 'float',
+        access: ['read', 'notify'],
+        unit: 'celsius',
+        'value-range': [-30, 100, 0.1],
       },
     ],
+  };
+}
+
+function reversePropertyCollections(
+  property: MiotSpecProperty,
+): MiotSpecProperty {
+  return {
+    ...property,
+    access: [...property.access].reverse(),
+    'value-list': property['value-list']?.toReversed(),
+  };
+}
+
+function mapMetadataProperties(
+  metadata: MiotEndpointConnectionMetadata,
+  callback: (property: MiotSpecProperty) => MiotSpecProperty,
+): MiotEndpointConnectionMetadata {
+  return MiotEndpointConnectionMetadata.satisfies({
+    ...metadata,
+    resources: metadata.resources.map(resource => ({
+      service: {
+        ...resource.service,
+        properties: resource.service.properties?.map(callback),
+      },
+      properties: Object.fromEntries(
+        Object.entries(resource.properties).map(([alias, property]) => [
+          alias,
+          callback(property),
+        ]),
+      ),
+    })),
   });
 }

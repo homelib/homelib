@@ -336,6 +336,9 @@ function Startup({model}: StartupProps): React.JSX.Element {
               deviceName: page.deviceName,
             });
           }}
+          onComplete={() => {
+            setPage({type: 'binding-scope', scopePath: page.scopePath});
+          }}
           onBind={async requests => {
             await mutateBindingFile(currentBindingFile => {
               return applyProviderBindingRequests(

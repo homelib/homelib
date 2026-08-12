@@ -7,9 +7,10 @@ import {
 import type {BackendDevice} from './backend/index.js';
 import type {MiotProviderConfiguration} from './configuration.js';
 import {getMiotEndpointAdapter} from './devices/index.js';
+import {miotEndpointConnectionMetadataEqual} from './endpoint-adapter.js';
 import {
   MiotEndpointConnectionMetadata,
-  getMiotEndpointConnectionResourceKey,
+  getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
 import {MiotSpecClient, type MiotSpecInstance} from './miot/index.js';
 
@@ -95,19 +96,18 @@ export type MiotBindingDeviceCandidate = {
 
 export type MiotBindingEndpointCandidate = {
   readonly endpoint: ProviderBindingEndpoint;
-  readonly services: readonly MiotBindingServiceCandidate[];
+  readonly matches: readonly MiotBindingMatchCandidate[];
 };
 
-export type MiotBindingServiceCandidate = {
+export type MiotBindingMatchCandidate = {
   readonly key: string;
-  readonly resourceKey: string;
+  readonly resourceKeys: readonly string[];
   readonly label: string;
   readonly metadata: MiotEndpointConnectionMetadata;
 };
 
 export type MiotBindingEndpointDraft =
-  | {readonly type: 'service'; readonly serviceKey: string}
-  | {readonly type: 'skip'};
+  {readonly type: 'match'; readonly matchKey: string} | {readonly type: 'skip'};
 
 export type MiotBindingDeviceDraft = Readonly<
   Record<string, MiotBindingEndpointDraft | undefined>
@@ -129,7 +129,7 @@ export type MiotBindingEndpointProposal =
   | {
       readonly status: 'ambiguous' | 'unavailable';
       readonly endpoint: MiotBindingEndpointCandidate;
-      readonly services: readonly MiotBindingServiceCandidate[];
+      readonly matches: readonly MiotBindingMatchCandidate[];
     }
   | {
       readonly status: 'missing' | 'skipped';
@@ -139,7 +139,7 @@ export type MiotBindingEndpointProposal =
 export type MiotBindingResolvedEndpointProposal = {
   readonly status: 'automatic' | 'manual' | 'existing';
   readonly endpoint: MiotBindingEndpointCandidate;
-  readonly service: MiotBindingServiceCandidate;
+  readonly match: MiotBindingMatchCandidate;
 };
 
 export type MiotBindingProposalBinding = {
@@ -158,17 +158,17 @@ export function resolveMiotBindingDeviceProposal(
       binding,
     ]),
   );
-  const existingServiceMap = new Map<string, MiotBindingServiceCandidate>();
+  const existingMatchMap = new Map<string, MiotBindingMatchCandidate>();
 
   for (const endpoint of device.endpoints) {
     const endpointPathKey = getEndpointPathKey(endpoint.endpoint.path);
-    const existingService = findExistingService(
+    const existingMatch = findExistingMatch(
       endpoint,
       providerBindingMap.get(endpointPathKey)?.metadata,
     );
 
-    if (existingService !== undefined) {
-      existingServiceMap.set(endpointPathKey, existingService);
+    if (existingMatch !== undefined) {
+      existingMatchMap.set(endpointPathKey, existingMatch);
     }
   }
 
@@ -184,10 +184,40 @@ export function resolveMiotBindingDeviceProposal(
     }
 
     const endpointPathKey = getEndpointPathKey(binding.endpoint);
-    const resourceKey = getMiotEndpointConnectionResourceKey(metadata);
-
-    occupiedResourceMap.set(resourceKey, endpointPathKey);
+    for (const resourceKey of getMiotEndpointConnectionResourceKeys(metadata)) {
+      occupiedResourceMap.set(resourceKey, endpointPathKey);
+    }
   }
+
+  const draftMatchMap = new Map<string, MiotBindingMatchCandidate>();
+
+  for (const endpoint of device.endpoints) {
+    const endpointPathKey = getEndpointPathKey(endpoint.endpoint.path);
+    const endpointDraft = draft[endpointPathKey];
+
+    if (endpointDraft?.type !== 'match') {
+      continue;
+    }
+
+    const match = endpoint.matches.find(
+      item => item.key === endpointDraft.matchKey,
+    );
+
+    if (match !== undefined) {
+      draftMatchMap.set(endpointPathKey, match);
+    }
+  }
+
+  const viableDraftEndpointPathKeySet = findViableDraftEndpoints(
+    draftMatchMap,
+    occupiedResourceMap,
+  );
+  const activeOccupiedResourceMap = new Map(
+    [...occupiedResourceMap].filter(
+      ([_resourceKey, ownerEndpointPathKey]) =>
+        !viableDraftEndpointPathKeySet.has(ownerEndpointPathKey),
+    ),
+  );
 
   const endpointProposalMap = new Map<string, MiotBindingEndpointProposal>();
   const reservedResourceKeySet = new Set<string>();
@@ -196,11 +226,11 @@ export function resolveMiotBindingDeviceProposal(
   for (const endpoint of device.endpoints) {
     const endpointPathKey = getEndpointPathKey(endpoint.endpoint.path);
     const endpointDraft = draft[endpointPathKey];
-    const existingService = existingServiceMap.get(endpointPathKey);
+    const existingMatch = existingMatchMap.get(endpointPathKey);
 
     if (endpointDraft?.type === 'skip') {
-      if (existingService !== undefined) {
-        reservedResourceKeySet.add(existingService.resourceKey);
+      if (existingMatch !== undefined) {
+        reserveResourceKeys(reservedResourceKeySet, existingMatch.resourceKeys);
       }
 
       endpointProposalMap.set(endpointPathKey, {
@@ -210,48 +240,47 @@ export function resolveMiotBindingDeviceProposal(
       continue;
     }
 
-    if (endpointDraft?.type === 'service') {
-      const service = endpoint.services.find(
-        item => item.key === endpointDraft.serviceKey,
-      );
+    if (endpointDraft?.type === 'match') {
+      const match = draftMatchMap.get(endpointPathKey);
 
       if (
-        service === undefined ||
-        isResourceUnavailable(
-          service.resourceKey,
+        match === undefined ||
+        !viableDraftEndpointPathKeySet.has(endpointPathKey) ||
+        areResourcesUnavailable(
+          match.resourceKeys,
           endpointPathKey,
-          occupiedResourceMap,
+          activeOccupiedResourceMap,
           reservedResourceKeySet,
         )
       ) {
         endpointProposalMap.set(endpointPathKey, {
           status: 'unavailable',
           endpoint,
-          services: getAvailableServices(
+          matches: getAvailableMatches(
             endpoint,
             endpointPathKey,
-            occupiedResourceMap,
+            activeOccupiedResourceMap,
             reservedResourceKeySet,
           ),
         });
       } else {
-        reservedResourceKeySet.add(service.resourceKey);
+        reserveResourceKeys(reservedResourceKeySet, match.resourceKeys);
         endpointProposalMap.set(endpointPathKey, {
           status: 'manual',
           endpoint,
-          service,
+          match,
         });
       }
 
       continue;
     }
 
-    if (existingService !== undefined) {
-      reservedResourceKeySet.add(existingService.resourceKey);
+    if (existingMatch !== undefined) {
+      reserveResourceKeys(reservedResourceKeySet, existingMatch.resourceKeys);
       endpointProposalMap.set(endpointPathKey, {
         status: 'existing',
         endpoint,
-        service: existingService,
+        match: existingMatch,
       });
       continue;
     }
@@ -259,63 +288,63 @@ export function resolveMiotBindingDeviceProposal(
     unresolvedEndpoints.push(endpoint);
   }
 
-  const availableServiceMap = new Map<
+  const availableMatchMap = new Map<
     string,
-    readonly MiotBindingServiceCandidate[]
+    readonly MiotBindingMatchCandidate[]
   >();
 
   for (const endpoint of unresolvedEndpoints) {
     const endpointPathKey = getEndpointPathKey(endpoint.endpoint.path);
 
-    availableServiceMap.set(
+    availableMatchMap.set(
       endpointPathKey,
-      getAvailableServices(
+      getAvailableMatches(
         endpoint,
         endpointPathKey,
-        occupiedResourceMap,
+        activeOccupiedResourceMap,
         reservedResourceKeySet,
       ),
     );
   }
 
-  const maximumMatching = findMaximumServiceMatching(
+  const maximumMatching = findMaximumMatchPacking(
     unresolvedEndpoints,
-    availableServiceMap,
+    availableMatchMap,
   );
 
   for (const endpoint of unresolvedEndpoints) {
     const endpointPathKey = getEndpointPathKey(endpoint.endpoint.path);
-    const availableServices = availableServiceMap.get(endpointPathKey) ?? [];
-    const matchedService = maximumMatching.get(endpointPathKey);
+    const availableMatches = availableMatchMap.get(endpointPathKey) ?? [];
+    const matchedMatch = maximumMatching.get(endpointPathKey);
 
-    if (endpoint.services.length === 0) {
+    if (endpoint.matches.length === 0) {
       endpointProposalMap.set(endpointPathKey, {status: 'missing', endpoint});
-    } else if (availableServices.length === 0) {
+    } else if (availableMatches.length === 0) {
       endpointProposalMap.set(endpointPathKey, {
         status: 'unavailable',
         endpoint,
-        services: [],
+        matches: [],
       });
     } else if (
-      matchedService !== undefined &&
-      isForcedServiceMatch(
+      matchedMatch !== undefined &&
+      isForcedMatch(
         unresolvedEndpoints,
-        availableServiceMap,
+        availableMatchMap,
         maximumMatching.size,
         endpointPathKey,
-        matchedService.resourceKey,
+        matchedMatch.key,
       )
     ) {
       endpointProposalMap.set(endpointPathKey, {
         status: 'automatic',
         endpoint,
-        service: matchedService,
+        match: matchedMatch,
       });
     } else {
       endpointProposalMap.set(endpointPathKey, {
         status: 'ambiguous',
         endpoint,
-        services: availableServices,
+        matches: availableMatches,
       });
     }
   }
@@ -337,7 +366,7 @@ export function resolveMiotBindingDeviceProposal(
     return [
       {
         endpoint: proposal.endpoint.endpoint.path,
-        metadata: proposal.service.metadata,
+        metadata: proposal.match.metadata,
       },
     ];
   });
@@ -356,10 +385,10 @@ function createBindingDeviceCandidate(
 ): MiotBindingDeviceCandidate | undefined {
   const endpointCandidates = endpoints.map(endpoint => ({
     endpoint,
-    services: createBindingServiceCandidates(device, spec, endpoint),
+    matches: createBindingMatchCandidates(device, spec, endpoint),
   }));
 
-  if (endpointCandidates.every(endpoint => endpoint.services.length === 0)) {
+  if (endpointCandidates.every(endpoint => endpoint.matches.length === 0)) {
     return undefined;
   }
 
@@ -370,11 +399,11 @@ function createBindingDeviceCandidate(
   };
 }
 
-function createBindingServiceCandidates(
+function createBindingMatchCandidates(
   device: BackendDevice & {readonly model: string},
   spec: MiotSpecInstance,
   endpoint: ProviderBindingEndpoint,
-): readonly MiotBindingServiceCandidate[] {
+): readonly MiotBindingMatchCandidate[] {
   const endpointAdapter = getMiotEndpointAdapter(endpoint.endpoint);
 
   if (endpointAdapter === undefined) {
@@ -385,16 +414,16 @@ function createBindingServiceCandidates(
     .findMetadataCandidates(device, spec)
     .map(({key, label, metadata}) => ({
       key,
-      resourceKey: getMiotEndpointConnectionResourceKey(metadata),
+      resourceKeys: getMiotEndpointConnectionResourceKeys(metadata),
       label,
       metadata,
     }));
 }
 
-function findExistingService(
+function findExistingMatch(
   endpoint: MiotBindingEndpointCandidate,
   metadataValue: unknown,
-): MiotBindingServiceCandidate | undefined {
+): MiotBindingMatchCandidate | undefined {
   if (metadataValue === undefined) {
     return undefined;
   }
@@ -408,28 +437,26 @@ function findExistingService(
     }
 
     endpointAdapter.assertMetadata(metadata);
-    const resourceKey = getMiotEndpointConnectionResourceKey(metadata);
-
-    return endpoint.services.find(
-      service => service.resourceKey === resourceKey,
+    return endpoint.matches.find(match =>
+      miotEndpointConnectionMetadataEqual(match.metadata, metadata),
     );
   } catch {
     return undefined;
   }
 }
 
-function getAvailableServices(
+function getAvailableMatches(
   endpoint: MiotBindingEndpointCandidate,
   endpointPathKey: string,
   occupiedResourceMap: ReadonlyMap<string, string>,
   reservedResourceKeySet: ReadonlySet<string>,
-): readonly MiotBindingServiceCandidate[] {
-  const serviceMap = new Map<string, MiotBindingServiceCandidate>();
+): readonly MiotBindingMatchCandidate[] {
+  const matchMap = new Map<string, MiotBindingMatchCandidate>();
 
-  for (const service of endpoint.services) {
+  for (const match of endpoint.matches) {
     if (
-      isResourceUnavailable(
-        service.resourceKey,
+      areResourcesUnavailable(
+        match.resourceKeys,
         endpointPathKey,
         occupiedResourceMap,
         reservedResourceKeySet,
@@ -438,101 +465,178 @@ function getAvailableServices(
       continue;
     }
 
-    serviceMap.set(service.resourceKey, service);
+    matchMap.set(match.key, match);
   }
 
-  return [...serviceMap.values()];
+  return [...matchMap.values()];
 }
 
-function isResourceUnavailable(
-  resourceKey: string,
+function findViableDraftEndpoints(
+  draftMatchMap: ReadonlyMap<string, MiotBindingMatchCandidate>,
+  occupiedResourceMap: ReadonlyMap<string, string>,
+): ReadonlySet<string> {
+  const viableEndpointPathKeySet = new Set(draftMatchMap.keys());
+
+  while (true) {
+    const invalidEndpointPathKeySet = new Set<string>();
+    const draftResourceOwnerMap = new Map<string, string>();
+
+    for (const endpointPathKey of viableEndpointPathKeySet) {
+      const match = draftMatchMap.get(endpointPathKey);
+
+      if (match === undefined) {
+        throw new TypeError('Missing MIoT binding draft match.');
+      }
+
+      for (const resourceKey of match.resourceKeys) {
+        const currentOwnerEndpointPathKey =
+          occupiedResourceMap.get(resourceKey);
+
+        if (
+          currentOwnerEndpointPathKey !== undefined &&
+          currentOwnerEndpointPathKey !== endpointPathKey &&
+          !viableEndpointPathKeySet.has(currentOwnerEndpointPathKey)
+        ) {
+          invalidEndpointPathKeySet.add(endpointPathKey);
+        }
+
+        const draftOwnerEndpointPathKey =
+          draftResourceOwnerMap.get(resourceKey);
+
+        if (
+          draftOwnerEndpointPathKey !== undefined &&
+          draftOwnerEndpointPathKey !== endpointPathKey
+        ) {
+          invalidEndpointPathKeySet.add(endpointPathKey);
+          invalidEndpointPathKeySet.add(draftOwnerEndpointPathKey);
+        } else {
+          draftResourceOwnerMap.set(resourceKey, endpointPathKey);
+        }
+      }
+    }
+
+    if (invalidEndpointPathKeySet.size === 0) {
+      return viableEndpointPathKeySet;
+    }
+
+    for (const endpointPathKey of invalidEndpointPathKeySet) {
+      viableEndpointPathKeySet.delete(endpointPathKey);
+    }
+  }
+}
+
+function areResourcesUnavailable(
+  resourceKeys: readonly string[],
   endpointPathKey: string,
   occupiedResourceMap: ReadonlyMap<string, string>,
   reservedResourceKeySet: ReadonlySet<string>,
 ): boolean {
-  const ownerEndpointPathKey = occupiedResourceMap.get(resourceKey);
+  return resourceKeys.some(resourceKey => {
+    const ownerEndpointPathKey = occupiedResourceMap.get(resourceKey);
 
-  return (
-    reservedResourceKeySet.has(resourceKey) ||
-    (ownerEndpointPathKey !== undefined &&
-      ownerEndpointPathKey !== endpointPathKey)
-  );
+    return (
+      reservedResourceKeySet.has(resourceKey) ||
+      (ownerEndpointPathKey !== undefined &&
+        ownerEndpointPathKey !== endpointPathKey)
+    );
+  });
 }
 
-function findMaximumServiceMatching(
+function findMaximumMatchPacking(
   endpoints: readonly MiotBindingEndpointCandidate[],
-  availableServiceMap: ReadonlyMap<
-    string,
-    readonly MiotBindingServiceCandidate[]
-  >,
+  availableMatchMap: ReadonlyMap<string, readonly MiotBindingMatchCandidate[]>,
   excludedEdge?: {
     readonly endpointPathKey: string;
-    readonly resourceKey: string;
+    readonly matchKey: string;
   },
-): ReadonlyMap<string, MiotBindingServiceCandidate> {
-  const resourceOwnerMap = new Map<string, string>();
-  const endpointServiceMap = new Map<string, MiotBindingServiceCandidate>();
+): ReadonlyMap<string, MiotBindingMatchCandidate> {
+  const orderedEndpoints = [...endpoints].sort((left, right) => {
+    return (
+      getMatches(left).length - getMatches(right).length ||
+      compareStrings(
+        getEndpointPathKey(left.endpoint.path),
+        getEndpointPathKey(right.endpoint.path),
+      )
+    );
+  });
+  const resourceKeySet = new Set<string>();
+  const matching = new Map<string, MiotBindingMatchCandidate>();
+  let maximumMatching = new Map<string, MiotBindingMatchCandidate>();
 
-  const assignEndpoint = (
-    endpointPathKey: string,
-    visitedResourceKeySet: Set<string>,
-  ): boolean => {
-    const services = availableServiceMap.get(endpointPathKey) ?? [];
+  search(0);
 
-    for (const service of services) {
-      if (
-        (excludedEdge?.endpointPathKey === endpointPathKey &&
-          excludedEdge.resourceKey === service.resourceKey) ||
-        visitedResourceKeySet.has(service.resourceKey)
-      ) {
-        continue;
-      }
+  return maximumMatching;
 
-      visitedResourceKeySet.add(service.resourceKey);
-      const currentOwner = resourceOwnerMap.get(service.resourceKey);
-
-      if (
-        currentOwner !== undefined &&
-        !assignEndpoint(currentOwner, visitedResourceKeySet)
-      ) {
-        continue;
-      }
-
-      resourceOwnerMap.set(service.resourceKey, endpointPathKey);
-      endpointServiceMap.set(endpointPathKey, service);
-
-      return true;
+  function search(index: number): void {
+    if (
+      matching.size + orderedEndpoints.length - index <=
+      maximumMatching.size
+    ) {
+      return;
     }
 
-    return false;
-  };
+    const endpoint = orderedEndpoints.at(index);
 
-  for (const endpoint of endpoints) {
-    assignEndpoint(
-      getEndpointPathKey(endpoint.endpoint.path),
-      new Set<string>(),
-    );
+    if (endpoint === undefined) {
+      maximumMatching = new Map(matching);
+      return;
+    }
+
+    const endpointPathKey = getEndpointPathKey(endpoint.endpoint.path);
+
+    for (const match of getMatches(endpoint)) {
+      if (
+        (excludedEdge?.endpointPathKey === endpointPathKey &&
+          excludedEdge.matchKey === match.key) ||
+        match.resourceKeys.some(resourceKey => resourceKeySet.has(resourceKey))
+      ) {
+        continue;
+      }
+
+      matching.set(endpointPathKey, match);
+      reserveResourceKeys(resourceKeySet, match.resourceKeys);
+      search(index + 1);
+      matching.delete(endpointPathKey);
+
+      for (const resourceKey of match.resourceKeys) {
+        resourceKeySet.delete(resourceKey);
+      }
+    }
+
+    search(index + 1);
   }
 
-  return endpointServiceMap;
+  function getMatches(
+    endpoint: MiotBindingEndpointCandidate,
+  ): readonly MiotBindingMatchCandidate[] {
+    return (
+      availableMatchMap.get(getEndpointPathKey(endpoint.endpoint.path)) ?? []
+    );
+  }
 }
 
-function isForcedServiceMatch(
+function isForcedMatch(
   endpoints: readonly MiotBindingEndpointCandidate[],
-  availableServiceMap: ReadonlyMap<
-    string,
-    readonly MiotBindingServiceCandidate[]
-  >,
+  availableMatchMap: ReadonlyMap<string, readonly MiotBindingMatchCandidate[]>,
   maximumMatchingSize: number,
   endpointPathKey: string,
-  resourceKey: string,
+  matchKey: string,
 ): boolean {
   return (
-    findMaximumServiceMatching(endpoints, availableServiceMap, {
+    findMaximumMatchPacking(endpoints, availableMatchMap, {
       endpointPathKey,
-      resourceKey,
+      matchKey,
     }).size < maximumMatchingSize
   );
+}
+
+function reserveResourceKeys(
+  resourceKeySet: Set<string>,
+  resourceKeys: readonly string[],
+): void {
+  for (const resourceKey of resourceKeys) {
+    resourceKeySet.add(resourceKey);
+  }
 }
 
 function getDeviceMatchScore(
@@ -615,4 +719,14 @@ async function loadSpecInstances(
   );
 
   return specMap;
+}
+
+function compareStrings(left: string, right: string): number {
+  if (left < right) {
+    return -1;
+  } else if (left > right) {
+    return 1;
+  }
+
+  return 0;
 }

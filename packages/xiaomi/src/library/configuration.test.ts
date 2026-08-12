@@ -105,13 +105,67 @@ test('loads missing configuration as all homes and strips dependency extras', as
   expect(JSON.stringify(discovery)).not.toContain('must-not-leak');
 });
 
-test('returns undefined when authorization is missing', async () => {
+test('fetches the complete provider discovery once and reapplies home filters locally', async () => {
+  let discoveryCount = 0;
   const configuration = createConfiguration({
-    discoverDevices: () => Promise.resolve(undefined),
+    discoverDevices: () => {
+      discoveryCount++;
+      return Promise.resolve(TEST_DISCOVERY);
+    },
+  });
+
+  const [snapshot, initialDiscovery] = await Promise.all([
+    configuration.load(),
+    configuration.discoverDevices(),
+  ]);
+
+  expect(snapshot).toBeDefined();
+  expect(initialDiscovery?.devices).toHaveLength(TEST_DISCOVERY.devices.length);
+  expect(discoveryCount).toBe(1);
+
+  await configuration.saveIncludedHomes(TEST_ACCOUNT, [
+    {source: 'owned', id: 'home-1'},
+  ]);
+  const filteredDiscovery = requireDefined(
+    await configuration.discoverDevices(),
+  );
+
+  expect(filteredDiscovery.devices.map(device => device.did)).toEqual([
+    'device-1',
+  ]);
+  expect(discoveryCount).toBe(1);
+});
+
+test('returns undefined when authorization is missing', async () => {
+  let discoveryCount = 0;
+  const configuration = createConfiguration({
+    discoverDevices: () => {
+      discoveryCount++;
+      return Promise.resolve(undefined);
+    },
     beginAuthorization: unexpectedAuthorization,
   });
   await expect(configuration.load()).resolves.toBeUndefined();
   await expect(configuration.discoverDevices()).resolves.toBeUndefined();
+  expect(discoveryCount).toBe(2);
+});
+
+test('retries complete provider discovery after a failure', async () => {
+  let discoveryCount = 0;
+  const configuration = createConfiguration({
+    discoverDevices: () => {
+      discoveryCount++;
+      return discoveryCount === 1
+        ? Promise.reject(new Error('Temporary discovery failure.'))
+        : Promise.resolve(TEST_DISCOVERY);
+    },
+  });
+
+  await expect(configuration.load()).rejects.toThrow(
+    'Temporary discovery failure.',
+  );
+  await expect(configuration.discoverDevices()).resolves.toBeDefined();
+  expect(discoveryCount).toBe(2);
 });
 
 test('persists an explicit empty selection atomically', async () => {

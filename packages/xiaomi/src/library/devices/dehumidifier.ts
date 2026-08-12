@@ -15,13 +15,13 @@ import * as x from 'x-value';
 import {
   type MiotEndpointProfile,
   defineMiotEndpointAdapter,
-  getValidatedMiotEndpointResources,
+  getValidatedMiotEndpointProperties,
 } from '../endpoint-adapter.js';
 import {
   MiotEndpointConnection,
   type MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionTransports,
-  getPrimaryMiotEndpointConnectionResource,
+  getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
 import {
   type MiotEndpointMatcher,
@@ -37,7 +37,6 @@ import type {MiotProvider} from '../provider.js';
 const MiotDehumidifierOn = x.boolean;
 
 const MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER: MiotDehumidifierEndpointMatcher = {
-  device: 'urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:1',
   service: 'urn:miot-spec-v2:service:dehumidifier:00007841',
   properties: {
     on: {
@@ -76,7 +75,6 @@ const MIOT_DEHUMIDIFIER_FALLBACK_ENDPOINT_MATCHER: MiotDehumidifierEndpointMatch
   };
 
 const MIOT_DEHUMIDIFIER_ENVIRONMENT_MATCHER: MiotEnvironmentEndpointMatcher = {
-  device: 'urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:1',
   service: 'urn:miot-spec-v2:service:environment:0000780A',
   properties: {
     temperature: {
@@ -98,15 +96,13 @@ const MIOT_DEHUMIDIFIER_ENVIRONMENT_MATCHER: MiotEnvironmentEndpointMatcher = {
 
 const MIOT_DEHUMIDIFIER_ENDPOINT_PROFILES = [
   {
-    primary: MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER,
-    supplements: [
-      {
-        matcher: MIOT_DEHUMIDIFIER_ENVIRONMENT_MATCHER,
-        required: true,
-      },
+    device: 'urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:1',
+    services: [
+      MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER,
+      MIOT_DEHUMIDIFIER_ENVIRONMENT_MATCHER,
     ],
   },
-  {primary: MIOT_DEHUMIDIFIER_FALLBACK_ENDPOINT_MATCHER},
+  {services: [MIOT_DEHUMIDIFIER_FALLBACK_ENDPOINT_MATCHER]},
 ] as const satisfies readonly MiotEndpointProfile[];
 
 export class MiotDehumidifierEndpointConnection
@@ -248,14 +244,17 @@ export const miotDehumidifierEndpointAdapter = defineMiotEndpointAdapter<
   endpointProfiles: MiotDehumidifierEndpointConnection.endpointProfiles,
 });
 
-type MiotDehumidifierEndpointMatcher = MiotEndpointMatcher<
-  {
-    readonly on: MiotPropertyMatcher;
-  },
-  {
-    readonly mode: MiotPropertyMatcher;
-    readonly targetHumidity: MiotPropertyMatcher;
-  }
+type MiotDehumidifierEndpointMatcher = Omit<
+  MiotEndpointMatcher<
+    {
+      readonly on: MiotPropertyMatcher;
+    },
+    {
+      readonly mode: MiotPropertyMatcher;
+      readonly targetHumidity: MiotPropertyMatcher;
+    }
+  >,
+  'device'
 >;
 
 type MiotDehumidifierEndpointProperties = {
@@ -266,23 +265,21 @@ type MiotDehumidifierEndpointProperties = {
   readonly humidity?: MiotSpecProperty;
 };
 
-type MiotEnvironmentEndpointMatcher = MiotEndpointMatcher<{
-  readonly temperature: MiotPropertyMatcher;
-  readonly humidity: MiotPropertyMatcher;
-}>;
+type MiotEnvironmentEndpointMatcher = Omit<
+  MiotEndpointMatcher<{
+    readonly temperature: MiotPropertyMatcher;
+    readonly humidity: MiotPropertyMatcher;
+  }>,
+  'device'
+>;
 
 function getMiotDehumidifierProperties(
   metadata: MiotEndpointConnectionMetadata,
 ): MiotDehumidifierEndpointProperties {
-  const resources = getValidatedMiotEndpointResources(
+  return getValidatedMiotEndpointProperties(
     'dehumidifier',
     metadata,
     MIOT_DEHUMIDIFIER_ENDPOINT_PROFILES,
-  );
-
-  return Object.assign(
-    {},
-    ...resources.map(resource => resource.properties),
   ) as MiotDehumidifierEndpointProperties;
 }
 
@@ -292,7 +289,7 @@ function createMiotDehumidifierRequest(
   properties: MiotDehumidifierEndpointProperties,
 ): MiotExecutionRequest {
   if (command instanceof SetDehumidifierOnCommand) {
-    return createSetPropertyRequest(metadata, properties.on, command.value);
+    return createSetPropertyRequest(metadata, 'on', command.value);
   } else if (command instanceof SetDehumidifierModeCommand) {
     const property = properties.mode;
 
@@ -302,7 +299,7 @@ function createMiotDehumidifierRequest(
 
     return createSetPropertyRequest(
       metadata,
-      property,
+      'mode',
       getMiotDehumidifierMode(command.value),
     );
   } else if (command instanceof SetDehumidifierTargetHumidityCommand) {
@@ -326,7 +323,7 @@ function createMiotDehumidifierRequest(
 
     return createSetPropertyRequest(
       metadata,
-      property,
+      'targetHumidity',
       quantizeValue(rawValue, valueRange),
     );
   }
@@ -347,10 +344,13 @@ function getMiotDehumidifierMode(mode: DehumidifierMode): number {
 
 function createSetPropertyRequest(
   metadata: MiotEndpointConnectionMetadata,
-  property: MiotSpecProperty,
+  propertyName: keyof MiotDehumidifierEndpointProperties,
   value: unknown,
 ): MiotSetPropertyRequest {
-  const {service} = getPrimaryMiotEndpointConnectionResource(metadata);
+  const {service, property} = getMiotEndpointConnectionProperty(
+    metadata,
+    propertyName,
+  );
 
   return new MiotSetPropertyRequest(
     {

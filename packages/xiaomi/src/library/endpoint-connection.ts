@@ -19,10 +19,10 @@ import {
 } from './miot/index.js';
 import type {MiotProvider} from './provider.js';
 
+/** A peer MIoT service claimed by one logical endpoint; array order is not semantic. */
 export const MiotEndpointConnectionResource = x.object({
   service: MiotSpecService,
   properties: x.record(x.string, MiotSpecProperty),
-  exclusive: x.boolean,
 });
 
 export const MiotEndpointConnectionMetadata = x
@@ -39,31 +39,31 @@ export const MiotEndpointConnectionMetadata = x
     return metadata;
   });
 
-export function getPrimaryMiotEndpointConnectionResource(
+export function getMiotEndpointConnectionProperty(
   metadata: MiotEndpointConnectionMetadata,
-): MiotEndpointConnectionResource {
-  const resource = metadata.resources.at(0);
+  name: string,
+): {
+  readonly service: MiotSpecService;
+  readonly property: MiotSpecProperty;
+} {
+  for (const {service, properties} of metadata.resources) {
+    const property = properties[name];
 
-  if (resource === undefined) {
-    throw new TypeError('MIoT endpoint metadata has no primary resource.');
+    if (property !== undefined) {
+      return {service, property};
+    }
   }
 
-  return resource;
-}
-
-export function getMiotEndpointConnectionResourceKey(
-  metadata: MiotEndpointConnectionMetadata,
-): string {
-  const resource = getPrimaryMiotEndpointConnectionResource(metadata);
-
-  return getMiotResourceKey(metadata.device.did, resource);
+  throw new TypeError(`Unknown MIoT endpoint property: ${name}.`);
 }
 
 export function getMiotEndpointConnectionResourceKeys(
   metadata: MiotEndpointConnectionMetadata,
 ): readonly string[] {
+  // Every service is exclusive for now. If sharing becomes necessary, model it
+  // explicitly instead of reintroducing an implicit primary/supplement split.
   return metadata.resources
-    .filter(resource => resource.exclusive)
+    .toSorted(compareMiotEndpointResources)
     .map(resource => getMiotResourceKey(metadata.device.did, resource));
 }
 
@@ -145,9 +145,11 @@ export abstract class MiotEndpointConnection<
 
   toLogString(): string {
     const {device} = this.metadata;
-    const {service} = getPrimaryMiotEndpointConnectionResource(this.metadata);
+    const serviceIids = this.metadata.resources
+      .toSorted(compareMiotEndpointResources)
+      .map(({service}) => service.iid);
 
-    return `miot ${this.provider.name} · did ${device.did} · service ${service.iid}`;
+    return `miot ${this.provider.name} · did ${device.did} · services ${serviceIids.join(',')}`;
   }
 
   protected async executeRequest(request: MiotExecutionRequest): Promise<void> {
@@ -263,11 +265,9 @@ export type MiotEndpointStateUpdate = {
 function assertMiotEndpointConnectionResources(
   resources: readonly MiotEndpointConnectionResource[],
 ): void {
-  const primary = resources.at(0);
-
-  if (primary === undefined || !primary.exclusive) {
+  if (resources.length === 0) {
     throw new TypeError(
-      'MIoT endpoint metadata requires an exclusive primary resource.',
+      'MIoT endpoint metadata requires at least one resource.',
     );
   }
 
@@ -275,16 +275,12 @@ function assertMiotEndpointConnectionResources(
   const stateNameSet = new Set<string>();
   const propertyKeySet = new Set<string>();
 
-  for (const [index, resource] of resources.entries()) {
+  for (const resource of resources) {
     if (serviceIidSet.has(resource.service.iid)) {
       throw new TypeError('Duplicate MIoT endpoint metadata service.');
     }
 
     serviceIidSet.add(resource.service.iid);
-
-    if (index > 0 && resource.exclusive) {
-      throw new TypeError('MIoT endpoint supplements must be shared.');
-    }
 
     for (const [name, property] of Object.entries(resource.properties)) {
       const propertyKey = JSON.stringify([resource.service.iid, property.iid]);
@@ -293,8 +289,14 @@ function assertMiotEndpointConnectionResources(
         throw new TypeError('Ambiguous MIoT endpoint metadata property.');
       }
 
-      if (index > 0 && property.access.includes('write')) {
-        throw new TypeError('MIoT endpoint supplements must be read-only.');
+      if (
+        !resource.service.properties?.some(candidate =>
+          miotSpecPropertiesEqual(candidate, property),
+        )
+      ) {
+        throw new TypeError(
+          'MIoT endpoint metadata property does not belong to its service.',
+        );
       }
 
       stateNameSet.add(name);
@@ -303,11 +305,25 @@ function assertMiotEndpointConnectionResources(
   }
 }
 
+function miotSpecPropertiesEqual(
+  left: MiotSpecProperty,
+  right: MiotSpecProperty,
+): boolean {
+  return left.iid === right.iid && left.type === right.type;
+}
+
 function getMiotResourceKey(
   did: string,
   resource: MiotEndpointConnectionResource,
 ): string {
   return JSON.stringify([did, resource.service.iid]);
+}
+
+function compareMiotEndpointResources(
+  left: MiotEndpointConnectionResource,
+  right: MiotEndpointConnectionResource,
+): number {
+  return left.service.iid - right.service.iid;
 }
 
 function getMiotEndpointPropertyCount(

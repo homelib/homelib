@@ -8,18 +8,17 @@ import {
 import {
   type MiotBindingDeviceCandidate,
   type MiotBindingEndpointCandidate,
-  type MiotBindingServiceCandidate,
+  type MiotBindingMatchCandidate,
   discoverMiotBindingDevices,
   resolveMiotBindingDeviceProposal,
 } from './binding.js';
 import {
   MiotEndpointConnectionMetadata,
-  getMiotEndpointConnectionResourceKey,
-  getPrimaryMiotEndpointConnectionResource,
+  getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
 import type {MiotSpecInstance} from './miot/index.js';
 
-test('discovers physical devices and matching services for a logical endpoint', async () => {
+test('discovers physical devices and matches for a logical endpoint', async () => {
   const endpoint: ProviderBindingEndpoint = {
     path: EndpointPath.satisfies({
       scopePath: ['home', 'room'],
@@ -63,16 +62,15 @@ test('discovers physical devices and matching services for a logical endpoint', 
 
   expect(getInstanceCallCount).toBe(1);
   expect(discovery.devices).toHaveLength(2);
-  expect(discovery.devices[0]?.endpoints[0]?.services).toHaveLength(2);
+  expect(discovery.devices[0]?.endpoints[0]?.matches).toHaveLength(2);
   expect(
-    discovery.devices[0]?.endpoints[0]?.services[0]?.metadata,
+    discovery.devices[0]?.endpoints[0]?.matches[0]?.metadata,
   ).toMatchObject({
     device: {did: 'first', model: 'test.light', urn: LIGHT_SPEC.type},
     resources: [
       {
         service: {iid: 2},
         properties: {on: {iid: 1}},
-        exclusive: true,
       },
     ],
   });
@@ -186,32 +184,75 @@ test('automatically resolves the unique whole-device assignment', () => {
   ]);
   expect(
     proposal.bindings.map(binding =>
-      getMiotEndpointConnectionResourceKey(binding.metadata),
+      getMiotEndpointConnectionResourceKeys(binding.metadata),
     ),
-  ).toEqual([JSON.stringify(['physical', 2]), JSON.stringify(['physical', 3])]);
+  ).toEqual([
+    [JSON.stringify(['physical', 2])],
+    [JSON.stringify(['physical', 3])],
+  ]);
+});
+
+test('automatically resolves a unique assignment using every candidate resource', () => {
+  const firstEndpoint = createBindingEndpointCandidate('first', [[2, 3]]);
+  const secondEndpoint = createBindingEndpointCandidate('second', [3, 4]);
+  const proposal = resolveMiotBindingDeviceProposal(
+    createBindingDeviceCandidate([firstEndpoint, secondEndpoint]),
+    [],
+  );
+
+  expect(proposal.endpoints.map(endpoint => endpoint.status)).toEqual([
+    'automatic',
+    'automatic',
+  ]);
+  expect(
+    proposal.bindings.map(binding =>
+      getMiotEndpointConnectionResourceKeys(binding.metadata),
+    ),
+  ).toEqual([
+    [JSON.stringify(['physical', 2]), JSON.stringify(['physical', 3])],
+    [JSON.stringify(['physical', 4])],
+  ]);
+});
+
+test('keeps set-valued assignments ambiguous when several maximum packings exist', () => {
+  const proposal = resolveMiotBindingDeviceProposal(
+    createBindingDeviceCandidate([
+      createBindingEndpointCandidate('first', [[2, 3], 4]),
+      createBindingEndpointCandidate('second', [3, 5]),
+    ]),
+    [],
+  );
+
+  expect(proposal.endpoints.map(endpoint => endpoint.status)).toEqual([
+    'ambiguous',
+    'ambiguous',
+  ]);
+  expect(proposal.bindings).toEqual([]);
 });
 
 test('does not treat metadata rejected by the current endpoint adapter as existing', () => {
-  const currentService = createCurrentLightBindingServiceCandidate(2);
+  const currentMatch = createCurrentLightBindingMatchCandidate(2);
   const endpoint = createBindingEndpointCandidate('main', []);
   const device = createBindingDeviceCandidate([
-    {...endpoint, services: [currentService]},
+    {...endpoint, matches: [currentMatch]},
   ]);
   const validProposal = resolveMiotBindingDeviceProposal(device, [
     {
       endpoint: endpoint.endpoint.path,
-      metadata: currentService.metadata,
+      metadata: currentMatch.metadata,
     },
   ]);
-  const currentPrimaryResource = getPrimaryMiotEndpointConnectionResource(
-    currentService.metadata,
-  );
+  const currentResource = currentMatch.metadata.resources.at(0);
+
+  if (currentResource === undefined) {
+    throw new Error('Current test binding has no resource.');
+  }
   const oldMetadata = MiotEndpointConnectionMetadata.satisfies({
-    ...currentService.metadata,
+    ...currentMatch.metadata,
     resources: [
       {
-        ...currentPrimaryResource,
-        properties: {on: currentPrimaryResource.properties.on},
+        ...currentResource,
+        properties: {on: currentResource.properties.on},
       },
     ],
   });
@@ -226,12 +267,12 @@ test('does not treat metadata rejected by the current endpoint adapter as existi
   expect(oldProposal.bindings).toEqual([
     {
       endpoint: endpoint.endpoint.path,
-      metadata: currentService.metadata,
+      metadata: currentMatch.metadata,
     },
   ]);
 });
 
-test('does not silently choose a shared single service', () => {
+test('does not silently choose a contested single match', () => {
   const proposal = resolveMiotBindingDeviceProposal(
     createBindingDeviceCandidate([
       createBindingEndpointCandidate('first', [2]),
@@ -248,7 +289,7 @@ test('does not silently choose a shared single service', () => {
 });
 
 test('keeps missing and occupied endpoints visible in the proposal', () => {
-  const occupiedService = createBindingServiceCandidate(2);
+  const occupiedMatch = createBindingMatchCandidate(2);
   const proposal = resolveMiotBindingDeviceProposal(
     createBindingDeviceCandidate([
       createBindingEndpointCandidate('missing', []),
@@ -261,7 +302,7 @@ test('keeps missing and occupied endpoints visible in the proposal', () => {
           deviceName: 'another light',
           endpointName: '',
         }),
-        metadata: occupiedService.metadata,
+        metadata: occupiedMatch.metadata,
       },
     ],
   );
@@ -270,6 +311,194 @@ test('keeps missing and occupied endpoints visible in the proposal', () => {
     'missing',
     'unavailable',
   ]);
+});
+
+test('treats a candidate as occupied when any of its resources is bound', () => {
+  const endpoint = createBindingEndpointCandidate('multi-resource', [[2, 3]]);
+  const proposal = resolveMiotBindingDeviceProposal(
+    createBindingDeviceCandidate([endpoint]),
+    [
+      {
+        endpoint: EndpointPath.satisfies({
+          scopePath: ['another home'],
+          deviceName: 'another device',
+          endpointName: '',
+        }),
+        metadata: createBindingMatchCandidate(3).metadata,
+      },
+    ],
+  );
+
+  expect(proposal.endpoints.map(item => item.status)).toEqual(['unavailable']);
+  expect(proposal.bindings).toEqual([]);
+});
+
+test('does not identify existing metadata by resource keys alone', () => {
+  const match = createCurrentLightBindingMatchCandidate(2);
+  const endpoint = createBindingEndpointCandidate('main', []);
+  const device = createBindingDeviceCandidate([
+    {...endpoint, matches: [match]},
+  ]);
+  const metadataWithDifferentIdentity =
+    MiotEndpointConnectionMetadata.satisfies({
+      ...match.metadata,
+      device: {...match.metadata.device, model: 'other.light'},
+    });
+  const proposal = resolveMiotBindingDeviceProposal(device, [
+    {endpoint: endpoint.endpoint.path, metadata: metadataWithDifferentIdentity},
+  ]);
+
+  expect(proposal.endpoints.map(item => item.status)).toEqual(['automatic']);
+  expect(proposal.bindings).toEqual([
+    {endpoint: endpoint.endpoint.path, metadata: match.metadata},
+  ]);
+});
+
+test('identifies semantically equal reordered metadata as existing', () => {
+  const match = createCurrentLightBindingMatchCandidate(2);
+  const endpoint = createBindingEndpointCandidate('main', []);
+  const device = createBindingDeviceCandidate([
+    {...endpoint, matches: [match]},
+  ]);
+  const [resource] = match.metadata.resources;
+
+  if (resource?.service.properties === undefined) {
+    throw new Error('Current test binding has no service properties.');
+  }
+
+  const reorderedMetadata = MiotEndpointConnectionMetadata.satisfies({
+    ...match.metadata,
+    resources: [
+      {
+        ...resource,
+        service: {
+          ...resource.service,
+          properties: [...resource.service.properties]
+            .reverse()
+            .map(property => ({
+              ...property,
+              access: [...property.access].reverse(),
+            })),
+        },
+        properties: Object.fromEntries(
+          Object.entries(resource.properties).reverse(),
+        ),
+      },
+    ],
+  });
+  const proposal = resolveMiotBindingDeviceProposal(device, [
+    {endpoint: endpoint.endpoint.path, metadata: reorderedMetadata},
+  ]);
+
+  expect(proposal.endpoints.map(item => item.status)).toEqual(['existing']);
+  expect(proposal.bindings).toEqual([]);
+});
+
+test('atomically swaps resources between existing endpoint bindings', () => {
+  const firstEndpoint = createBindingEndpointCandidate('first', [2, 3]);
+  const secondEndpoint = createBindingEndpointCandidate('second', [2, 3]);
+  const proposal = resolveMiotBindingDeviceProposal(
+    createBindingDeviceCandidate([firstEndpoint, secondEndpoint]),
+    [
+      {
+        endpoint: firstEndpoint.endpoint.path,
+        metadata: createBindingMatchCandidate(2).metadata,
+      },
+      {
+        endpoint: secondEndpoint.endpoint.path,
+        metadata: createBindingMatchCandidate(3).metadata,
+      },
+    ],
+    {
+      [getEndpointPathKey(firstEndpoint.endpoint.path)]: {
+        type: 'match',
+        matchKey: 'match-3',
+      },
+      [getEndpointPathKey(secondEndpoint.endpoint.path)]: {
+        type: 'match',
+        matchKey: 'match-2',
+      },
+    },
+  );
+
+  expect(proposal.endpoints.map(endpoint => endpoint.status)).toEqual([
+    'manual',
+    'manual',
+  ]);
+  expect(
+    proposal.bindings.map(binding =>
+      getMiotEndpointConnectionResourceKeys(binding.metadata),
+    ),
+  ).toEqual([
+    [JSON.stringify(['physical', 3])],
+    [JSON.stringify(['physical', 2])],
+  ]);
+});
+
+test('reuses a resource released by a valid manual replacement', () => {
+  const firstEndpoint = createBindingEndpointCandidate('first', [2, 4]);
+  const secondEndpoint = createBindingEndpointCandidate('second', [2]);
+  const proposal = resolveMiotBindingDeviceProposal(
+    createBindingDeviceCandidate([firstEndpoint, secondEndpoint]),
+    [
+      {
+        endpoint: firstEndpoint.endpoint.path,
+        metadata: createBindingMatchCandidate(2).metadata,
+      },
+    ],
+    {
+      [getEndpointPathKey(firstEndpoint.endpoint.path)]: {
+        type: 'match',
+        matchKey: 'match-4',
+      },
+    },
+  );
+
+  expect(proposal.endpoints.map(endpoint => endpoint.status)).toEqual([
+    'manual',
+    'automatic',
+  ]);
+  expect(proposal.bindings).toHaveLength(2);
+});
+
+test('atomically swaps multi-resource endpoint bindings', () => {
+  const firstEndpoint = createBindingEndpointCandidate('first', [
+    [2, 3],
+    [4, 5],
+  ]);
+  const secondEndpoint = createBindingEndpointCandidate('second', [
+    [2, 3],
+    [4, 5],
+  ]);
+  const proposal = resolveMiotBindingDeviceProposal(
+    createBindingDeviceCandidate([firstEndpoint, secondEndpoint]),
+    [
+      {
+        endpoint: firstEndpoint.endpoint.path,
+        metadata: createBindingMatchCandidate([2, 3]).metadata,
+      },
+      {
+        endpoint: secondEndpoint.endpoint.path,
+        metadata: createBindingMatchCandidate([4, 5]).metadata,
+      },
+    ],
+    {
+      [getEndpointPathKey(firstEndpoint.endpoint.path)]: {
+        type: 'match',
+        matchKey: 'match-4-5',
+      },
+      [getEndpointPathKey(secondEndpoint.endpoint.path)]: {
+        type: 'match',
+        matchKey: 'match-2-3',
+      },
+    },
+  );
+
+  expect(proposal.endpoints.map(endpoint => endpoint.status)).toEqual([
+    'manual',
+    'manual',
+  ]);
+  expect(proposal.bindings).toHaveLength(2);
 });
 
 test('does not release a binding whose replacement cannot be submitted', () => {
@@ -286,31 +515,31 @@ test('does not release a binding whose replacement cannot be submitted', () => {
     [
       {
         endpoint: firstEndpoint.endpoint.path,
-        metadata: createBindingServiceCandidate(2).metadata,
+        metadata: createBindingMatchCandidate(2).metadata,
       },
       {
         endpoint: secondEndpoint.endpoint.path,
-        metadata: createBindingServiceCandidate(3).metadata,
+        metadata: createBindingMatchCandidate(3).metadata,
       },
     ],
     {
       [getEndpointPathKey(firstEndpoint.endpoint.path)]: {
-        type: 'service',
-        serviceKey: 'service-4',
+        type: 'match',
+        matchKey: 'match-4',
       },
       [getEndpointPathKey(secondEndpoint.endpoint.path)]: {
-        type: 'service',
-        serviceKey: 'service-4',
+        type: 'match',
+        matchKey: 'match-4',
       },
     },
   );
 
   expect(proposal.endpoints.map(endpoint => endpoint.status)).toEqual([
-    'manual',
+    'unavailable',
     'unavailable',
     'unavailable',
   ]);
-  expect(proposal.bindings).toHaveLength(1);
+  expect(proposal.bindings).toHaveLength(0);
 });
 
 function createLogicalLightEndpoint(): ProviderBindingEndpoint {
@@ -341,7 +570,7 @@ function createBindingDeviceCandidate(
 
 function createBindingEndpointCandidate(
   name: string,
-  serviceIds: readonly number[],
+  resourceServiceIds: readonly (number | readonly number[])[],
 ): MiotBindingEndpointCandidate {
   return {
     endpoint: {
@@ -353,56 +582,58 @@ function createBindingEndpointCandidate(
       endpoint: new LightEndpoint(name),
       binding: undefined,
     },
-    services: serviceIds.map(createBindingServiceCandidate),
+    matches: resourceServiceIds.map(createBindingMatchCandidate),
   };
 }
 
-function createBindingServiceCandidate(
-  serviceId: number,
-): MiotBindingServiceCandidate {
+function createBindingMatchCandidate(
+  serviceIdOrIds: number | readonly number[],
+): MiotBindingMatchCandidate {
+  const serviceIds =
+    typeof serviceIdOrIds === 'number' ? [serviceIdOrIds] : serviceIdOrIds;
+  const [serviceId] = serviceIds;
+
+  if (serviceId === undefined) {
+    throw new TypeError('Test binding candidate requires a resource.');
+  }
+
   const metadata = MiotEndpointConnectionMetadata.satisfies({
     device: {did: 'physical', model: 'test.light', urn: LIGHT_SPEC.type},
-    resources: [
-      {
+    resources: serviceIds.map((resourceServiceId, index) => {
+      const property = {
+        iid: 1,
+        type: `urn:miot-spec-v2:property:${index === 0 ? 'on' : `state-${resourceServiceId}`}:00000006:test-light:1`,
+        description:
+          index === 0 ? 'Switch Status' : `State ${resourceServiceId}`,
+        format: 'bool',
+        access: index === 0 ? ['read', 'write', 'notify'] : ['read', 'notify'],
+      };
+
+      return {
         service: {
-          iid: serviceId,
+          iid: resourceServiceId,
           type: 'urn:miot-spec-v2:service:light:00007802:test-light:1',
-          description: `Light ${serviceId}`,
-          properties: [
-            {
-              iid: 1,
-              type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
-              description: 'Switch Status',
-              format: 'bool',
-              access: ['read', 'write', 'notify'],
-            },
-          ],
+          description: `Light ${resourceServiceId}`,
+          properties: [property],
         },
         properties: {
-          on: {
-            iid: 1,
-            type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
-            description: 'Switch Status',
-            format: 'bool',
-            access: ['read', 'write', 'notify'],
-          },
+          [index === 0 ? 'on' : `state${resourceServiceId}`]: property,
         },
-        exclusive: true,
-      },
-    ],
+      };
+    }),
   });
 
   return {
-    key: `service-${serviceId}`,
-    resourceKey: getMiotEndpointConnectionResourceKey(metadata),
+    key: `match-${serviceIds.join('-')}`,
+    resourceKeys: getMiotEndpointConnectionResourceKeys(metadata),
     label: `Light ${serviceId}`,
     metadata,
   };
 }
 
-function createCurrentLightBindingServiceCandidate(
+function createCurrentLightBindingMatchCandidate(
   serviceId: number,
-): MiotBindingServiceCandidate {
+): MiotBindingMatchCandidate {
   const on = {
     iid: 1,
     type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
@@ -439,14 +670,13 @@ function createCurrentLightBindingServiceCandidate(
           properties: [on, brightness, colorTemperature],
         },
         properties: {on, brightness, colorTemperature},
-        exclusive: true,
       },
     ],
   });
 
   return {
-    key: `current-light-service-${serviceId}`,
-    resourceKey: getMiotEndpointConnectionResourceKey(metadata),
+    key: `current-light-match-${serviceId}`,
+    resourceKeys: getMiotEndpointConnectionResourceKeys(metadata),
     label: `Light ${serviceId}`,
     metadata,
   };

@@ -17,13 +17,13 @@ import {
   type MiotBindingDiscovery,
   type MiotBindingEndpointCandidate,
   type MiotBindingEndpointProposal,
-  type MiotBindingServiceCandidate,
+  type MiotBindingMatchCandidate,
   discoverMiotBindingDevices,
   resolveMiotBindingDeviceProposal,
 } from './binding.js';
 import {
   MiotEndpointConnectionMetadata,
-  getMiotEndpointConnectionResourceKey,
+  getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
 import {MiotProvider} from './provider.js';
 
@@ -35,6 +35,7 @@ export function MiotProviderBindings({
   providerBindings,
   onBind,
   onBack,
+  onComplete,
 }: ProviderBindingComponentProps<MiotProvider>): React.JSX.Element {
   const [state, setState] = useState<BindingState>({type: 'loading'});
   const operationReference = useRef<object | undefined>(undefined);
@@ -82,7 +83,7 @@ export function MiotProviderBindings({
     requests: readonly ProviderBindingRequest[],
   ): void => {
     if (requests.length === 0) {
-      onBack();
+      onComplete();
       return;
     }
 
@@ -97,7 +98,7 @@ export function MiotProviderBindings({
         }
 
         operationReference.current = undefined;
-        onBack();
+        onComplete();
       },
       error => {
         if (operationReference.current !== operation) {
@@ -131,7 +132,7 @@ export function MiotProviderBindings({
       );
 
       if (hasExistingBinding) {
-        onBack();
+        onComplete();
       }
 
       return;
@@ -228,17 +229,17 @@ export function MiotProviderBindings({
 
         if (
           endpointProposal !== undefined &&
-          endpointProposal.endpoint.services.length > 0
+          endpointProposal.endpoint.matches.length > 0
         ) {
           setState({
-            type: 'services',
+            type: 'matches',
             source: state,
             endpointPath: endpointProposal.endpoint.endpoint.path,
             cursor: 0,
           });
         }
       }
-    } else if (state.type === 'services') {
+    } else if (state.type === 'matches') {
       const endpoint = findCandidateEndpoint(
         getCandidateDevice(
           state.source.source.discovery,
@@ -246,14 +247,14 @@ export function MiotProviderBindings({
         ),
         state.endpointPath,
       );
-      const serviceCount = endpoint?.services.length ?? 0;
+      const matchCount = endpoint?.matches.length ?? 0;
 
       if (key.escape) {
         setState(state.source);
-      } else if (key.upArrow && serviceCount > 0) {
-        setState({...state, cursor: wrapIndex(state.cursor - 1, serviceCount)});
-      } else if (key.downArrow && serviceCount > 0) {
-        setState({...state, cursor: wrapIndex(state.cursor + 1, serviceCount)});
+      } else if (key.upArrow && matchCount > 0) {
+        setState({...state, cursor: wrapIndex(state.cursor - 1, matchCount)});
+      } else if (key.downArrow && matchCount > 0) {
+        setState({...state, cursor: wrapIndex(state.cursor + 1, matchCount)});
       } else if (input === 'x' && endpoint !== undefined) {
         setState({
           ...state.source,
@@ -262,20 +263,16 @@ export function MiotProviderBindings({
           }),
         });
       } else if (key.return) {
-        const service = endpoint?.services.at(state.cursor);
+        const match = endpoint?.matches.at(state.cursor);
 
         if (
           endpoint !== undefined &&
-          service !== undefined &&
-          canSelectService(state, service, providerBindings)
+          match !== undefined &&
+          canSelectMatch(state, match, providerBindings)
         ) {
           setState({
             ...state.source,
-            source: setEndpointServiceDraft(
-              state.source.source,
-              endpoint,
-              service,
-            ),
+            source: setEndpointMatchDraft(state.source.source, endpoint, match),
           });
         }
       }
@@ -331,8 +328,8 @@ function BindingView({
         state={state}
       />
     );
-  } else if (state.type === 'services') {
-    return <ServicesView providerBindings={providerBindings} state={state} />;
+  } else if (state.type === 'matches') {
+    return <MatchesView providerBindings={providerBindings} state={state} />;
   } else if (state.type === 'confirm-save') {
     const replacementCount = state.requests.filter(
       request => request.replaceExisting,
@@ -494,27 +491,27 @@ function EndpointProposalRow({
   let symbol: string;
   let color: 'green' | 'cyan' | 'yellow' | undefined;
   let status: string;
-  let serviceLabel: string | undefined;
+  let matchLabel: string | undefined;
 
   if (proposal.status === 'automatic') {
     symbol = '●';
     color = 'green';
     status = 'matched automatically';
-    serviceLabel = proposal.service.label;
+    matchLabel = proposal.match.label;
   } else if (proposal.status === 'manual') {
     symbol = '●';
     color = 'cyan';
     status = 'selected';
-    serviceLabel = proposal.service.label;
+    matchLabel = proposal.match.label;
   } else if (proposal.status === 'existing') {
     symbol = '●';
     color = 'green';
     status = 'already bound';
-    serviceLabel = proposal.service.label;
+    matchLabel = proposal.match.label;
   } else if (proposal.status === 'ambiguous') {
     symbol = '!';
     color = 'yellow';
-    status = `${proposal.services.length} possible matches`;
+    status = `${proposal.matches.length} possible matches`;
   } else if (proposal.status === 'unavailable') {
     symbol = '!';
     color = 'yellow';
@@ -537,9 +534,7 @@ function EndpointProposalRow({
         </Text>
       </Box>
       <Text color={color}>{status}</Text>
-      {serviceLabel === undefined ? null : (
-        <Text dimColor> · {serviceLabel}</Text>
-      )}
+      {matchLabel === undefined ? null : <Text dimColor> · {matchLabel}</Text>}
     </Box>
   );
 }
@@ -574,11 +569,11 @@ function EndpointsView({
   );
 }
 
-function ServicesView({
+function MatchesView({
   state,
   providerBindings,
 }: {
-  readonly state: ServicesState;
+  readonly state: MatchesState;
   readonly providerBindings: BindingViewProps['providerBindings'];
 }): React.JSX.Element {
   const device = getCandidateDevice(
@@ -598,19 +593,19 @@ function ServicesView({
       <Text dimColor>physical · {getDeviceLabel(device.device)}</Text>
 
       <Box flexDirection="column" marginTop={1}>
-        {endpoint.services.map((service, index) => {
+        {endpoint.matches.map((match, index) => {
           const owner = getResourceOwner(
-            service,
+            match,
             providerBindings,
             endpoint.endpoint.path,
           );
-          const available = canSelectService(state, service, providerBindings);
+          const available = canSelectMatch(state, match, providerBindings);
 
           return (
             <ListItem
-              key={service.key}
-              details={getServiceAvailabilityDetails(available, owner)}
-              label={service.label}
+              key={match.key}
+              details={getMatchAvailabilityDetails(available, owner)}
+              label={match.label}
               selected={index === state.cursor}
               unavailable={!available}
             />
@@ -690,7 +685,7 @@ type BindingState =
   | DevicesState
   | DeviceMatchState
   | EndpointsState
-  | ServicesState
+  | MatchesState
   | ConfirmSaveState
   | SavingState
   | SaveErrorState;
@@ -714,8 +709,8 @@ type EndpointsState = {
   readonly cursor: number;
 };
 
-type ServicesState = {
-  readonly type: 'services';
+type MatchesState = {
+  readonly type: 'matches';
   readonly source: EndpointsState;
   readonly endpointPath: EndpointPath;
   readonly cursor: number;
@@ -768,10 +763,10 @@ function setEndpointDraft(
   return {...state, draft: {...state.draft, [endpointPathKey]: draft}};
 }
 
-function setEndpointServiceDraft(
+function setEndpointMatchDraft(
   state: DeviceMatchState,
   endpoint: MiotBindingEndpointCandidate,
-  service: MiotBindingServiceCandidate,
+  match: MiotBindingMatchCandidate,
 ): DeviceMatchState {
   const device = getCandidateDevice(state.discovery, state.deviceKey);
   const nextDraft: Record<string, MiotBindingDeviceDraft[string]> = {
@@ -784,22 +779,25 @@ function setEndpointServiceDraft(
     );
     const candidateDraft = nextDraft[candidateEndpointPathKey];
 
-    if (candidateDraft?.type !== 'service') {
+    if (candidateDraft?.type !== 'match') {
       continue;
     }
 
-    const candidateService = candidateEndpoint.services.find(
-      item => item.key === candidateDraft.serviceKey,
+    const candidateMatch = candidateEndpoint.matches.find(
+      item => item.key === candidateDraft.matchKey,
     );
 
-    if (candidateService?.resourceKey === service.resourceKey) {
+    if (
+      candidateMatch !== undefined &&
+      resourceKeysOverlap(candidateMatch.resourceKeys, match.resourceKeys)
+    ) {
       delete nextDraft[candidateEndpointPathKey];
     }
   }
 
   nextDraft[getEndpointPathKey(endpoint.endpoint.path)] = {
-    type: 'service',
-    serviceKey: service.key,
+    type: 'match',
+    matchKey: match.key,
   };
 
   return {...state, draft: nextDraft};
@@ -833,7 +831,7 @@ function findCandidateEndpoint(
 }
 
 function getResourceOwner(
-  service: MiotBindingServiceCandidate,
+  match: MiotBindingMatchCandidate,
   bindings: BindingViewProps['providerBindings'],
   currentEndpointPath: EndpointPath,
 ): EndpointPath | undefined {
@@ -848,7 +846,10 @@ function getResourceOwner(
       );
 
       if (
-        getMiotEndpointConnectionResourceKey(metadata) === service.resourceKey
+        resourceKeysOverlap(
+          getMiotEndpointConnectionResourceKeys(metadata),
+          match.resourceKeys,
+        )
       ) {
         return binding.endpoint;
       }
@@ -860,31 +861,67 @@ function getResourceOwner(
   return undefined;
 }
 
-function canSelectService(
-  state: ServicesState,
-  service: MiotBindingServiceCandidate,
+function canSelectMatch(
+  state: MatchesState,
+  match: MiotBindingMatchCandidate,
   providerBindings: BindingViewProps['providerBindings'],
 ): boolean {
   const deviceState = state.source.source;
-  const endpoint = findCandidateEndpoint(
-    getCandidateDevice(deviceState.discovery, deviceState.deviceKey),
-    state.endpointPath,
+  const device = getCandidateDevice(
+    deviceState.discovery,
+    deviceState.deviceKey,
   );
+  const endpoint = findCandidateEndpoint(device, state.endpointPath);
 
-  if (endpoint === undefined) {
+  if (device === undefined || endpoint === undefined) {
     return false;
   }
 
-  const nextState = setEndpointServiceDraft(deviceState, endpoint, service);
+  const nextState = setEndpointMatchDraft(deviceState, endpoint, match);
   const endpointPathKey = getEndpointPathKey(endpoint.endpoint.path);
   const proposal = getProposal(nextState, providerBindings).endpoints.find(
     item => getEndpointPathKey(item.endpoint.endpoint.path) === endpointPathKey,
   );
 
-  return proposal?.status === 'manual';
+  return (
+    proposal?.status === 'manual' ||
+    (proposal?.status === 'unavailable' &&
+      !isResourceOwnedOutsideDevice(match, providerBindings, device))
+  );
 }
 
-function getServiceAvailabilityDetails(
+function isResourceOwnedOutsideDevice(
+  match: MiotBindingMatchCandidate,
+  bindings: BindingViewProps['providerBindings'],
+  device: MiotBindingDeviceCandidate,
+): boolean {
+  const deviceEndpointPathKeySet = new Set(
+    device.endpoints.map(endpoint =>
+      getEndpointPathKey(endpoint.endpoint.path),
+    ),
+  );
+
+  return bindings.some(binding => {
+    if (deviceEndpointPathKeySet.has(getEndpointPathKey(binding.endpoint))) {
+      return false;
+    }
+
+    try {
+      const metadata = MiotEndpointConnectionMetadata.satisfies(
+        binding.metadata,
+      );
+
+      return resourceKeysOverlap(
+        getMiotEndpointConnectionResourceKeys(metadata),
+        match.resourceKeys,
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
+function getMatchAvailabilityDetails(
   available: boolean,
   owner: EndpointPath | undefined,
 ): string | undefined {
@@ -945,13 +982,13 @@ function getEndpointProposalDetails(
   proposal: MiotBindingEndpointProposal,
 ): string {
   if (proposal.status === 'automatic') {
-    return `automatic · ${proposal.service.label}`;
+    return `automatic · ${proposal.match.label}`;
   } else if (proposal.status === 'manual') {
-    return `selected · ${proposal.service.label}`;
+    return `selected · ${proposal.match.label}`;
   } else if (proposal.status === 'existing') {
-    return `already bound · ${proposal.service.label}`;
+    return `already bound · ${proposal.match.label}`;
   } else if (proposal.status === 'ambiguous') {
-    return `${proposal.services.length} possible matches`;
+    return `${proposal.matches.length} possible matches`;
   } else if (proposal.status === 'unavailable') {
     return 'matching feature already used';
   } else if (proposal.status === 'skipped') {
@@ -973,6 +1010,15 @@ function formatEndpointPath(path: EndpointPath): string {
 
 function endpointPathsEqual(left: EndpointPath, right: EndpointPath): boolean {
   return getEndpointPathKey(left) === getEndpointPathKey(right);
+}
+
+function resourceKeysOverlap(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  const leftSet = new Set(left);
+
+  return right.some(resourceKey => leftSet.has(resourceKey));
 }
 
 function wrapIndex(index: number, length: number): number {

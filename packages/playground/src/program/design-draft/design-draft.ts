@@ -142,7 +142,7 @@ autorun(() => {
 // 用户自定义"场景"就是普通函数
 function movieScene() {
   livingRoom.$light('main light').setBrightness(10);
-  livingRoom.$ac('ac').turnOn();
+  livingRoom.$airConditioner('air conditioner').turnOn();
   bedroom.$curtain('curtain').close();
 }
 

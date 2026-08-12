@@ -41,8 +41,9 @@ async function main(): Promise<void> {
   }
 
   const spec = await new MiotSpecClient().getInstance(device.specType);
-  const matches = MiotLightEndpointConnection.endpointMatchers.flatMap(
-    matcher => findMiotEndpointMatches(spec, matcher),
+  const matches = MiotLightEndpointConnection.endpointProfiles.flatMap(
+    ({services}) =>
+      services.flatMap(matcher => findMiotEndpointMatches(spec, matcher)),
   );
 
   if (matches.length !== 1) {

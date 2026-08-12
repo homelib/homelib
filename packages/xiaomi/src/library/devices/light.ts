@@ -11,6 +11,7 @@ import {computed} from 'mobx';
 import * as x from 'x-value';
 
 import {
+  type MiotEndpointProfile,
   defineMiotEndpointAdapter,
   getValidatedMiotEndpointProperties,
 } from '../endpoint-adapter.js';
@@ -18,7 +19,7 @@ import {
   MiotEndpointConnection,
   type MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionTransports,
-  getPrimaryMiotEndpointConnectionResource,
+  getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
 import {
   type MiotEndpointMatcher,
@@ -60,9 +61,9 @@ const MIOT_LIGHT_ENDPOINT_MATCHER: MiotLightEndpointMatcher = {
   },
 };
 
-const MIOT_LIGHT_ENDPOINT_MATCHERS = [
-  MIOT_LIGHT_ENDPOINT_MATCHER,
-] as const satisfies readonly MiotLightEndpointMatcher[];
+const MIOT_LIGHT_ENDPOINT_PROFILES = [
+  {services: [MIOT_LIGHT_ENDPOINT_MATCHER]},
+] as const satisfies readonly MiotEndpointProfile[];
 
 export class MiotLightEndpointConnection
   extends MiotEndpointConnection<LightEndpointCommand>
@@ -70,7 +71,7 @@ export class MiotLightEndpointConnection
 {
   static readonly Endpoint = LightEndpoint;
 
-  static readonly endpointMatchers = MIOT_LIGHT_ENDPOINT_MATCHERS;
+  static readonly endpointProfiles = MIOT_LIGHT_ENDPOINT_PROFILES;
 
   private readonly properties: MiotLightEndpointProperties;
 
@@ -132,7 +133,7 @@ export class MiotLightEndpointConnection
     this.properties = getValidatedMiotEndpointProperties(
       'light',
       metadata,
-      MIOT_LIGHT_ENDPOINT_MATCHERS,
+      MIOT_LIGHT_ENDPOINT_PROFILES,
     );
   }
 
@@ -140,7 +141,7 @@ export class MiotLightEndpointConnection
     getValidatedMiotEndpointProperties(
       'light',
       metadata,
-      MIOT_LIGHT_ENDPOINT_MATCHERS,
+      MIOT_LIGHT_ENDPOINT_PROFILES,
     );
   }
 
@@ -158,17 +159,20 @@ export const miotLightEndpointAdapter = defineMiotEndpointAdapter<
   type: 'light',
   Endpoint: MiotLightEndpointConnection.Endpoint,
   Connection: MiotLightEndpointConnection,
-  endpointMatchers: MiotLightEndpointConnection.endpointMatchers,
+  endpointProfiles: MiotLightEndpointConnection.endpointProfiles,
 });
 
-type MiotLightEndpointMatcher = MiotEndpointMatcher<
-  {
-    readonly on: MiotPropertyMatcher;
-  },
-  {
-    readonly brightness: MiotPropertyMatcher;
-    readonly colorTemperature: MiotPropertyMatcher;
-  }
+type MiotLightEndpointMatcher = Omit<
+  MiotEndpointMatcher<
+    {
+      readonly on: MiotPropertyMatcher;
+    },
+    {
+      readonly brightness: MiotPropertyMatcher;
+      readonly colorTemperature: MiotPropertyMatcher;
+    }
+  >,
+  'device'
 >;
 
 type MiotLightEndpointProperties = {
@@ -183,7 +187,7 @@ function createMiotLightRequest(
   properties: MiotLightEndpointProperties,
 ): MiotExecutionRequest {
   if (command instanceof SetLightOnCommand) {
-    return createSetPropertyRequest(metadata, properties.on, command.value);
+    return createSetPropertyRequest(metadata, 'on', command.value);
   } else if (command instanceof SetLightBrightnessCommand) {
     const property = properties.brightness;
 
@@ -197,7 +201,7 @@ function createMiotLightRequest(
 
     return createSetPropertyRequest(
       metadata,
-      property,
+      'brightness',
       quantizeValue(rawValue, valueRange),
     );
   } else if (command instanceof SetLightColorTemperatureCommand) {
@@ -218,7 +222,7 @@ function createMiotLightRequest(
 
     return createSetPropertyRequest(
       metadata,
-      property,
+      'colorTemperature',
       quantizeValue(command.value, valueRange),
     );
   }
@@ -228,10 +232,13 @@ function createMiotLightRequest(
 
 function createSetPropertyRequest(
   metadata: MiotEndpointConnectionMetadata,
-  property: MiotSpecProperty,
+  propertyName: keyof MiotLightEndpointProperties,
   value: unknown,
 ): MiotSetPropertyRequest {
-  const {service} = getPrimaryMiotEndpointConnectionResource(metadata);
+  const {service, property} = getMiotEndpointConnectionProperty(
+    metadata,
+    propertyName,
+  );
 
   return new MiotSetPropertyRequest(
     {
