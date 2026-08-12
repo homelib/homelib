@@ -15,11 +15,11 @@ import * as x from 'x-value';
 import {
   type MiotEndpointProfile,
   defineMiotEndpointAdapter,
-  getValidatedMiotEndpointProperties,
+  getMiotEndpointConnectionProperties,
 } from '../endpoint-adapter.js';
 import {
   MiotEndpointConnection,
-  type MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionTransports,
   getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
@@ -214,15 +214,14 @@ export class MiotDehumidifierEndpointConnection
 
   constructor(
     provider: MiotProvider,
-    metadata: MiotEndpointConnectionMetadata,
+    metadata: MiotEndpointConnectionResolvedMetadata,
     transports: MiotEndpointConnectionTransports,
   ) {
     super(provider, metadata, transports);
-    this.properties = getMiotDehumidifierProperties(metadata);
-  }
-
-  static assertMetadata(metadata: MiotEndpointConnectionMetadata): void {
-    getMiotDehumidifierProperties(metadata);
+    this.properties =
+      getMiotEndpointConnectionProperties<MiotDehumidifierEndpointProperties>(
+        metadata,
+      );
   }
 
   override async processCommand(
@@ -273,19 +272,9 @@ type MiotEnvironmentEndpointMatcher = Omit<
   'device'
 >;
 
-function getMiotDehumidifierProperties(
-  metadata: MiotEndpointConnectionMetadata,
-): MiotDehumidifierEndpointProperties {
-  return getValidatedMiotEndpointProperties(
-    'dehumidifier',
-    metadata,
-    MIOT_DEHUMIDIFIER_ENDPOINT_PROFILES,
-  ) as MiotDehumidifierEndpointProperties;
-}
-
 function createMiotDehumidifierRequest(
   command: DehumidifierEndpointCommand,
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   properties: MiotDehumidifierEndpointProperties,
 ): MiotExecutionRequest {
   if (command instanceof SetDehumidifierOnCommand) {
@@ -343,7 +332,7 @@ function getMiotDehumidifierMode(mode: DehumidifierMode): number {
 }
 
 function createSetPropertyRequest(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   propertyName: keyof MiotDehumidifierEndpointProperties,
   value: unknown,
 ): MiotSetPropertyRequest {

@@ -13,11 +13,11 @@ import * as x from 'x-value';
 import {
   type MiotEndpointProfile,
   defineMiotEndpointAdapter,
-  getValidatedMiotEndpointProperties,
+  getMiotEndpointConnectionProperties,
 } from '../endpoint-adapter.js';
 import {
   MiotEndpointConnection,
-  type MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionTransports,
   getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
@@ -126,23 +126,14 @@ export class MiotLightEndpointConnection
 
   constructor(
     provider: MiotProvider,
-    metadata: MiotEndpointConnectionMetadata,
+    metadata: MiotEndpointConnectionResolvedMetadata,
     transports: MiotEndpointConnectionTransports,
   ) {
     super(provider, metadata, transports);
-    this.properties = getValidatedMiotEndpointProperties(
-      'light',
-      metadata,
-      MIOT_LIGHT_ENDPOINT_PROFILES,
-    );
-  }
-
-  static assertMetadata(metadata: MiotEndpointConnectionMetadata): void {
-    getValidatedMiotEndpointProperties(
-      'light',
-      metadata,
-      MIOT_LIGHT_ENDPOINT_PROFILES,
-    );
+    this.properties =
+      getMiotEndpointConnectionProperties<MiotLightEndpointProperties>(
+        metadata,
+      );
   }
 
   override async processCommand(command: LightEndpointCommand): Promise<void> {
@@ -183,7 +174,7 @@ type MiotLightEndpointProperties = {
 
 function createMiotLightRequest(
   command: LightEndpointCommand,
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   properties: MiotLightEndpointProperties,
 ): MiotExecutionRequest {
   if (command instanceof SetLightOnCommand) {
@@ -231,7 +222,7 @@ function createMiotLightRequest(
 }
 
 function createSetPropertyRequest(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   propertyName: keyof MiotLightEndpointProperties,
   value: unknown,
 ): MiotSetPropertyRequest {

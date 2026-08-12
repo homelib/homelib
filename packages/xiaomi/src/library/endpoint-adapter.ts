@@ -10,8 +10,11 @@ import {
 import {
   type MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResolvedMetadata,
+  type MiotEndpointConnectionResolvedResource,
   type MiotEndpointConnectionResource,
   type MiotEndpointConnectionTransports,
+  createMiotEndpointConnectionResolvedMetadata,
 } from './endpoint-connection.js';
 import {
   type MiotEndpointMatch,
@@ -30,11 +33,13 @@ export type MiotEndpointAdapter = {
     device: MiotEndpointAdapterDevice,
     spec: MiotSpecInstance,
   ) => readonly MiotEndpointMetadataCandidate[];
-  readonly assertMetadata: (metadata: MiotEndpointConnectionMetadata) => void;
+  readonly resolveMetadata: (
+    metadata: MiotEndpointConnectionMetadata,
+  ) => MiotEndpointConnectionResolvedMetadata;
   readonly createBinding: (
     provider: MiotProvider,
     endpoint: EndpointReference,
-    metadata: MiotEndpointConnectionMetadata,
+    metadata: MiotEndpointConnectionResolvedMetadata,
     transports: MiotEndpointConnectionTransports,
     disposeConnection?: (
       connection: MiotEndpointConnection<never>,
@@ -105,10 +110,9 @@ export function defineMiotEndpointAdapter<
   readonly Connection: {
     new (
       provider: MiotProvider,
-      metadata: MiotEndpointConnectionMetadata,
+      metadata: MiotEndpointConnectionResolvedMetadata,
       transports: MiotEndpointConnectionTransports,
     ): MiotEndpointConnection<TCommand> & TEndpointConnection;
-    assertMetadata(metadata: MiotEndpointConnectionMetadata): void;
   };
   readonly endpointProfiles: readonly MiotEndpointProfile[];
 }): MiotEndpointAdapter {
@@ -124,6 +128,11 @@ export function defineMiotEndpointAdapter<
     Endpoint: EndpointConstructor,
     findMetadataCandidates(device, spec) {
       const candidateMap = new Map<string, MiotEndpointMetadataCandidate>();
+      const resolvedResourceMap = new Map<
+        string,
+        readonly MiotEndpointConnectionResolvedResource[]
+      >();
+      const ambiguousKeySet = new Set<string>();
 
       for (const resources of resolveMiotEndpointProfileCandidates(
         spec,
@@ -131,15 +140,27 @@ export function defineMiotEndpointAdapter<
       )) {
         const metadata = MiotEndpointConnectionMetadata.satisfies({
           device: {did: device.did, model: device.model, urn: spec.type},
-          resources,
+          resources: resources.map(({service}) => ({service})),
         });
         const key = getMetadataCandidateKey(type, metadata);
 
-        if (candidateMap.has(key)) {
+        const existingResources = resolvedResourceMap.get(key);
+
+        if (existingResources !== undefined) {
+          if (!resolvedResourcesEqual(existingResources, resources)) {
+            candidateMap.delete(key);
+            resolvedResourceMap.delete(key);
+            ambiguousKeySet.add(key);
+          }
+
           continue;
         }
 
-        Connection.assertMetadata(metadata);
+        if (ambiguousKeySet.has(key)) {
+          continue;
+        }
+
+        resolvedResourceMap.set(key, resources);
         candidateMap.set(key, {
           key,
           label: metadata.resources
@@ -151,8 +172,12 @@ export function defineMiotEndpointAdapter<
 
       return [...candidateMap.values()];
     },
-    assertMetadata(metadata) {
-      Connection.assertMetadata(metadata);
+    resolveMetadata(metadata) {
+      return resolveMiotEndpointConnectionMetadata(
+        type,
+        metadata,
+        endpointProfiles,
+      );
     },
     createBinding(provider, endpoint, metadata, transports, disposeConnection) {
       if (
@@ -161,8 +186,6 @@ export function defineMiotEndpointAdapter<
       ) {
         throw new TypeError('Endpoint does not match its MIoT adapter.');
       }
-
-      Connection.assertMetadata(metadata);
 
       const connection = new Connection(provider, metadata, transports);
 
@@ -176,18 +199,12 @@ export function defineMiotEndpointAdapter<
   };
 }
 
-export function getValidatedMiotEndpointProperties<
+export function getMiotEndpointConnectionProperties<
   TProperties extends Readonly<Record<string, MiotSpecProperty>>,
->(
-  endpointType: string,
-  metadata: MiotEndpointConnectionMetadata,
-  profiles: readonly MiotEndpointProfile[],
-): TProperties {
+>(metadata: MiotEndpointConnectionResolvedMetadata): TProperties {
   return Object.assign(
     {},
-    ...getValidatedMiotEndpointResources(endpointType, metadata, profiles).map(
-      resource => resource.properties,
-    ),
+    ...metadata.resources.map(resource => resource.properties),
   ) as TProperties;
 }
 
@@ -199,36 +216,53 @@ export function miotEndpointConnectionMetadataEqual(
     left.device.did === right.device.did &&
     left.device.model === right.device.model &&
     left.device.urn === right.device.urn &&
-    resourcesEqual(left.resources, right.resources)
+    physicalResourcesEqual(left.resources, right.resources)
   );
 }
 
-export function getValidatedMiotEndpointResources(
+export function resolveMiotEndpointConnectionMetadata(
   endpointType: string,
   metadata: MiotEndpointConnectionMetadata,
   profiles: readonly MiotEndpointProfile[],
-): readonly MiotEndpointConnectionResource[] {
+): MiotEndpointConnectionResolvedMetadata {
   const spec: MiotSpecInstance = {
     type: metadata.device.urn,
     description: metadata.device.model,
     services: metadata.resources.map(resource => resource.service),
   };
-  for (const expectedResources of resolveMiotEndpointProfileCandidates(
+  const matchedResources = resolveMiotEndpointProfileCandidates(
     spec,
     profiles,
-  )) {
-    if (resourcesEqual(expectedResources, metadata.resources)) {
-      return expectedResources;
+  ).filter(resources =>
+    resolvedResourcesMatchMetadata(resources, metadata.resources),
+  );
+  const uniqueResources: Array<
+    readonly MiotEndpointConnectionResolvedResource[]
+  > = [];
+
+  for (const resources of matchedResources) {
+    if (
+      !uniqueResources.some(existing =>
+        resolvedResourcesEqual(existing, resources),
+      )
+    ) {
+      uniqueResources.push(resources);
     }
   }
 
-  throw new TypeError(`Invalid MIoT ${endpointType} endpoint metadata.`);
+  const [resources] = uniqueResources;
+
+  if (resources === undefined || uniqueResources.length !== 1) {
+    throw new TypeError(`Invalid MIoT ${endpointType} endpoint metadata.`);
+  }
+
+  return createMiotEndpointConnectionResolvedMetadata(metadata, resources);
 }
 
 function resolveMiotEndpointProfileCandidates(
   spec: MiotSpecInstance,
   profiles: readonly MiotEndpointProfile[],
-): readonly (readonly MiotEndpointConnectionResource[])[] {
+): readonly (readonly MiotEndpointConnectionResolvedResource[])[] {
   const deviceProfiles = profiles.filter(
     profile =>
       profile.device !== undefined &&
@@ -238,18 +272,30 @@ function resolveMiotEndpointProfileCandidates(
     deviceProfiles.length === 0
       ? profiles.filter(profile => profile.device === undefined)
       : deviceProfiles;
-  const candidates: MiotEndpointConnectionResource[][] = [];
+  const candidates: MiotEndpointConnectionResolvedResource[][] = [];
   const claimedServiceIidSet = new Set<number>();
+  const candidateKeySet = new Set<string>();
 
   for (const profile of applicableProfiles) {
     const profileCandidates = resolveMiotEndpointProfile(spec, profile).filter(
-      resources =>
-        resources.every(({service}) => !claimedServiceIidSet.has(service.iid)),
+      resources => {
+        const key = getPhysicalResourceCombinationKey(resources);
+
+        // A physical binding cannot persist which of two semantic mappings
+        // was selected. Preserve same-address results so the caller can reject
+        // conflicting mappings instead of silently relying on profile order.
+        return (
+          candidateKeySet.has(key) ||
+          resources.every(({service}) => !claimedServiceIidSet.has(service.iid))
+        );
+      },
     );
 
     candidates.push(...profileCandidates);
 
     for (const resources of profileCandidates) {
+      candidateKeySet.add(getPhysicalResourceCombinationKey(resources));
+
       for (const {service} of resources) {
         claimedServiceIidSet.add(service.iid);
       }
@@ -262,7 +308,7 @@ function resolveMiotEndpointProfileCandidates(
 function resolveMiotEndpointProfile(
   spec: MiotSpecInstance,
   profile: MiotEndpointProfile,
-): MiotEndpointConnectionResource[][] {
+): MiotEndpointConnectionResolvedResource[][] {
   const matchLists = profile.services.map(matcher =>
     findMiotEndpointMatches(spec, matcher),
   );
@@ -271,7 +317,7 @@ function resolveMiotEndpointProfile(
     return [];
   }
 
-  const candidates: MiotEndpointConnectionResource[][] = [];
+  const candidates: MiotEndpointConnectionResolvedResource[][] = [];
   const candidateKeySet = new Set<string>();
 
   const visit = (
@@ -290,7 +336,7 @@ function resolveMiotEndpointProfile(
         return;
       }
 
-      const key = getResourceCombinationKey(resources);
+      const key = getResolvedResourceCombinationKey(resources);
 
       if (!candidateKeySet.has(key)) {
         candidateKeySet.add(key);
@@ -318,7 +364,7 @@ function resolveMiotEndpointProfile(
 }
 
 function hasUniqueMiotEndpointAliases(
-  resources: readonly MiotEndpointConnectionResource[],
+  resources: readonly MiotEndpointConnectionResolvedResource[],
 ): boolean {
   const aliasSet = new Set<string>();
 
@@ -361,7 +407,21 @@ function getMetadataCandidateKey(
   ]);
 }
 
-function getResourceCombinationKey(
+function getResolvedResourceCombinationKey(
+  resources: readonly MiotEndpointConnectionResolvedResource[],
+): string {
+  return JSON.stringify(
+    resources.toSorted(compareResources).map(resource => {
+      const propertyKeys = Object.entries(resource.properties)
+        .map(([name, property]) => [name, property.iid] as const)
+        .toSorted(([left], [right]) => compareStrings(left, right));
+
+      return [resource.service.iid, propertyKeys];
+    }),
+  );
+}
+
+function getPhysicalResourceCombinationKey(
   resources: readonly MiotEndpointConnectionResource[],
 ): string {
   return JSON.stringify(getResourceCombinationKeyValue(resources));
@@ -370,17 +430,13 @@ function getResourceCombinationKey(
 function getResourceCombinationKeyValue(
   resources: readonly MiotEndpointConnectionResource[],
 ): readonly unknown[] {
-  return resources.toSorted(compareResources).map(resource => {
-    const propertyKeys = Object.entries(resource.properties)
-      .map(([name, property]) => [name, property.iid] as const)
-      .sort(([left], [right]) => compareStrings(left, right));
-
-    return [resource.service.iid, propertyKeys];
-  });
+  return resources
+    .toSorted(compareResources)
+    .map(resource => resource.service.iid);
 }
 
-function resourcesEqual(
-  expected: readonly MiotEndpointConnectionResource[],
+function resolvedResourcesMatchMetadata(
+  expected: readonly MiotEndpointConnectionResolvedResource[],
   actual: readonly MiotEndpointConnectionResource[],
 ): boolean {
   const actualResourceMap = new Map(
@@ -396,8 +452,50 @@ function resourcesEqual(
 
       return (
         actualResource !== undefined &&
-        serviceEqual(expectedResource.service, actualResource.service) &&
-        propertiesEqual(expectedResource.properties, actualResource.properties)
+        serviceEqual(expectedResource.service, actualResource.service)
+      );
+    })
+  );
+}
+
+function physicalResourcesEqual(
+  left: readonly MiotEndpointConnectionResource[],
+  right: readonly MiotEndpointConnectionResource[],
+): boolean {
+  return unorderedArraysEqual(left, right, (leftResource, rightResource) =>
+    serviceEqual(leftResource.service, rightResource.service),
+  );
+}
+
+function resolvedResourcesEqual(
+  left: readonly MiotEndpointConnectionResolvedResource[],
+  right: readonly MiotEndpointConnectionResolvedResource[],
+): boolean {
+  return unorderedArraysEqual(left, right, (leftResource, rightResource) => {
+    return (
+      serviceEqual(leftResource.service, rightResource.service) &&
+      resolvedPropertiesEqual(leftResource.properties, rightResource.properties)
+    );
+  });
+}
+
+function resolvedPropertiesEqual(
+  left: Readonly<Record<string, MiotSpecProperty>>,
+  right: Readonly<Record<string, MiotSpecProperty>>,
+): boolean {
+  const leftNames = Object.keys(left);
+  const rightNames = Object.keys(right);
+
+  return (
+    uniqueStringArraysEqual(leftNames, rightNames) &&
+    leftNames.every(name => {
+      const leftProperty = left[name];
+      const rightProperty = right[name];
+
+      return (
+        leftProperty !== undefined &&
+        rightProperty !== undefined &&
+        propertyEqual(leftProperty, rightProperty)
       );
     })
   );
@@ -420,32 +518,6 @@ function serviceEqual(
     expected.description === actual.description &&
     optionalPropertyArraysEqual(expected.properties, actual.properties)
   );
-}
-
-function propertiesEqual<
-  TProperties extends Record<string, MiotPropertyMatcher>,
-  TOptionalProperties extends Record<string, MiotPropertyMatcher>,
->(
-  expected: MiotEndpointMatch<TProperties, TOptionalProperties>['properties'],
-  actual: Readonly<Record<string, MiotSpecProperty>>,
-): boolean {
-  const expectedNames = Object.keys(expected);
-  const actualNames = Object.keys(actual);
-
-  if (!uniqueStringArraysEqual(expectedNames, actualNames)) {
-    return false;
-  }
-
-  return expectedNames.every(name => {
-    const expectedProperty = expected[name];
-    const actualProperty = actual[name];
-
-    return (
-      expectedProperty !== undefined &&
-      actualProperty !== undefined &&
-      propertyEqual(expectedProperty, actualProperty)
-    );
-  });
 }
 
 function propertyEqual(

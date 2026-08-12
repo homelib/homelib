@@ -9,7 +9,6 @@ import {
   MiotEndpointAdapterRegistry,
   type MiotEndpointProfile,
   defineMiotEndpointAdapter,
-  getValidatedMiotEndpointResources,
   miotEndpointConnectionMetadataEqual,
 } from './endpoint-adapter.js';
 import {
@@ -79,35 +78,15 @@ const TEST_PROFILES = [
   {services: [ON_MATCHER]},
 ] as const satisfies readonly MiotEndpointProfile[];
 
-test('discovers a complete flat service combination and self-validates it', () => {
+test('persists physical services and resolves aliases from current profiles', () => {
   const adapter = createProfileAdapter();
   const [candidate] = adapter.findMetadataCandidates(TEST_DEVICE, createSpec());
 
   expect(candidate).toMatchObject({
-    key: JSON.stringify([
-      'test-profile',
-      'physical',
-      [
-        2,
-        [
-          ['mode', 2],
-          ['on', 1],
-        ],
-      ],
-      [4, [['temperature', 1]]],
-    ]),
+    key: JSON.stringify(['test-profile', 'physical', 2, 4]),
     label: 'Light 2 + Environment 4',
     metadata: {
-      resources: [
-        {
-          service: {iid: 2},
-          properties: {on: {iid: 1}, mode: {iid: 2}},
-        },
-        {
-          service: {iid: 4},
-          properties: {temperature: {iid: 1}},
-        },
-      ],
+      resources: [{service: {iid: 2}}, {service: {iid: 4}}],
     },
   });
 
@@ -115,7 +94,15 @@ test('discovers a complete flat service combination and self-validates it', () =
     throw new Error('Test profile adapter returned no metadata candidate.');
   }
 
-  expect(() => adapter.assertMetadata(candidate.metadata)).not.toThrow();
+  expect(
+    candidate.metadata.resources.every(
+      resource => !Object.hasOwn(resource, 'properties'),
+    ),
+  ).toBe(true);
+  expect(adapter.resolveMetadata(candidate.metadata).resources).toMatchObject([
+    {service: {iid: 2}, properties: {on: {iid: 1}, mode: {iid: 2}}},
+    {service: {iid: 4}, properties: {temperature: {iid: 1}}},
+  ]);
   expect(getMiotEndpointConnectionResourceKeys(candidate.metadata)).toEqual([
     JSON.stringify(['physical', 2]),
     JSON.stringify(['physical', 4]),
@@ -130,7 +117,7 @@ test('validates the same combination regardless of resource order', () => {
     resources: [...metadata.resources].reverse(),
   });
 
-  expect(() => adapter.assertMetadata(reversed)).not.toThrow();
+  expect(() => adapter.resolveMetadata(reversed)).not.toThrow();
 });
 
 test('compares metadata collections by MIoT semantics instead of order', () => {
@@ -147,14 +134,6 @@ test('compares metadata collections by MIoT semantics instead of order', () => {
           ?.map(reversePropertyCollections)
           .reverse(),
       },
-      properties: Object.fromEntries(
-        Object.entries(resource.properties)
-          .reverse()
-          .map(([alias, property]) => [
-            alias,
-            reversePropertyCollections(property),
-          ]),
-      ),
     })),
   });
 
@@ -239,9 +218,7 @@ test('uses generic fallback only when no device-specific profile applies', () =>
   spec.services = spec.services.filter(service => service.iid !== 4);
   const [candidate] = adapter.findMetadataCandidates(TEST_DEVICE, spec);
 
-  expect(candidate?.metadata.resources).toMatchObject([
-    {service: {iid: 2}, properties: {on: {iid: 1}}},
-  ]);
+  expect(candidate?.metadata.resources).toMatchObject([{service: {iid: 2}}]);
 });
 
 test('higher-priority combinations suppress every overlapping fallback', () => {
@@ -291,28 +268,65 @@ test('preserves overlapping combinations from the same profile as ambiguity', ()
   ]);
 });
 
-test('rejects metadata that is not reproduced by the common resolver', () => {
+test('rejects metadata whose resources are not fully reproduced by the resolver', () => {
   const adapter = createProfileAdapter();
   const metadata = requireCandidate(adapter, createSpec()).metadata;
-  const [lightResource, environmentResource] = metadata.resources;
+  const [lightResource] = metadata.resources;
 
-  if (lightResource === undefined || environmentResource === undefined) {
+  if (lightResource === undefined) {
     throw new Error('Test metadata is incomplete.');
   }
 
   const staleMetadata = MiotEndpointConnectionMetadata.satisfies({
     ...metadata,
-    resources: [
-      {
-        ...lightResource,
-        properties: {on: lightResource.properties.on},
-      },
-      environmentResource,
-    ],
+    resources: [lightResource],
   });
 
-  expect(() => adapter.assertMetadata(staleMetadata)).toThrow(
+  expect(() => adapter.resolveMetadata(staleMetadata)).toThrow(
     'Invalid MIoT test-profile endpoint metadata.',
+  );
+});
+
+test('derives a newly supported optional alias from persisted physical metadata', () => {
+  const withoutOptional = createAdapter('optional', [{services: [ON_MATCHER]}]);
+  const withOptional = createAdapter('optional', [
+    {
+      services: [
+        {
+          ...ON_MATCHER,
+          optionalProperties: {mode: RICH_LIGHT_MATCHER.properties.mode},
+        },
+      ],
+    },
+  ]);
+  const metadata = requireCandidate(withoutOptional, createSpec()).metadata;
+
+  expect(metadata.resources[0]).not.toHaveProperty('properties');
+  expect(
+    withOptional.resolveMetadata(metadata).resources[0]?.properties,
+  ).toMatchObject({on: {iid: 1}, mode: {iid: 2}});
+});
+
+test('fails closed when one physical resource set has different semantics', () => {
+  const adapter = createAdapter('ambiguous-semantics', [
+    {services: [ON_MATCHER]},
+    {
+      services: [
+        {
+          ...ON_MATCHER,
+          properties: {power: ON_MATCHER.properties.on},
+        },
+      ],
+    },
+  ]);
+  const metadata = MiotEndpointConnectionMetadata.satisfies({
+    device: {...TEST_DEVICE, urn: DEVICE_TYPE},
+    resources: [{service: createLightService(2)}],
+  });
+
+  expect(adapter.findMetadataCandidates(TEST_DEVICE, createSpec())).toEqual([]);
+  expect(() => adapter.resolveMetadata(metadata)).toThrow(
+    'Invalid MIoT ambiguous-semantics endpoint metadata.',
   );
 });
 
@@ -358,21 +372,13 @@ function createAdapter(
     name?: string,
   ) => LightEndpoint<LightEndpointConnection> = LightEndpoint,
 ): MiotEndpointAdapter {
-  class TestConnection extends TestLightEndpointConnection {
-    static override assertMetadata(
-      metadata: MiotEndpointConnectionMetadata,
-    ): void {
-      getValidatedMiotEndpointResources(type, metadata, endpointProfiles);
-    }
-  }
-
   return defineMiotEndpointAdapter<
     LightEndpointCommand,
     LightEndpointConnection
   >({
     type,
     Endpoint,
-    Connection: TestConnection,
+    Connection: TestLightEndpointConnection,
     endpointProfiles,
   });
 }
@@ -407,8 +413,6 @@ class TestLightEndpointConnection
   get colorTemperature(): number | undefined {
     return undefined;
   }
-
-  static assertMetadata(_metadata: MiotEndpointConnectionMetadata): void {}
 
   override processCommand(_command: LightEndpointCommand): Promise<void> {
     return Promise.resolve();
@@ -493,12 +497,6 @@ function mapMetadataProperties(
         ...resource.service,
         properties: resource.service.properties?.map(callback),
       },
-      properties: Object.fromEntries(
-        Object.entries(resource.properties).map(([alias, property]) => [
-          alias,
-          callback(property),
-        ]),
-      ),
     })),
   });
 }

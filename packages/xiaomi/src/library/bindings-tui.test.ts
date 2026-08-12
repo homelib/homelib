@@ -75,11 +75,13 @@ test('confirms the default device match as one batch and returns after saving', 
         resources: [
           {
             service: {iid: 2},
-            properties: {on: {iid: 1}},
           },
         ],
       },
     });
+    expect(bindingBatches[0]?.[0]?.metadata).not.toHaveProperty(
+      'resources.0.properties',
+    );
     expect(terminal.frame()).toContain('saving device match…');
     expect(backCallCount).toBe(0);
     expect(completeCallCount).toBe(0);

@@ -22,8 +22,8 @@ import {
   resolveMiotBindingDeviceProposal,
 } from './binding.js';
 import {
-  MiotEndpointConnectionMetadata,
   getMiotEndpointConnectionResourceKeys,
+  normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import {MiotProvider} from './provider.js';
 
@@ -841,7 +841,7 @@ function getResourceOwner(
     }
 
     try {
-      const metadata = MiotEndpointConnectionMetadata.satisfies(
+      const metadata = normalizeMiotEndpointConnectionMetadata(
         binding.metadata,
       );
 
@@ -907,7 +907,7 @@ function isResourceOwnedOutsideDevice(
     }
 
     try {
-      const metadata = MiotEndpointConnectionMetadata.satisfies(
+      const metadata = normalizeMiotEndpointConnectionMetadata(
         binding.metadata,
       );
 

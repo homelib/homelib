@@ -12,6 +12,7 @@ import {autorun} from 'mobx';
 import type {MiotEndpointAdapter} from '../endpoint-adapter.js';
 import {
   MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResolvedMetadata,
   MiotEndpointConnectionTransport,
   type MiotPropertyUpdate,
 } from '../endpoint-connection.js';
@@ -104,7 +105,7 @@ type OnOffEndpointTestOptions<TConnection extends OnOffConnection> = {
   readonly adapter: MiotEndpointAdapter;
   readonly createEndpoint: () => EndpointReference;
   readonly createConnection: (
-    metadata: MiotEndpointConnectionMetadata,
+    metadata: MiotEndpointConnectionResolvedMetadata,
     transport: TestTransport,
   ) => TConnection;
   readonly setOn: (connection: TConnection, value: boolean) => Promise<void>;
@@ -127,20 +128,20 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
         label: options.name,
         metadata: {
           device: {did: 'device-1', urn: spec.type},
-          resources: [
-            {
-              service: {iid: 2},
-              properties: {on: {iid: 1}},
-            },
-          ],
+          resources: [{service: {iid: 2}}],
         },
       });
 
+      expect(candidates[0]?.metadata.resources[0]).not.toHaveProperty(
+        'properties',
+      );
+
       const metadata = requireCandidateMetadata(candidates);
+      const resolvedMetadata = options.adapter.resolveMetadata(metadata);
       const binding = options.adapter.createBinding(
         new MiotProvider('provider'),
         options.createEndpoint(),
-        metadata,
+        resolvedMetadata,
         [new TestTransport()],
       );
 
@@ -162,8 +163,13 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
       expect(candidates[0]?.metadata.device.urn).toBe(spec.type);
     });
 
-    test('rejects metadata with an extra property alias', () => {
-      const metadata = createMetadata(options);
+    test('derives aliases from the full physical service snapshot', () => {
+      const metadata = requireCandidateMetadata(
+        options.adapter.findMetadataCandidates(
+          {did: 'device-1', model: `test.${options.name}`},
+          createSpec(options),
+        ),
+      );
       const [resource] = metadata.resources;
 
       if (resource === undefined) {
@@ -178,7 +184,7 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
         'value-list': [{value: 0, description: 'Default'}],
       };
 
-      const invalidMetadata = MiotEndpointConnectionMetadata.satisfies({
+      const metadataWithStaleAlias = MiotEndpointConnectionMetadata.satisfies({
         ...metadata,
         resources: [
           {
@@ -191,16 +197,30 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
               ],
             },
             properties: {
-              ...resource.properties,
               alias: aliasProperty,
             },
           },
         ],
       });
 
-      expect(() => options.adapter.assertMetadata(invalidMetadata)).toThrow(
-        `Invalid MIoT ${options.name.replaceAll(' ', '-')} endpoint metadata.`,
+      const resolvedMetadata = options.adapter.resolveMetadata(
+        metadataWithStaleAlias,
       );
+
+      expect(resolvedMetadata.resources[0]?.properties).toEqual({
+        on: expect.objectContaining({iid: 1}),
+      });
+      expect(resolvedMetadata.resources[0]?.properties).not.toHaveProperty(
+        'alias',
+      );
+      const connection = options.createConnection(
+        resolvedMetadata,
+        new TestTransport(),
+      );
+
+      expect(connection.stateProperties).toEqual([
+        {did: metadata.device.did, siid: 2, piid: 1},
+      ]);
     });
 
     test('translates on commands to MIoT property requests', async () => {
@@ -253,13 +273,15 @@ function createMetadata(
     OnOffEndpointTestOptions<OnOffConnection>,
     'adapter' | 'deviceType' | 'name' | 'serviceType'
   >,
-): MiotEndpointConnectionMetadata {
-  return requireCandidateMetadata(
+): MiotEndpointConnectionResolvedMetadata {
+  const metadata = requireCandidateMetadata(
     options.adapter.findMetadataCandidates(
       {did: 'device-1', model: `test.${options.name}`},
       createSpec(options),
     ),
   );
+
+  return options.adapter.resolveMetadata(metadata);
 }
 
 function requireCandidateMetadata(

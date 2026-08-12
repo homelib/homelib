@@ -15,11 +15,11 @@ import * as x from 'x-value';
 import {
   type MiotEndpointProfile,
   defineMiotEndpointAdapter,
-  getValidatedMiotEndpointProperties,
+  getMiotEndpointConnectionProperties,
 } from '../endpoint-adapter.js';
 import {
   MiotEndpointConnection,
-  type MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionTransports,
   getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
@@ -157,23 +157,12 @@ export class MiotFanEndpointConnection
 
   constructor(
     provider: MiotProvider,
-    metadata: MiotEndpointConnectionMetadata,
+    metadata: MiotEndpointConnectionResolvedMetadata,
     transports: MiotEndpointConnectionTransports,
   ) {
     super(provider, metadata, transports);
-    this.properties = getValidatedMiotEndpointProperties(
-      'fan',
-      metadata,
-      MIOT_FAN_ENDPOINT_PROFILES,
-    );
-  }
-
-  static assertMetadata(metadata: MiotEndpointConnectionMetadata): void {
-    getValidatedMiotEndpointProperties(
-      'fan',
-      metadata,
-      MIOT_FAN_ENDPOINT_PROFILES,
-    );
+    this.properties =
+      getMiotEndpointConnectionProperties<MiotFanEndpointProperties>(metadata);
   }
 
   override async processCommand(command: FanEndpointCommand): Promise<void> {
@@ -216,7 +205,7 @@ type MiotFanEndpointProperties = {
 
 function createMiotFanRequest(
   command: FanEndpointCommand,
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   properties: MiotFanEndpointProperties,
 ): MiotExecutionRequest {
   if (command instanceof SetFanOnCommand) {
@@ -257,7 +246,7 @@ function createMiotFanRequest(
 }
 
 function createSetPropertyRequest(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   propertyName: keyof MiotFanEndpointProperties,
   value: unknown,
 ): MiotSetPropertyRequest {

@@ -28,7 +28,9 @@ import type {MiotEndpointAdapter} from './endpoint-adapter.js';
 import {
   type MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionResourceKeys,
+  normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import type {MiotProperty} from './miot/index.js';
 import {OAuthSessionManager} from './session-manager.js';
@@ -135,15 +137,18 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
       throw new TypeError('Unsupported MIoT endpoint.');
     }
 
-    endpointAdapter.assertMetadata(metadata);
+    const normalizedMetadata =
+      normalizeMiotEndpointConnectionMetadata(metadata);
+    const resolvedMetadata =
+      endpointAdapter.resolveMetadata(normalizedMetadata);
 
     return {
-      resourceKeys: getMiotEndpointConnectionResourceKeys(metadata),
+      resourceKeys: getMiotEndpointConnectionResourceKeys(normalizedMetadata),
       create: () =>
         this.createEndpointConnectionBinding(
           endpointAdapter,
           endpoint,
-          metadata,
+          resolvedMetadata,
         ),
     };
   }
@@ -151,7 +156,7 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
   private async createEndpointConnectionBinding(
     endpointAdapter: MiotEndpointAdapter,
     endpoint: EndpointReference,
-    metadata: MiotEndpointConnectionMetadata,
+    metadata: MiotEndpointConnectionResolvedMetadata,
   ): Promise<EndpointConnectionBinding> {
     this.endpointConnectionCreationCount++;
     let cloud: MiotProviderCloud | undefined;

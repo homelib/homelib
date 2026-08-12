@@ -67,13 +67,11 @@ test('discovers physical devices and matches for a logical endpoint', async () =
     discovery.devices[0]?.endpoints[0]?.matches[0]?.metadata,
   ).toMatchObject({
     device: {did: 'first', model: 'test.light', urn: LIGHT_SPEC.type},
-    resources: [
-      {
-        service: {iid: 2},
-        properties: {on: {iid: 1}},
-      },
-    ],
+    resources: [{service: {iid: 2}}],
   });
+  expect(
+    discovery.devices[0]?.endpoints[0]?.matches[0]?.metadata.resources[0],
+  ).not.toHaveProperty('properties');
 });
 
 test('distinguishes missing authorization from no compatible devices', async () => {
@@ -230,7 +228,7 @@ test('keeps set-valued assignments ambiguous when several maximum packings exist
   expect(proposal.bindings).toEqual([]);
 });
 
-test('does not treat metadata rejected by the current endpoint adapter as existing', () => {
+test('ignores legacy property aliases when identifying an existing binding', () => {
   const currentMatch = createCurrentLightBindingMatchCandidate(2);
   const endpoint = createBindingEndpointCandidate('main', []);
   const device = createBindingDeviceCandidate([
@@ -247,15 +245,21 @@ test('does not treat metadata rejected by the current endpoint adapter as existi
   if (currentResource === undefined) {
     throw new Error('Current test binding has no resource.');
   }
-  const oldMetadata = MiotEndpointConnectionMetadata.satisfies({
+  const [on] = currentResource.service.properties ?? [];
+
+  if (on === undefined) {
+    throw new Error('Current test binding has no physical property.');
+  }
+
+  const oldMetadata = {
     ...currentMatch.metadata,
     resources: [
       {
         ...currentResource,
-        properties: {on: currentResource.properties.on},
+        properties: {staleAlias: on},
       },
     ],
-  });
+  };
   const oldProposal = resolveMiotBindingDeviceProposal(device, [
     {endpoint: endpoint.endpoint.path, metadata: oldMetadata},
   ]);
@@ -263,13 +267,8 @@ test('does not treat metadata rejected by the current endpoint adapter as existi
   expect(validProposal.endpoints.map(item => item.status)).toEqual([
     'existing',
   ]);
-  expect(oldProposal.endpoints.map(item => item.status)).toEqual(['automatic']);
-  expect(oldProposal.bindings).toEqual([
-    {
-      endpoint: endpoint.endpoint.path,
-      metadata: currentMatch.metadata,
-    },
-  ]);
+  expect(oldProposal.endpoints.map(item => item.status)).toEqual(['existing']);
+  expect(oldProposal.bindings).toEqual([]);
 });
 
 test('does not silently choose a contested single match', () => {
@@ -309,6 +308,38 @@ test('keeps missing and occupied endpoints visible in the proposal', () => {
 
   expect(proposal.endpoints.map(endpoint => endpoint.status)).toEqual([
     'missing',
+    'unavailable',
+  ]);
+});
+
+test('legacy property aliases do not hide occupied physical resources', () => {
+  const occupiedMatch = createBindingMatchCandidate(2);
+  const [resource] = occupiedMatch.metadata.resources;
+
+  if (resource === undefined) {
+    throw new Error('Occupied test binding has no resource.');
+  }
+
+  const proposal = resolveMiotBindingDeviceProposal(
+    createBindingDeviceCandidate([
+      createBindingEndpointCandidate('occupied', [2]),
+    ]),
+    [
+      {
+        endpoint: EndpointPath.satisfies({
+          scopePath: ['another home'],
+          deviceName: 'another light',
+          endpointName: '',
+        }),
+        metadata: {
+          ...occupiedMatch.metadata,
+          resources: [{...resource, properties: {obsolete: {iid: 999}}}],
+        },
+      },
+    ],
+  );
+
+  expect(proposal.endpoints.map(endpoint => endpoint.status)).toEqual([
     'unavailable',
   ]);
 });
@@ -380,9 +411,6 @@ test('identifies semantically equal reordered metadata as existing', () => {
               access: [...property.access].reverse(),
             })),
         },
-        properties: Object.fromEntries(
-          Object.entries(resource.properties).reverse(),
-        ),
       },
     ],
   });
@@ -616,9 +644,6 @@ function createBindingMatchCandidate(
           description: `Light ${resourceServiceId}`,
           properties: [property],
         },
-        properties: {
-          [index === 0 ? 'on' : `state${resourceServiceId}`]: property,
-        },
       };
     }),
   });
@@ -669,7 +694,6 @@ function createCurrentLightBindingMatchCandidate(
           description: `Light ${serviceId}`,
           properties: [on, brightness, colorTemperature],
         },
-        properties: {on, brightness, colorTemperature},
       },
     ],
   });

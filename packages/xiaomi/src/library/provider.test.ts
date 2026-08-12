@@ -98,11 +98,23 @@ test('routes endpoint binding plans through the exact endpoint adapter', () => {
   }
 
   const provider = new MiotProvider('provider');
+  const resolveMetadata = import.meta.jest.spyOn(
+    miotLightEndpointAdapter,
+    'resolveMetadata',
+  );
+  const legacyMetadata = {
+    ...candidate.metadata,
+    resources: candidate.metadata.resources.map(resource => ({
+      ...resource,
+      properties: {staleAlias: resource.service.properties?.[0]},
+    })),
+  };
   const plan = provider.createEndpointConnectionBindingPlan(
     new LightEndpoint(),
-    candidate.metadata,
+    legacyMetadata,
   );
 
+  expect(resolveMetadata).toHaveBeenCalledWith(candidate.metadata);
   expect(plan.resourceKeys).toEqual(
     getMiotEndpointConnectionResourceKeys(candidate.metadata),
   );

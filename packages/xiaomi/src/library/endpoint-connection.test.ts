@@ -20,19 +20,23 @@ import {MiotLightEndpointConnection} from './devices/index.js';
 import {
   MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
-  type MiotEndpointConnectionResource,
+  type MiotEndpointConnectionResolvedMetadata,
+  type MiotEndpointConnectionResolvedResource,
   MiotEndpointConnectionTransport,
+  createMiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionProperty,
   getMiotEndpointConnectionResourceKeys,
+  normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import {
   type MiotExecutionRequest,
   type MiotExecutionResult,
   MiotSetPropertyRequest,
+  type MiotSpecProperty,
 } from './miot/index.js';
 import {MiotProvider} from './provider.js';
 
-const TEST_METADATA = MiotEndpointConnectionMetadata.satisfies({
+const TEST_METADATA = createTestResolvedMetadata({
   device: {
     did: 'device-1',
     model: 'test.light',
@@ -69,7 +73,7 @@ const TEST_METADATA = MiotEndpointConnectionMetadata.satisfies({
 
 const TEST_PRIMARY_RESOURCE = getResource(TEST_METADATA, 0);
 
-const TEST_DIMMABLE_METADATA = MiotEndpointConnectionMetadata.satisfies({
+const TEST_DIMMABLE_METADATA = createTestResolvedMetadata({
   ...TEST_METADATA,
   resources: [
     {
@@ -124,7 +128,7 @@ const TEST_DIMMABLE_METADATA = MiotEndpointConnectionMetadata.satisfies({
 
 const TEST_DIMMABLE_PRIMARY_RESOURCE = getResource(TEST_DIMMABLE_METADATA, 0);
 
-const TEST_VALUE_LIST_METADATA = MiotEndpointConnectionMetadata.satisfies({
+const TEST_VALUE_LIST_METADATA = createTestResolvedMetadata({
   device: {
     did: 'fan-1',
     model: 'test.fan',
@@ -180,7 +184,7 @@ const TEST_ENVIRONMENT_TEMPERATURE_PROPERTY = {
   access: ['read', 'notify'],
   unit: 'celsius',
   'value-range': [-30, 100, 0.1],
-};
+} satisfies MiotSpecProperty;
 const TEST_ENVIRONMENT_HUMIDITY_PROPERTY = {
   iid: 2,
   type: 'urn:miot-spec-v2:property:relative-humidity:0000000C',
@@ -189,8 +193,8 @@ const TEST_ENVIRONMENT_HUMIDITY_PROPERTY = {
   access: ['read', 'notify'],
   unit: 'percentage',
   'value-range': [0, 100, 1],
-};
-const TEST_ENVIRONMENT_RESOURCE = {
+} satisfies MiotSpecProperty;
+const TEST_ENVIRONMENT_RESOURCE: MiotEndpointConnectionResolvedResource = {
   service: {
     iid: 3,
     type: 'urn:miot-spec-v2:service:environment:0000780A',
@@ -204,26 +208,27 @@ const TEST_ENVIRONMENT_RESOURCE = {
     temperature: TEST_ENVIRONMENT_TEMPERATURE_PROPERTY,
     humidity: TEST_ENVIRONMENT_HUMIDITY_PROPERTY,
   },
-} as const;
-const TEST_MULTI_RESOURCE_METADATA = MiotEndpointConnectionMetadata.satisfies({
+};
+const TEST_MULTI_RESOURCE_METADATA = createTestResolvedMetadata({
   ...TEST_METADATA,
   resources: [TEST_PRIMARY_RESOURCE, TEST_ENVIRONMENT_RESOURCE],
 });
 
-test('validates flat multi-service metadata roundtrip', () => {
+test('normalizes persisted metadata and strips legacy property aliases', () => {
   const serialized = JSON.stringify(TEST_MULTI_RESOURCE_METADATA);
-  const metadata = MiotEndpointConnectionMetadata.satisfies(
+  const metadata = normalizeMiotEndpointConnectionMetadata(
     JSON.parse(serialized) as unknown,
   );
 
-  expect(metadata).toEqual(TEST_MULTI_RESOURCE_METADATA);
   expect(metadata.resources).toMatchObject([
-    {service: {iid: 2}, properties: {on: {iid: 1}}},
-    {
-      service: {iid: 3},
-      properties: {temperature: {iid: 1}, humidity: {iid: 2}},
-    },
+    {service: {iid: 2}},
+    {service: {iid: 3}},
   ]);
+  expect(
+    metadata.resources.every(
+      resource => !Object.hasOwn(resource, 'properties'),
+    ),
+  ).toBe(true);
   expect(getMiotEndpointConnectionResourceKeys(metadata)).toEqual([
     JSON.stringify([TEST_METADATA.device.did, 2]),
     JSON.stringify([TEST_METADATA.device.did, 3]),
@@ -271,6 +276,42 @@ test('flattens state properties across all resources', () => {
   ]);
 });
 
+test('subscribes to derived aliases instead of every persisted property', () => {
+  const on = TEST_PRIMARY_RESOURCE.properties.on;
+  const brightness = TEST_DIMMABLE_PRIMARY_RESOURCE.properties.brightness;
+
+  if (on === undefined || brightness === undefined) {
+    throw new Error('Test light properties are incomplete.');
+  }
+
+  const metadata = createTestResolvedMetadata({
+    ...TEST_DIMMABLE_METADATA,
+    resources: [
+      {
+        service: TEST_DIMMABLE_PRIMARY_RESOURCE.service,
+        properties: {on},
+      },
+    ],
+  });
+  const connection = new TestMultiResourceEndpointConnection(
+    new MiotProvider('provider'),
+    metadata,
+    [new TestTransport()],
+  );
+
+  expect(connection.stateProperties).toEqual([
+    {did: TEST_METADATA.device.did, siid: 2, piid: 1},
+  ]);
+  expect(() =>
+    connection.handlePropertyUpdate({
+      did: TEST_METADATA.device.did,
+      siid: 2,
+      piid: brightness.iid,
+      value: 50,
+    }),
+  ).toThrow('Unexpected MIoT endpoint property update.');
+});
+
 test('resolves state aliases by service and property iid', () => {
   const connection = createMultiResourceConnection();
 
@@ -291,7 +332,7 @@ test('resolves state aliases by service and property iid', () => {
   expect(connection.temperature).toBe(23.5);
 });
 
-test('rejects duplicate services and state aliases across resources', () => {
+test('rejects duplicate physical services and derived state aliases', () => {
   expect(() =>
     MiotEndpointConnectionMetadata.satisfies({
       ...TEST_MULTI_RESOURCE_METADATA,
@@ -306,17 +347,24 @@ test('rejects duplicate services and state aliases across resources', () => {
   ).toThrow('Duplicate MIoT endpoint metadata service.');
 
   expect(() =>
-    MiotEndpointConnectionMetadata.satisfies({
-      ...TEST_MULTI_RESOURCE_METADATA,
-      resources: [
+    createMiotEndpointConnectionResolvedMetadata(
+      normalizeMiotEndpointConnectionMetadata(TEST_MULTI_RESOURCE_METADATA),
+      [
         TEST_PRIMARY_RESOURCE,
         {
           ...TEST_ENVIRONMENT_RESOURCE,
           properties: {on: TEST_ENVIRONMENT_TEMPERATURE_PROPERTY},
         },
       ],
-    }),
-  ).toThrow('Ambiguous MIoT endpoint metadata property.');
+    ),
+  ).toThrow('Ambiguous resolved MIoT endpoint property.');
+
+  expect(() =>
+    createMiotEndpointConnectionResolvedMetadata(
+      normalizeMiotEndpointConnectionMetadata(TEST_MULTI_RESOURCE_METADATA),
+      [TEST_PRIMARY_RESOURCE, TEST_PRIMARY_RESOURCE],
+    ),
+  ).toThrow('Duplicate resolved MIoT endpoint resource.');
 });
 
 test('allows writable properties on every flat resource', () => {
@@ -325,7 +373,7 @@ test('allows writable properties on every flat resource', () => {
     access: ['read', 'write', 'notify'],
   };
 
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
+  const metadata = createTestResolvedMetadata({
     ...TEST_MULTI_RESOURCE_METADATA,
     resources: [
       TEST_PRIMARY_RESOURCE,
@@ -396,139 +444,25 @@ test('locates a named property in its owning service', () => {
   ).toThrow('Unknown MIoT endpoint property: missing.');
 });
 
-test('rejects light metadata without an on property', () => {
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
-    ...TEST_METADATA,
-    resources: [{...TEST_PRIMARY_RESOURCE, properties: {}}],
-  });
-
-  expect(
-    () =>
-      new MiotLightEndpointConnection(new MiotProvider('provider'), metadata, [
-        new TestTransport(),
-      ]),
-  ).toThrow('Invalid MIoT light endpoint metadata.');
-});
-
-test('rejects light metadata whose on property is not part of the service', () => {
+test('rejects a derived property that is not part of its physical service', () => {
   expect(() =>
-    MiotEndpointConnectionMetadata.satisfies({
-      ...TEST_METADATA,
-      resources: [
+    createMiotEndpointConnectionResolvedMetadata(
+      normalizeMiotEndpointConnectionMetadata({
+        ...TEST_METADATA,
+        resources: [
+          {
+            service: {...TEST_PRIMARY_RESOURCE.service, properties: []},
+          },
+        ],
+      }),
+      [
         {
           ...TEST_PRIMARY_RESOURCE,
           service: {...TEST_PRIMARY_RESOURCE.service, properties: []},
         },
       ],
-    }),
-  ).toThrow('MIoT endpoint metadata property does not belong to its service.');
-});
-
-test('rejects light metadata with an extra property alias', () => {
-  const aliasProperty = {
-    iid: 2,
-    type: 'urn:miot-spec-v2:property:mode:00000008',
-    description: 'Mode',
-    format: 'uint8',
-    access: ['read', 'write', 'notify'],
-    'value-list': [{value: 0, description: 'Default'}],
-  };
-
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
-    ...TEST_METADATA,
-    resources: [
-      {
-        ...TEST_PRIMARY_RESOURCE,
-        service: {
-          ...TEST_PRIMARY_RESOURCE.service,
-          properties: [
-            ...(TEST_PRIMARY_RESOURCE.service.properties ?? []),
-            aliasProperty,
-          ],
-        },
-        properties: {
-          ...TEST_PRIMARY_RESOURCE.properties,
-          alias: aliasProperty,
-        },
-      },
-    ],
-  });
-
-  expect(() => MiotLightEndpointConnection.assertMetadata(metadata)).toThrow(
-    'Invalid MIoT light endpoint metadata.',
-  );
-});
-
-test('rejects light metadata with duplicate property access values', () => {
-  const onProperty = TEST_PRIMARY_RESOURCE.properties.on;
-
-  if (onProperty === undefined) {
-    throw new Error('Test light metadata has no on property.');
-  }
-
-  const duplicateAccessProperty = {
-    ...onProperty,
-    access: [...onProperty.access, 'notify'],
-  };
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
-    ...TEST_METADATA,
-    resources: [
-      {
-        ...TEST_PRIMARY_RESOURCE,
-        service: {
-          ...TEST_PRIMARY_RESOURCE.service,
-          properties: [duplicateAccessProperty],
-        },
-        properties: {on: duplicateAccessProperty},
-      },
-    ],
-  });
-
-  expect(() => MiotLightEndpointConnection.assertMetadata(metadata)).toThrow(
-    'Invalid MIoT light endpoint metadata.',
-  );
-});
-
-test('rejects light metadata that changes an optional property range', () => {
-  const brightnessProperty =
-    TEST_DIMMABLE_PRIMARY_RESOURCE.properties.brightness;
-
-  if (brightnessProperty === undefined) {
-    throw new Error('Test light metadata has no brightness property.');
-  }
-
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
-    ...TEST_DIMMABLE_METADATA,
-    resources: [
-      {
-        ...TEST_DIMMABLE_PRIMARY_RESOURCE,
-        properties: {
-          ...TEST_DIMMABLE_PRIMARY_RESOURCE.properties,
-          brightness: {...brightnessProperty, 'value-range': [1, 65_535, 1]},
-        },
-      },
-    ],
-  });
-
-  expect(() => MiotLightEndpointConnection.assertMetadata(metadata)).toThrow(
-    'Invalid MIoT light endpoint metadata.',
-  );
-});
-
-test('rejects light metadata that omits a discovered optional property', () => {
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
-    ...TEST_DIMMABLE_METADATA,
-    resources: [
-      {
-        ...TEST_DIMMABLE_PRIMARY_RESOURCE,
-        properties: {on: TEST_DIMMABLE_PRIMARY_RESOURCE.properties.on},
-      },
-    ],
-  });
-
-  expect(() => MiotLightEndpointConnection.assertMetadata(metadata)).toThrow(
-    'Invalid MIoT light endpoint metadata.',
-  );
+    ),
+  ).toThrow('Resolved MIoT endpoint property does not belong to its service.');
 });
 
 test('translates light commands to MIoT requests', async () => {
@@ -957,7 +891,7 @@ function createExpectedSetPropertyRequest(
 
 function createMetadataWithBrightnessRange(
   valueRange: [number, number, number],
-): MiotEndpointConnectionMetadata {
+): MiotEndpointConnectionResolvedMetadata {
   const onProperty = TEST_PRIMARY_RESOURCE.properties.on;
 
   if (onProperty === undefined) {
@@ -974,7 +908,7 @@ function createMetadataWithBrightnessRange(
     'value-range': valueRange,
   };
 
-  return MiotEndpointConnectionMetadata.satisfies({
+  return createTestResolvedMetadata({
     ...TEST_METADATA,
     resources: [
       {
@@ -989,9 +923,9 @@ function createMetadataWithBrightnessRange(
 }
 
 function getResource(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   index: number,
-): MiotEndpointConnectionResource {
+): MiotEndpointConnectionResolvedResource {
   const resource = metadata.resources[index];
 
   if (resource === undefined) {
@@ -999,6 +933,22 @@ function getResource(
   }
 
   return resource;
+}
+
+function createTestResolvedMetadata(
+  value: unknown,
+): MiotEndpointConnectionResolvedMetadata {
+  const metadata = normalizeMiotEndpointConnectionMetadata(value);
+  const resources = (value as {resources?: unknown}).resources;
+
+  if (!Array.isArray(resources)) {
+    throw new TypeError('Test resolved metadata requires resources.');
+  }
+
+  return createMiotEndpointConnectionResolvedMetadata(
+    metadata,
+    resources as MiotEndpointConnectionResolvedResource[],
+  );
 }
 
 function createMultiResourceConnection(): TestMultiResourceEndpointConnection {

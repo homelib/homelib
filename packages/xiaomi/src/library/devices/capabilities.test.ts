@@ -16,8 +16,10 @@ import type {MiotEndpointAdapter} from '../endpoint-adapter.js';
 import {
   type MiotEndpointConnection,
   type MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResolvedMetadata,
   MiotEndpointConnectionTransport,
   getMiotEndpointConnectionProperty,
+  normalizeMiotEndpointConnectionMetadata,
 } from '../endpoint-connection.js';
 import {
   type MiotExecutionRequest,
@@ -42,9 +44,35 @@ const READ_WRITE_NOTIFY = ['read', 'write', 'notify'] as const;
 
 describe('MIoT air conditioner capabilities', () => {
   test('matches and projects optional mode, target temperature, and target humidity', () => {
-    const metadata = findMetadata(
+    const persistedMetadata = findPersistedMetadata(
       miotAirConditionerEndpointAdapter,
       createAirConditionerSpec(),
+    );
+    const controlService = persistedMetadata.resources.find(
+      resource => resource.service.iid === 2,
+    )?.service;
+
+    expect(controlService?.properties).toContainEqual(
+      expect.objectContaining({
+        iid: 4,
+        type: expect.stringContaining('property:target-humidity:'),
+      }),
+    );
+    expect(
+      persistedMetadata.resources.every(
+        resource => !Object.hasOwn(resource, 'properties'),
+      ),
+    ).toBe(true);
+
+    const normalizedLegacyMetadata = normalizeMiotEndpointConnectionMetadata({
+      ...persistedMetadata,
+      resources: persistedMetadata.resources.map(resource => ({
+        ...resource,
+        properties: {on: {iid: 1}},
+      })),
+    });
+    const metadata = miotAirConditionerEndpointAdapter.resolveMetadata(
+      normalizedLegacyMetadata,
     );
     const connection = new MiotAirConditionerEndpointConnection(
       new MiotProvider('provider'),
@@ -764,6 +792,13 @@ function createRangeProperty(
 function findMetadata(
   adapter: MiotEndpointAdapter,
   spec: MiotSpecInstance,
+): MiotEndpointConnectionResolvedMetadata {
+  return adapter.resolveMetadata(findPersistedMetadata(adapter, spec));
+}
+
+function findPersistedMetadata(
+  adapter: MiotEndpointAdapter,
+  spec: MiotSpecInstance,
 ): MiotEndpointConnectionMetadata {
   const [candidate] = adapter.findMetadataCandidates(
     {did: 'device-1', model: 'test.device'},
@@ -792,7 +827,7 @@ function requireSpecProperty(
 
 function updateProperty(
   connection: MiotEndpointConnection<never>,
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   name: string,
   value: unknown,
 ): void {
@@ -807,7 +842,7 @@ function updateProperty(
 }
 
 function createExpectedRequest(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   name: string,
   value: unknown,
 ): MiotSetPropertyRequest {
@@ -824,7 +859,7 @@ function createExpectedRequest(
 }
 
 function getMetadataProperties(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
 ): Readonly<Record<string, MiotSpecProperty>> {
   return Object.assign(
     {},
@@ -833,7 +868,7 @@ function getMetadataProperties(
 }
 
 function createStateProperties(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   values: Readonly<Record<string, unknown>>,
 ): Array<{
   readonly did: string;

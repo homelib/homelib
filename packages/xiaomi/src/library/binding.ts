@@ -9,8 +9,9 @@ import type {MiotProviderConfiguration} from './configuration.js';
 import {getMiotEndpointAdapter} from './devices/index.js';
 import {miotEndpointConnectionMetadataEqual} from './endpoint-adapter.js';
 import {
-  MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionMetadata,
   getMiotEndpointConnectionResourceKeys,
+  normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import {MiotSpecClient, type MiotSpecInstance} from './miot/index.js';
 
@@ -178,7 +179,7 @@ export function resolveMiotBindingDeviceProposal(
     let metadata: MiotEndpointConnectionMetadata;
 
     try {
-      metadata = MiotEndpointConnectionMetadata.satisfies(binding.metadata);
+      metadata = normalizeMiotEndpointConnectionMetadata(binding.metadata);
     } catch {
       continue;
     }
@@ -429,14 +430,13 @@ function findExistingMatch(
   }
 
   try {
-    const metadata = MiotEndpointConnectionMetadata.satisfies(metadataValue);
+    const metadata = normalizeMiotEndpointConnectionMetadata(metadataValue);
     const endpointAdapter = getMiotEndpointAdapter(endpoint.endpoint.endpoint);
 
     if (endpointAdapter === undefined) {
       return undefined;
     }
 
-    endpointAdapter.assertMetadata(metadata);
     return endpoint.matches.find(match =>
       miotEndpointConnectionMetadataEqual(match.metadata, metadata),
     );
@@ -675,7 +675,7 @@ function isCurrentMiotDevice(
   }
 
   try {
-    const metadata = MiotEndpointConnectionMetadata.satisfies(
+    const metadata = normalizeMiotEndpointConnectionMetadata(
       endpoint.binding.metadata,
     );
 

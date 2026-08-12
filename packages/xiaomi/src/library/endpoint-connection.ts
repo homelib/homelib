@@ -12,17 +12,16 @@ import {
   type MiotExecutionRequest,
   type MiotExecutionResult,
   type MiotProperty,
-  MiotSpecProperty,
+  type MiotSpecProperty,
   MiotSpecService,
   isSuccessfulMiotExecutionResult,
   isValidMiotSpecValueList,
 } from './miot/index.js';
 import type {MiotProvider} from './provider.js';
 
-/** A peer MIoT service claimed by one logical endpoint; array order is not semantic. */
+/** A peer MIoT service snapshot claimed by one logical endpoint. */
 export const MiotEndpointConnectionResource = x.object({
   service: MiotSpecService,
-  properties: x.record(x.string, MiotSpecProperty),
 });
 
 export const MiotEndpointConnectionMetadata = x
@@ -39,8 +38,14 @@ export const MiotEndpointConnectionMetadata = x
     return metadata;
   });
 
+export function normalizeMiotEndpointConnectionMetadata(
+  value: unknown,
+): MiotEndpointConnectionMetadata {
+  return MiotEndpointConnectionMetadata.sanitize(value);
+}
+
 export function getMiotEndpointConnectionProperty(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   name: string,
 ): {
   readonly service: MiotSpecService;
@@ -96,7 +101,7 @@ export abstract class MiotEndpointConnection<
 
   constructor(
     readonly provider: MiotProvider,
-    readonly metadata: MiotEndpointConnectionMetadata,
+    readonly metadata: MiotEndpointConnectionResolvedMetadata,
     transports: MiotEndpointConnectionTransports,
   ) {
     this.transports = transports;
@@ -252,6 +257,76 @@ export type MiotEndpointConnectionResource = Readonly<
   x.TypeOf<typeof MiotEndpointConnectionResource>
 >;
 
+/** A physical resource enriched with aliases derived from current profiles. */
+export type MiotEndpointConnectionResolvedResource =
+  MiotEndpointConnectionResource & {
+    readonly properties: Readonly<Record<string, MiotSpecProperty>>;
+  };
+
+export type MiotEndpointConnectionResolvedMetadata = Omit<
+  MiotEndpointConnectionMetadata,
+  'resources'
+> & {
+  readonly resources: readonly MiotEndpointConnectionResolvedResource[];
+};
+
+export function createMiotEndpointConnectionResolvedMetadata(
+  metadata: MiotEndpointConnectionMetadata,
+  resources: readonly MiotEndpointConnectionResolvedResource[],
+): MiotEndpointConnectionResolvedMetadata {
+  const physicalResourceMap = new Map(
+    metadata.resources.map(resource => [resource.service.iid, resource]),
+  );
+  const resolvedServiceIidSet = new Set<number>();
+  const stateNameSet = new Set<string>();
+  const propertyKeySet = new Set<string>();
+
+  if (resources.length !== metadata.resources.length) {
+    throw new TypeError('Invalid resolved MIoT endpoint resources.');
+  }
+
+  const resolvedResources = resources.map(resource => {
+    if (resolvedServiceIidSet.has(resource.service.iid)) {
+      throw new TypeError('Duplicate resolved MIoT endpoint resource.');
+    }
+
+    resolvedServiceIidSet.add(resource.service.iid);
+    const physicalResource = physicalResourceMap.get(resource.service.iid);
+
+    if (physicalResource === undefined) {
+      throw new TypeError('Invalid resolved MIoT endpoint resource.');
+    }
+
+    for (const [name, property] of Object.entries(resource.properties)) {
+      const propertyKey = JSON.stringify([resource.service.iid, property.iid]);
+
+      if (stateNameSet.has(name) || propertyKeySet.has(propertyKey)) {
+        throw new TypeError('Ambiguous resolved MIoT endpoint property.');
+      }
+
+      if (
+        !physicalResource.service.properties?.some(candidate =>
+          miotSpecPropertiesEqual(candidate, property),
+        )
+      ) {
+        throw new TypeError(
+          'Resolved MIoT endpoint property does not belong to its service.',
+        );
+      }
+
+      stateNameSet.add(name);
+      propertyKeySet.add(propertyKey);
+    }
+
+    return {
+      service: physicalResource.service,
+      properties: resource.properties,
+    };
+  });
+
+  return {device: metadata.device, resources: resolvedResources};
+}
+
 export type MiotPropertyUpdate = MiotProperty & {
   readonly value: unknown;
 };
@@ -272,36 +347,12 @@ function assertMiotEndpointConnectionResources(
   }
 
   const serviceIidSet = new Set<number>();
-  const stateNameSet = new Set<string>();
-  const propertyKeySet = new Set<string>();
-
   for (const resource of resources) {
     if (serviceIidSet.has(resource.service.iid)) {
       throw new TypeError('Duplicate MIoT endpoint metadata service.');
     }
 
     serviceIidSet.add(resource.service.iid);
-
-    for (const [name, property] of Object.entries(resource.properties)) {
-      const propertyKey = JSON.stringify([resource.service.iid, property.iid]);
-
-      if (stateNameSet.has(name) || propertyKeySet.has(propertyKey)) {
-        throw new TypeError('Ambiguous MIoT endpoint metadata property.');
-      }
-
-      if (
-        !resource.service.properties?.some(candidate =>
-          miotSpecPropertiesEqual(candidate, property),
-        )
-      ) {
-        throw new TypeError(
-          'MIoT endpoint metadata property does not belong to its service.',
-        );
-      }
-
-      stateNameSet.add(name);
-      propertyKeySet.add(propertyKey);
-    }
   }
 }
 
@@ -327,7 +378,7 @@ function compareMiotEndpointResources(
 }
 
 function getMiotEndpointPropertyCount(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
 ): number {
   return metadata.resources.reduce((count, resource) => {
     return count + Object.keys(resource.properties).length;

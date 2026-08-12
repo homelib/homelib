@@ -16,11 +16,11 @@ import * as x from 'x-value';
 import {
   type MiotEndpointProfile,
   defineMiotEndpointAdapter,
-  getValidatedMiotEndpointProperties,
+  getMiotEndpointConnectionProperties,
 } from '../endpoint-adapter.js';
 import {
   MiotEndpointConnection,
-  type MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionTransports,
   getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
@@ -248,15 +248,14 @@ export class MiotAirConditionerEndpointConnection
 
   constructor(
     provider: MiotProvider,
-    metadata: MiotEndpointConnectionMetadata,
+    metadata: MiotEndpointConnectionResolvedMetadata,
     transports: MiotEndpointConnectionTransports,
   ) {
     super(provider, metadata, transports);
-    this.properties = getMiotAirConditionerProperties(metadata);
-  }
-
-  static assertMetadata(metadata: MiotEndpointConnectionMetadata): void {
-    getMiotAirConditionerProperties(metadata);
+    this.properties =
+      getMiotEndpointConnectionProperties<MiotAirConditionerEndpointProperties>(
+        metadata,
+      );
   }
 
   override async processCommand(
@@ -309,19 +308,9 @@ type MiotEnvironmentEndpointMatcher = Omit<
   'device'
 >;
 
-function getMiotAirConditionerProperties(
-  metadata: MiotEndpointConnectionMetadata,
-): MiotAirConditionerEndpointProperties {
-  return getValidatedMiotEndpointProperties(
-    'air-conditioner',
-    metadata,
-    MIOT_AIR_CONDITIONER_ENDPOINT_PROFILES,
-  ) as MiotAirConditionerEndpointProperties;
-}
-
 function createMiotAirConditionerRequest(
   command: AirConditionerEndpointCommand,
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   properties: MiotAirConditionerEndpointProperties,
 ): MiotExecutionRequest {
   if (command instanceof SetAirConditionerOnCommand) {
@@ -408,7 +397,7 @@ function getMiotAirConditionerMode(mode: AirConditionerMode): number {
 }
 
 function createSetPropertyRequest(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
   propertyName: keyof MiotAirConditionerEndpointProperties,
   value: unknown,
 ): MiotSetPropertyRequest {
