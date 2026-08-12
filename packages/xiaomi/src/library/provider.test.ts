@@ -2,12 +2,67 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
+import {LightEndpoint} from '@homelib/core';
+
+import {miotLightEndpointAdapter} from './devices/index.js';
+import {getMiotEndpointConnectionResourceKey} from './endpoint-connection.js';
+import type {MiotSpecInstance} from './miot/index.js';
 import {$xiaomi, MiotProvider} from './provider.js';
+
+const LIGHT_SPEC: MiotSpecInstance = {
+  type: 'urn:miot-spec-v2:device:light:0000A001:test-light:1',
+  description: 'Test light',
+  services: [
+    {
+      iid: 2,
+      type: 'urn:miot-spec-v2:service:light:00007802:test-light:1',
+      description: 'Light',
+      properties: [
+        {
+          iid: 1,
+          type: 'urn:miot-spec-v2:property:on:00000006:test-light:1',
+          description: 'Switch Status',
+          format: 'bool',
+          access: ['read', 'write', 'notify'],
+        },
+      ],
+    },
+  ],
+};
 
 test('rejects duplicate provider declarations', () => {
   $xiaomi('home');
 
   expect(() => $xiaomi('home')).toThrow('Duplicate provider: home.');
+});
+
+test('routes endpoint binding plans through the exact endpoint adapter', () => {
+  class SpecializedLightEndpoint extends LightEndpoint {}
+
+  const [candidate] = miotLightEndpointAdapter.findMetadataCandidates(
+    {did: 'device', model: 'test.light'},
+    LIGHT_SPEC,
+  );
+
+  if (candidate === undefined) {
+    throw new Error('Test light has no MIoT metadata candidate.');
+  }
+
+  const provider = new MiotProvider('provider');
+  const plan = provider.createEndpointConnectionBindingPlan(
+    new LightEndpoint(),
+    candidate.metadata,
+  );
+
+  expect(plan.resourceKeys).toEqual([
+    getMiotEndpointConnectionResourceKey(candidate.metadata),
+  ]);
+  expect(() =>
+    provider.createEndpointConnectionBindingPlan(
+      new SpecializedLightEndpoint(),
+      candidate.metadata,
+    ),
+  ).toThrow('Unsupported MIoT endpoint.');
 });
 
 test('forgets the local session while preserving identity and configuration', async () => {

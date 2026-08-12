@@ -7,9 +7,7 @@ import {
   type EndpointConnectionBindingPlan,
   type EndpointReference,
   ExponentialBackoff,
-  LightEndpoint,
   Provider,
-  createEndpointConnectionBinding,
   getEnvironmentDirectory,
   register,
   uniqueName,
@@ -25,7 +23,8 @@ import {
   MiotProviderConfiguration,
   type MiotProviderConfigurationDiscovery,
 } from './configuration.js';
-import {MiotLightEndpointConnection} from './devices/index.js';
+import {getMiotEndpointAdapter} from './devices/index.js';
+import type {MiotEndpointAdapter} from './endpoint-adapter.js';
 import {
   type MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
@@ -96,27 +95,37 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     endpoint: EndpointReference,
     metadata: MiotEndpointConnectionMetadata,
   ): EndpointConnectionBindingPlan {
-    if (!(endpoint instanceof LightEndpoint)) {
-      throw new TypeError('MIoT light metadata requires a light endpoint.');
+    const endpointAdapter = getMiotEndpointAdapter(endpoint);
+
+    if (endpointAdapter === undefined) {
+      throw new TypeError('Unsupported MIoT endpoint.');
     }
 
-    MiotLightEndpointConnection.assertMetadata(metadata);
+    endpointAdapter.assertMetadata(metadata);
 
     return {
       resourceKeys: [getMiotEndpointConnectionResourceKey(metadata)],
       create: () =>
-        this.createLightEndpointConnectionBinding(endpoint, metadata),
+        this.createEndpointConnectionBinding(
+          endpointAdapter,
+          endpoint,
+          metadata,
+        ),
     };
   }
 
-  private async createLightEndpointConnectionBinding(
-    endpoint: LightEndpoint,
+  private async createEndpointConnectionBinding(
+    endpointAdapter: MiotEndpointAdapter,
+    endpoint: EndpointReference,
     metadata: MiotEndpointConnectionMetadata,
   ): Promise<EndpointConnectionBinding> {
     const cloud = await this.getCloud();
-    const connection = new MiotLightEndpointConnection(this, metadata, [
-      cloud.transport,
-    ]);
+    const {connection, binding} = endpointAdapter.createBinding(
+      this,
+      endpoint,
+      metadata,
+      [cloud.transport],
+    );
     const stateProperties = connection.stateProperties;
 
     this.addEndpointConnection(connection);
@@ -126,7 +135,7 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
       cloud.client,
     ).catch(console.error);
 
-    return createEndpointConnectionBinding(endpoint, connection);
+    return binding;
   }
 
   private getCloud(): Promise<MiotProviderCloud> {

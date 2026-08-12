@@ -91,7 +91,7 @@ test('rejects light metadata without an on property', () => {
       new MiotLightEndpointConnection(new MiotProvider('provider'), metadata, [
         new TestTransport(),
       ]),
-  ).toThrow('MIoT light endpoint metadata has no on property.');
+  ).toThrow('Invalid MIoT light endpoint metadata.');
 });
 
 test('rejects light metadata whose on property is not part of the service', () => {
@@ -121,7 +121,7 @@ test('rejects light metadata with an extra property alias', () => {
   });
 
   expect(() => MiotLightEndpointConnection.assertMetadata(metadata)).toThrow(
-    'MIoT light endpoint metadata must contain only the on property.',
+    'Invalid MIoT light endpoint metadata.',
   );
 });
 

@@ -6,18 +6,12 @@ import {
 
 import type {BackendDevice} from './backend/index.js';
 import type {MiotProviderConfiguration} from './configuration.js';
-import {MiotLightEndpointConnection} from './devices/index.js';
+import {getMiotEndpointAdapter} from './devices/index.js';
 import {
   MiotEndpointConnectionMetadata,
   getMiotEndpointConnectionResourceKey,
 } from './endpoint-connection.js';
-import {
-  type MiotEndpointMatch,
-  type MiotPropertyMatcher,
-  MiotSpecClient,
-  type MiotSpecInstance,
-  findMiotEndpointMatches,
-} from './miot/index.js';
+import {MiotSpecClient, type MiotSpecInstance} from './miot/index.js';
 
 const SPEC_REQUEST_CONCURRENCY = 6;
 const DEFAULT_MIOT_SPEC_CLIENT = new MiotSpecClient();
@@ -381,41 +375,20 @@ function createBindingServiceCandidates(
   spec: MiotSpecInstance,
   endpoint: ProviderBindingEndpoint,
 ): readonly MiotBindingServiceCandidate[] {
-  if (!(endpoint.endpoint instanceof MiotLightEndpointConnection.Endpoint)) {
+  const endpointAdapter = getMiotEndpointAdapter(endpoint.endpoint);
+
+  if (endpointAdapter === undefined) {
     return [];
   }
 
-  const matches: Array<MiotEndpointMatch<{readonly on: MiotPropertyMatcher}>> =
-    MiotLightEndpointConnection.endpointMatchers.flatMap(matcher =>
-      findMiotEndpointMatches(spec, matcher),
-    );
-  const candidateMap = new Map<string, MiotBindingServiceCandidate>();
-
-  for (const match of matches) {
-    const metadata = MiotEndpointConnectionMetadata.satisfies({
-      device: {did: device.did, model: device.model, urn: spec.type},
-      service: match.service,
-      properties: match.properties,
-    });
-
-    MiotLightEndpointConnection.assertMetadata(metadata);
-
-    const key = JSON.stringify([
-      'light',
-      device.did,
-      match.service.iid,
-      match.properties.on.iid,
-    ]);
-
-    candidateMap.set(key, {
+  return endpointAdapter
+    .findMetadataCandidates(device, spec)
+    .map(({key, label, metadata}) => ({
       key,
       resourceKey: getMiotEndpointConnectionResourceKey(metadata),
-      label: match.service.description,
+      label,
       metadata,
-    });
-  }
-
-  return [...candidateMap.values()];
+    }));
 }
 
 function findExistingService(

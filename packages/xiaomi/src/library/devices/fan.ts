@@ -1,8 +1,8 @@
 import {
-  LightEndpoint,
-  type LightEndpointCommand,
-  type LightEndpointConnection,
-  SetLightOnCommand,
+  FanEndpoint,
+  type FanEndpointCommand,
+  type FanEndpointConnection,
+  SetFanOnCommand,
 } from '@homelib/core';
 import {computed} from 'mobx';
 import * as x from 'x-value';
@@ -25,10 +25,10 @@ import {
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
 
-const MiotLightOn = x.union([x.boolean, x.undefined]);
+const MiotFanOn = x.union([x.boolean, x.undefined]);
 
-const MIOT_LIGHT_ENDPOINT_MATCHER: MiotLightEndpointMatcher = {
-  service: 'urn:miot-spec-v2:service:light:00007802',
+const MIOT_FAN_ENDPOINT_MATCHER: MiotFanEndpointMatcher = {
+  service: 'urn:miot-spec-v2:service:fan:00007808',
   properties: {
     on: {
       type: 'urn:miot-spec-v2:property:on:00000006',
@@ -38,23 +38,23 @@ const MIOT_LIGHT_ENDPOINT_MATCHER: MiotLightEndpointMatcher = {
   },
 };
 
-const MIOT_LIGHT_ENDPOINT_MATCHERS = [
-  MIOT_LIGHT_ENDPOINT_MATCHER,
-] as const satisfies readonly MiotLightEndpointMatcher[];
+const MIOT_FAN_ENDPOINT_MATCHERS = [
+  MIOT_FAN_ENDPOINT_MATCHER,
+] as const satisfies readonly MiotFanEndpointMatcher[];
 
-export class MiotLightEndpointConnection
-  extends MiotEndpointConnection<LightEndpointCommand>
-  implements LightEndpointConnection
+export class MiotFanEndpointConnection
+  extends MiotEndpointConnection<FanEndpointCommand>
+  implements FanEndpointConnection
 {
-  static readonly Endpoint = LightEndpoint;
+  static readonly Endpoint = FanEndpoint;
 
-  static readonly endpointMatchers = MIOT_LIGHT_ENDPOINT_MATCHERS;
+  static readonly endpointMatchers = MIOT_FAN_ENDPOINT_MATCHERS;
 
   private readonly onProperty: MiotSpecProperty;
 
   @computed
   get on(): boolean | undefined {
-    return MiotLightOn.satisfies(this.getState('on'));
+    return MiotFanOn.satisfies(this.getState('on'));
   }
 
   constructor(
@@ -64,47 +64,47 @@ export class MiotLightEndpointConnection
   ) {
     super(provider, metadata, transports);
     this.onProperty = getValidatedMiotEndpointProperties(
-      'light',
+      'fan',
       metadata,
-      MIOT_LIGHT_ENDPOINT_MATCHERS,
+      MIOT_FAN_ENDPOINT_MATCHERS,
     ).on;
   }
 
   static assertMetadata(metadata: MiotEndpointConnectionMetadata): void {
     getValidatedMiotEndpointProperties(
-      'light',
+      'fan',
       metadata,
-      MIOT_LIGHT_ENDPOINT_MATCHERS,
+      MIOT_FAN_ENDPOINT_MATCHERS,
     );
   }
 
-  override async processCommand(command: LightEndpointCommand): Promise<void> {
+  override async processCommand(command: FanEndpointCommand): Promise<void> {
     await this.executeRequest(
-      createMiotLightRequest(command, this.metadata, this.onProperty),
+      createMiotFanRequest(command, this.metadata, this.onProperty),
     );
   }
 }
 
-export const miotLightEndpointAdapter = defineMiotEndpointAdapter<
-  LightEndpointCommand,
-  LightEndpointConnection
+export const miotFanEndpointAdapter = defineMiotEndpointAdapter<
+  FanEndpointCommand,
+  FanEndpointConnection
 >({
-  type: 'light',
-  Endpoint: MiotLightEndpointConnection.Endpoint,
-  Connection: MiotLightEndpointConnection,
-  endpointMatchers: MiotLightEndpointConnection.endpointMatchers,
+  type: 'fan',
+  Endpoint: MiotFanEndpointConnection.Endpoint,
+  Connection: MiotFanEndpointConnection,
+  endpointMatchers: MiotFanEndpointConnection.endpointMatchers,
 });
 
-type MiotLightEndpointMatcher = MiotEndpointMatcher<{
+type MiotFanEndpointMatcher = MiotEndpointMatcher<{
   readonly on: MiotPropertyMatcher;
 }>;
 
-function createMiotLightRequest(
-  command: LightEndpointCommand,
+function createMiotFanRequest(
+  command: FanEndpointCommand,
   metadata: MiotEndpointConnectionMetadata,
   onProperty: MiotSpecProperty,
 ): MiotExecutionRequest {
-  if (command instanceof SetLightOnCommand) {
+  if (command instanceof SetFanOnCommand) {
     return new MiotSetPropertyRequest(
       {
         did: metadata.device.did,
@@ -115,5 +115,5 @@ function createMiotLightRequest(
     );
   }
 
-  throw new TypeError('Unsupported MIoT light endpoint command.');
+  throw new TypeError('Unsupported MIoT fan endpoint command.');
 }

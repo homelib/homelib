@@ -8,7 +8,13 @@ export * from './cloud/client.js';
 export * from './cloud/transport.js';
 export * from './command.js';
 export * from './endpoint-connection.js';
-export * from './devices/index.js';
 export * from './miot/index.js';
 export * from './provider-namespace.js';
 export * from './provider.js';
+export {
+  MiotAirConditionerEndpointConnection,
+  MiotDehumidifierEndpointConnection,
+  MiotFanEndpointConnection,
+  MiotLightEndpointConnection,
+  MiotPlaceholderDevice,
+} from './devices/index.js';
