@@ -1,6 +1,9 @@
 {
   "references": [
     {
+      "path": "packages/core/src/exports"
+    },
+    {
       "path": "packages/core/src/library"
     },
     {

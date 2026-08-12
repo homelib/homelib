@@ -12,6 +12,11 @@
         "name": "@homelib/core",
         "projects": [
           {
+            "name": "exports",
+            "type": "library",
+            "exports": false
+          },
+          {
             "name": "library",
             "test": true
           },
