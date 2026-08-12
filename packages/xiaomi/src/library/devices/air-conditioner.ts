@@ -35,6 +35,8 @@ import {
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
 
+import {clampAndQuantizeValue} from './@value-range.js';
+
 const MiotAirConditionerOn = x.boolean;
 
 const MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER: MiotAirConditionerEndpointMatcher =
@@ -335,20 +337,12 @@ function createMiotAirConditionerRequest(
     }
 
     const valueRange = getPropertyValueRange('air conditioner', property);
-    const [minimum, maximum] = valueRange;
-
     const value = command.value.celsius;
-
-    if (value < minimum || value > maximum) {
-      throw new CommandError(
-        `MIoT air conditioner target temperature must be between ${minimum} and ${maximum}.`,
-      );
-    }
 
     return createSetPropertyRequest(
       metadata,
       'targetTemperature',
-      quantizeValue(value, valueRange),
+      clampAndQuantizeValue(value, valueRange),
     );
   } else if (command instanceof SetAirConditionerTargetHumidityCommand) {
     const property = properties.targetHumidity;
@@ -360,19 +354,12 @@ function createMiotAirConditionerRequest(
     }
 
     const valueRange = getPropertyValueRange('air conditioner', property);
-    const [minimum, maximum] = valueRange;
     const rawValue = command.value * 100;
-
-    if (rawValue < minimum || rawValue > maximum) {
-      throw new CommandError(
-        `MIoT air conditioner target humidity must be between ${minimum / 100} and ${maximum / 100}.`,
-      );
-    }
 
     return createSetPropertyRequest(
       metadata,
       'targetHumidity',
-      quantizeValue(rawValue, valueRange),
+      clampAndQuantizeValue(rawValue, valueRange),
     );
   }
 
@@ -451,13 +438,4 @@ function assertValueInRange(
   if (value < minimum || value > maximum) {
     throw new TypeError(`Invalid MIoT ${name} state.`);
   }
-}
-
-function quantizeValue(
-  value: number,
-  [minimum, maximum, step]: MiotSpecValueRange,
-): number {
-  const quantized = minimum + Math.round((value - minimum) / step) * step;
-
-  return Math.min(maximum, Math.max(minimum, quantized));
 }

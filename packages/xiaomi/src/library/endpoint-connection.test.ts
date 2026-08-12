@@ -528,6 +528,28 @@ test('supports a uint16 brightness range and raises small positive values to its
   ]);
 });
 
+test('clamps brightness to a non-zero device minimum before quantizing', async () => {
+  const metadata = createMetadataWithBrightnessRange([20, 100, 5]);
+  const transport = new TestTransport();
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    metadata,
+    [transport],
+  );
+
+  await connection.processCommand(
+    new SetLightBrightnessCommand(Number.MIN_VALUE),
+  );
+  await connection.processCommand(new SetLightBrightnessCommand(0.23));
+  await connection.processCommand(new SetLightBrightnessCommand(1));
+
+  expect(transport.requests).toEqual([
+    createExpectedSetPropertyRequest(2, 20),
+    createExpectedSetPropertyRequest(2, 25),
+    createExpectedSetPropertyRequest(2, 100),
+  ]);
+});
+
 test('quantizes color temperature requests to the nearest valid step', async () => {
   const transport = new TestTransport();
   const connection = new MiotLightEndpointConnection(
@@ -545,7 +567,7 @@ test('quantizes color temperature requests to the nearest valid step', async () 
   ]);
 });
 
-test('rejects unsupported or out-of-range light property commands', async () => {
+test('rejects unsupported light property commands and clamps device ranges', async () => {
   const unsupportedTransport = new TestTransport();
   const unsupportedConnection = new MiotLightEndpointConnection(
     new MiotProvider('provider'),
@@ -567,15 +589,18 @@ test('rejects unsupported or out-of-range light property commands', async () => 
       new SetLightColorTemperatureCommand(4_000),
     ),
   ).rejects.toThrow('MIoT light does not support color temperature.');
-  await expect(
-    dimmableConnection.processCommand(
-      new SetLightColorTemperatureCommand(2_599),
-    ),
-  ).rejects.toThrow(
-    'MIoT light color temperature must be between 2600 and 6100.',
+  await dimmableConnection.processCommand(
+    new SetLightColorTemperatureCommand(2_599),
   );
+  await dimmableConnection.processCommand(
+    new SetLightColorTemperatureCommand(6_101),
+  );
+
   expect(unsupportedTransport.requests).toEqual([]);
-  expect(dimmableTransport.requests).toEqual([]);
+  expect(dimmableTransport.requests).toEqual([
+    createExpectedSetPropertyRequest(3, 2_600),
+    createExpectedSetPropertyRequest(3, 6_100),
+  ]);
 });
 
 test('does not expose provider-wide commands', () => {

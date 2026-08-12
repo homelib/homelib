@@ -121,7 +121,7 @@ describe('MIoT air conditioner capabilities', () => {
     ).toThrow(TypeError);
   });
 
-  test('maps modes and quantizes target temperature and humidity writes', async () => {
+  test('maps modes and clamps and quantizes target temperature and humidity writes', async () => {
     const metadata = findMetadata(
       miotAirConditionerEndpointAdapter,
       createAirConditionerSpec(),
@@ -162,19 +162,31 @@ describe('MIoT air conditioner capabilities', () => {
     await expect(
       connection.processCommand(new SetAirConditionerModeCommand('auto')),
     ).rejects.toBeInstanceOf(CommandError);
-    await expect(
-      connection.processCommand(
-        new SetAirConditionerTargetTemperatureCommand(
-          Temperature.fromCelsius(31.5),
-        ),
-      ),
-    ).rejects.toBeInstanceOf(CommandError);
-    await expect(
-      connection.processCommand(
-        new SetAirConditionerTargetHumidityCommand(0.29),
-      ),
-    ).rejects.toBeInstanceOf(CommandError);
     expect(transport.requests).toHaveLength(7);
+
+    await connection.processCommand(
+      new SetAirConditionerTargetTemperatureCommand(
+        Temperature.fromCelsius(15.5),
+      ),
+    );
+    await connection.processCommand(
+      new SetAirConditionerTargetTemperatureCommand(
+        Temperature.fromCelsius(31.5),
+      ),
+    );
+    await connection.processCommand(
+      new SetAirConditionerTargetHumidityCommand(0.29),
+    );
+    await connection.processCommand(
+      new SetAirConditionerTargetHumidityCommand(0.71),
+    );
+
+    expect(transport.requests.slice(7)).toEqual([
+      createExpectedRequest(metadata, 'targetTemperature', 16),
+      createExpectedRequest(metadata, 'targetTemperature', 31),
+      createExpectedRequest(metadata, 'targetHumidity', 30),
+      createExpectedRequest(metadata, 'targetHumidity', 70),
+    ]);
   });
 
   test('routes writes by property alias when the control service is not first', async () => {
@@ -396,7 +408,7 @@ describe('MIoT dehumidifier capabilities', () => {
     );
   });
 
-  test('maps modes and quantizes normalized target humidity writes', async () => {
+  test('maps modes and clamps and quantizes normalized target humidity writes', async () => {
     const metadata = findMetadata(
       miotDehumidifierEndpointAdapter,
       createDehumidifierSpec(),
@@ -426,10 +438,17 @@ describe('MIoT dehumidifier capabilities', () => {
       createExpectedRequest(metadata, 'targetHumidity', 58),
     ]);
 
-    await expect(
-      connection.processCommand(new SetDehumidifierTargetHumidityCommand(0.29)),
-    ).rejects.toBeInstanceOf(CommandError);
-    expect(transport.requests).toHaveLength(5);
+    await connection.processCommand(
+      new SetDehumidifierTargetHumidityCommand(0.29),
+    );
+    await connection.processCommand(
+      new SetDehumidifierTargetHumidityCommand(0.71),
+    );
+
+    expect(transport.requests.slice(5)).toEqual([
+      createExpectedRequest(metadata, 'targetHumidity', 30),
+      createExpectedRequest(metadata, 'targetHumidity', 70),
+    ]);
   });
 
   test('rejects optional commands without matched properties', async () => {

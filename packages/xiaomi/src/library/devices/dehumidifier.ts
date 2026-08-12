@@ -34,6 +34,8 @@ import {
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
 
+import {clampAndQuantizeValue} from './@value-range.js';
+
 const MiotDehumidifierOn = x.boolean;
 
 const MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER: MiotDehumidifierEndpointMatcher = {
@@ -301,19 +303,12 @@ function createMiotDehumidifierRequest(
     }
 
     const valueRange = getPropertyValueRange('dehumidifier', property);
-    const [minimum, maximum] = valueRange;
     const rawValue = command.value * 100;
-
-    if (rawValue < minimum || rawValue > maximum) {
-      throw new CommandError(
-        `MIoT dehumidifier target humidity must be between ${minimum / 100} and ${maximum / 100}.`,
-      );
-    }
 
     return createSetPropertyRequest(
       metadata,
       'targetHumidity',
-      quantizeValue(rawValue, valueRange),
+      clampAndQuantizeValue(rawValue, valueRange),
     );
   }
 
@@ -386,13 +381,4 @@ function assertValueInRange(
   if (value < minimum || value > maximum) {
     throw new TypeError(`Invalid MIoT ${name} state.`);
   }
-}
-
-function quantizeValue(
-  value: number,
-  [minimum, maximum, step]: MiotSpecValueRange,
-): number {
-  const quantized = minimum + Math.round((value - minimum) / step) * step;
-
-  return Math.min(maximum, Math.max(minimum, quantized));
 }

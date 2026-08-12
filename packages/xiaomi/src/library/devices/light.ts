@@ -32,6 +32,8 @@ import {
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
 
+import {clampAndQuantizeValue} from './@value-range.js';
+
 const MiotLightOn = x.boolean;
 
 const MIOT_LIGHT_ENDPOINT_MATCHER: MiotLightEndpointMatcher = {
@@ -193,7 +195,7 @@ function createMiotLightRequest(
     return createSetPropertyRequest(
       metadata,
       'brightness',
-      quantizeValue(rawValue, valueRange),
+      clampAndQuantizeValue(rawValue, valueRange),
     );
   } else if (command instanceof SetLightColorTemperatureCommand) {
     const property = properties.colorTemperature;
@@ -203,18 +205,11 @@ function createMiotLightRequest(
     }
 
     const valueRange = getPropertyValueRange(property);
-    const [minimum, maximum] = valueRange;
-
-    if (command.value < minimum || command.value > maximum) {
-      throw new CommandError(
-        `MIoT light color temperature must be between ${minimum} and ${maximum}.`,
-      );
-    }
 
     return createSetPropertyRequest(
       metadata,
       'colorTemperature',
-      quantizeValue(command.value, valueRange),
+      clampAndQuantizeValue(command.value, valueRange),
     );
   }
 
@@ -273,13 +268,4 @@ function assertValueInRange(
   if (value < minimum || value > maximum) {
     throw new TypeError(`Invalid MIoT light ${name} state.`);
   }
-}
-
-function quantizeValue(
-  value: number,
-  [minimum, maximum, step]: MiotSpecValueRange,
-): number {
-  const quantized = minimum + Math.round((value - minimum) / step) * step;
-
-  return Math.min(maximum, Math.max(minimum, quantized));
 }
