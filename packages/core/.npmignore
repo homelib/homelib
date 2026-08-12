@@ -1,4 +1,7 @@
 *
+!/src/exports/**/*.{ts,tsx}
+!/bld/exports/**
+/bld/exports/**/*.test.js
 !/src/library/**/*.{ts,tsx}
 !/bld/library/**
 /bld/library/**/*.test.js

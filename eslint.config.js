@@ -17,6 +17,18 @@ export default defineConfig([
     plugins: {'@mufan': mufan},
     extends: [configs.dev],
   },
+  // packages/core/src/exports
+  {
+    files: ['packages/core/src/exports/**/*.{ts,tsx}'],
+    plugins: {'@mufan': mufan},
+    extends: [configs.typescript],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
   // packages/core/src/library
   {
     files: ['packages/core/src/library/**/*.{ts,tsx}'],
