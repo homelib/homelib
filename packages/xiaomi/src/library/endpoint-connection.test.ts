@@ -1,5 +1,7 @@
 import {
+  type CommandEffect,
   CommandError,
+  type CommandExecution,
   DeviceEntry,
   type EndpointConnection,
   EndpointConnectionError,
@@ -25,6 +27,7 @@ import {
   type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionResolvedResource,
   MiotEndpointConnectionTransport,
+  MiotEndpointConnectionTransportError,
   MiotEndpointConnectionTransportUnavailableError,
   createMiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionProperty,
@@ -479,7 +482,7 @@ test('translates light commands to MIoT requests', async () => {
     [transport],
   );
 
-  await connection.processCommand(new SetLightOnCommand(true));
+  await executeCommand(connection, new SetLightOnCommand(true));
 
   expect(transport.requests).toEqual([
     new MiotSetPropertyRequest(
@@ -506,7 +509,7 @@ test('falls back when a transport is unavailable before publishing', async () =>
     [unavailableTransport, fallbackTransport],
   );
 
-  await connection.processCommand(new SetLightOnCommand(true));
+  await executeCommand(connection, new SetLightOnCommand(true));
 
   expect(unavailableTransport.requests).toHaveLength(1);
   expect(fallbackTransport.requests).toEqual(unavailableTransport.requests);
@@ -523,16 +526,92 @@ test('does not fall back after an unexpected transport failure', async () => {
     [failedTransport, fallbackTransport],
   );
 
-  await expect(
-    connection.processCommand(new SetLightOnCommand(true)),
-  ).rejects.toEqual(
+  const command = executeCommand(connection, new SetLightOnCommand(true));
+
+  await expect(command).rejects.toEqual(
     expect.objectContaining({
-      name: EndpointConnectionError.name,
+      name: MiotEndpointConnectionTransportError.name,
       message: 'MIoT transport failed: Connection lost after publishing.',
     }),
   );
+  await expect(command).rejects.not.toBeInstanceOf(EndpointConnectionError);
   expect(failedTransport.requests).toHaveLength(1);
   expect(fallbackTransport.requests).toEqual([]);
+});
+
+test('does not let Core retry a transport failure after publication may have begun', async () => {
+  const failedTransport = new TestTransport(() => {
+    throw new Error('Connection lost after publishing.');
+  });
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_METADATA,
+    [failedTransport],
+  );
+  const endpoint = new LightEndpoint();
+  endpoint.bindConnection(connection);
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [createStateProperty(TEST_METADATA, 'on', false)],
+  });
+
+  try {
+    endpoint.turnOn();
+    await wait(150);
+
+    expect(failedTransport.requests).toHaveLength(1);
+  } finally {
+    endpoint.bindConnection(undefined);
+  }
+});
+
+test('keeps an uncertain property effect through an unrelated property update', async () => {
+  let failNextRequest = false;
+  const transport = new TestTransport(() => {
+    if (failNextRequest) {
+      failNextRequest = false;
+      throw new Error('Connection lost after publishing.');
+    }
+
+    return {code: 0};
+  });
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_DIMMABLE_METADATA,
+    [transport],
+  );
+  const endpoint = new LightEndpoint();
+  endpoint.bindConnection(connection);
+  connection.handleStateUpdate({
+    did: TEST_DIMMABLE_METADATA.device.did,
+    online: true,
+    properties: [
+      createStateProperty(TEST_DIMMABLE_METADATA, 'on', true),
+      createStateProperty(TEST_DIMMABLE_METADATA, 'brightness', 50),
+      createStateProperty(TEST_DIMMABLE_METADATA, 'colorTemperature', 4_000),
+    ],
+  });
+
+  endpoint.turnOff();
+  await flushMicrotasks();
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_DIMMABLE_METADATA, 'on', false),
+  );
+  failNextRequest = true;
+  endpoint.turnOn();
+  await flushMicrotasks();
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_DIMMABLE_METADATA, 'brightness', 60),
+  );
+  endpoint.turnOff();
+  await flushMicrotasks();
+
+  expect(transport.requests).toEqual([
+    createExpectedSetPropertyRequest(1, false),
+    createExpectedSetPropertyRequest(1, true),
+    createExpectedSetPropertyRequest(1, false),
+  ]);
 });
 
 test('treats a transport result as definitive without falling back', async () => {
@@ -545,7 +624,7 @@ test('treats a transport result as definitive without falling back', async () =>
   );
 
   await expect(
-    connection.processCommand(new SetLightOnCommand(true)),
+    executeCommand(connection, new SetLightOnCommand(true)),
   ).rejects.toBeInstanceOf(CommandError);
   expect(rejectedTransport.requests).toHaveLength(1);
   expect(fallbackTransport.requests).toEqual([]);
@@ -569,7 +648,7 @@ test('reports an endpoint connection error when every transport is unavailable',
   );
 
   await expect(
-    connection.processCommand(new SetLightOnCommand(true)),
+    executeCommand(connection, new SetLightOnCommand(true)),
   ).rejects.toEqual(
     expect.objectContaining({
       name: EndpointConnectionError.name,
@@ -588,9 +667,9 @@ test('normalizes brightness requests against the raw maximum', async () => {
     [transport],
   );
 
-  await connection.processCommand(new SetLightBrightnessCommand(0.01));
-  await connection.processCommand(new SetLightBrightnessCommand(0.5));
-  await connection.processCommand(new SetLightBrightnessCommand(1));
+  await executeCommand(connection, new SetLightBrightnessCommand(0.01));
+  await executeCommand(connection, new SetLightBrightnessCommand(0.5));
+  await executeCommand(connection, new SetLightBrightnessCommand(1));
 
   expect(transport.requests).toEqual([
     createExpectedSetPropertyRequest(2, 1),
@@ -608,9 +687,10 @@ test('supports a uint16 brightness range and raises small positive values to its
     [transport],
   );
 
-  await connection.processCommand(new SetLightBrightnessCommand(1 / 65_535));
-  await connection.processCommand(new SetLightBrightnessCommand(0.5));
-  await connection.processCommand(
+  await executeCommand(connection, new SetLightBrightnessCommand(1 / 65_535));
+  await executeCommand(connection, new SetLightBrightnessCommand(0.5));
+  await executeCommand(
+    connection,
     new SetLightBrightnessCommand(Number.MIN_VALUE),
   );
 
@@ -630,17 +710,64 @@ test('clamps brightness to a non-zero device minimum before quantizing', async (
     [transport],
   );
 
-  await connection.processCommand(
+  await executeCommand(
+    connection,
     new SetLightBrightnessCommand(Number.MIN_VALUE),
   );
-  await connection.processCommand(new SetLightBrightnessCommand(0.23));
-  await connection.processCommand(new SetLightBrightnessCommand(1));
+  await executeCommand(connection, new SetLightBrightnessCommand(0.23));
+  await executeCommand(connection, new SetLightBrightnessCommand(1));
 
   expect(transport.requests).toEqual([
     createExpectedSetPropertyRequest(2, 20),
     createExpectedSetPropertyRequest(2, 25),
     createExpectedSetPropertyRequest(2, 100),
   ]);
+});
+
+test('returns a brightness effect using the same device quantization as its request', async () => {
+  const metadata = createMetadataWithBrightnessRange([20, 100, 5]);
+  const transport = new TestTransport();
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    metadata,
+    [transport],
+  );
+  const endpoint = new LightEndpoint();
+  endpoint.bindConnection(connection);
+  connection.handleStateUpdate({
+    did: metadata.device.did,
+    online: true,
+    properties: [
+      createStateProperty(metadata, 'on', true),
+      createStateProperty(metadata, 'brightness', 23),
+    ],
+  });
+
+  const effect = requireEffect(
+    await executeCommand(connection, new SetLightBrightnessCommand(0.23)),
+  );
+
+  expect(transport.requests).toEqual([createExpectedSetPropertyRequest(2, 25)]);
+  expect(
+    effect.equals(
+      requireEffect(
+        connection.prepareCommand(new SetLightBrightnessCommand(0.249)).effect,
+      ),
+    ),
+  ).toBe(true);
+  expect(
+    effect.equals(
+      requireEffect(
+        connection.prepareCommand(new SetLightBrightnessCommand(0.28)).effect,
+      ),
+    ),
+  ).toBe(false);
+  expect(effect.matches(endpoint)).toBe(true);
+
+  connection.handlePropertyUpdate(
+    createStateProperty(metadata, 'brightness', 28),
+  );
+  expect(effect.matches(endpoint)).toBe(false);
 });
 
 test('quantizes color temperature requests to the nearest valid step', async () => {
@@ -651,12 +778,158 @@ test('quantizes color temperature requests to the nearest valid step', async () 
     [transport],
   );
 
-  await connection.processCommand(new SetLightColorTemperatureCommand(4_049));
-  await connection.processCommand(new SetLightColorTemperatureCommand(4_050));
+  await executeCommand(connection, new SetLightColorTemperatureCommand(4_049));
+  await executeCommand(connection, new SetLightColorTemperatureCommand(4_050));
 
   expect(transport.requests).toEqual([
     createExpectedSetPropertyRequest(3, 4_000),
     createExpectedSetPropertyRequest(3, 4_100),
+  ]);
+});
+
+test('returns light on and color temperature effects from public endpoint state', async () => {
+  const transport = new TestTransport();
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_DIMMABLE_METADATA,
+    [transport],
+  );
+  const endpoint = new LightEndpoint();
+  endpoint.bindConnection(connection);
+  connection.handleStateUpdate({
+    did: TEST_DIMMABLE_METADATA.device.did,
+    online: true,
+    properties: [
+      createStateProperty(TEST_DIMMABLE_METADATA, 'on', true),
+      createStateProperty(TEST_DIMMABLE_METADATA, 'brightness', 50),
+      createStateProperty(TEST_DIMMABLE_METADATA, 'colorTemperature', 4_049),
+    ],
+  });
+
+  const onEffect = requireEffect(
+    await executeCommand(connection, new SetLightOnCommand(true)),
+  );
+  const colorTemperatureEffect = requireEffect(
+    await executeCommand(
+      connection,
+      new SetLightColorTemperatureCommand(4_049),
+    ),
+  );
+
+  expect(transport.requests).toEqual([
+    createExpectedSetPropertyRequest(1, true),
+    createExpectedSetPropertyRequest(3, 4_000),
+  ]);
+  expect(onEffect.matches(endpoint)).toBe(true);
+  expect(
+    colorTemperatureEffect.equals(
+      requireEffect(
+        connection.prepareCommand(new SetLightColorTemperatureCommand(4_001))
+          .effect,
+      ),
+    ),
+  ).toBe(true);
+  expect(
+    colorTemperatureEffect.equals(
+      requireEffect(
+        connection.prepareCommand(new SetLightColorTemperatureCommand(4_050))
+          .effect,
+      ),
+    ),
+  ).toBe(false);
+  expect(colorTemperatureEffect.matches(endpoint)).toBe(true);
+
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_DIMMABLE_METADATA, 'on', false),
+  );
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_DIMMABLE_METADATA, 'colorTemperature', 4_051),
+  );
+  expect(onEffect.matches(endpoint)).toBe(false);
+  expect(colorTemperatureEffect.matches(endpoint)).toBe(false);
+});
+
+test('skips the initial command when observed state already satisfies its effect', async () => {
+  const transport = new TestTransport();
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_METADATA,
+    [transport],
+  );
+  const endpoint = new LightEndpoint();
+  endpoint.bindConnection(connection);
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [createStateProperty(TEST_METADATA, 'on', true)],
+  });
+
+  endpoint.turnOn();
+  await flushMicrotasks();
+  endpoint.turnOn();
+  await flushMicrotasks();
+
+  expect(transport.requests).toEqual([]);
+});
+
+test('skips an initially equivalent quantized property command', async () => {
+  const metadata = createMetadataWithBrightnessRange([20, 100, 5]);
+  const transport = new TestTransport();
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    metadata,
+    [transport],
+  );
+  const endpoint = new LightEndpoint();
+  endpoint.bindConnection(connection);
+  connection.handleStateUpdate({
+    did: metadata.device.did,
+    online: true,
+    properties: [
+      createStateProperty(metadata, 'on', true),
+      createStateProperty(metadata, 'brightness', 23),
+    ],
+  });
+
+  endpoint.setBrightness(0.249);
+  await flushMicrotasks();
+
+  expect(transport.requests).toEqual([]);
+});
+
+test('skips an acknowledged command until a newer state update contradicts its effect', async () => {
+  const transport = new TestTransport();
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_METADATA,
+    [transport],
+  );
+  const endpoint = new LightEndpoint();
+  endpoint.bindConnection(connection);
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [createStateProperty(TEST_METADATA, 'on', false)],
+  });
+
+  endpoint.turnOn();
+  await flushMicrotasks();
+  endpoint.turnOn();
+  await flushMicrotasks();
+
+  expect(transport.requests).toEqual([
+    createExpectedSetPropertyRequest(1, true),
+  ]);
+
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_METADATA, 'on', false),
+  );
+  endpoint.turnOn();
+  await flushMicrotasks();
+
+  expect(transport.requests).toEqual([
+    createExpectedSetPropertyRequest(1, true),
+    createExpectedSetPropertyRequest(1, true),
   ]);
 });
 
@@ -675,17 +948,20 @@ test('rejects unsupported light property commands and clamps device ranges', asy
   );
 
   await expect(
-    unsupportedConnection.processCommand(new SetLightBrightnessCommand(0.5)),
+    executeCommand(unsupportedConnection, new SetLightBrightnessCommand(0.5)),
   ).rejects.toThrow('MIoT light does not support brightness.');
   await expect(
-    unsupportedConnection.processCommand(
+    executeCommand(
+      unsupportedConnection,
       new SetLightColorTemperatureCommand(4_000),
     ),
   ).rejects.toThrow('MIoT light does not support color temperature.');
-  await dimmableConnection.processCommand(
+  await executeCommand(
+    dimmableConnection,
     new SetLightColorTemperatureCommand(2_599),
   );
-  await dimmableConnection.processCommand(
+  await executeCommand(
+    dimmableConnection,
     new SetLightColorTemperatureCommand(6_101),
   );
 
@@ -837,6 +1113,94 @@ test('commits the initial light state and ready flag atomically', () => {
   disposeAutorun();
 });
 
+test('revises MIoT state once after each property, snapshot, or offline update', () => {
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_METADATA,
+    [new TestTransport()],
+  );
+  const values: Array<readonly [number, boolean, boolean]> = [];
+  const disposeAutorun = autorun(() => {
+    values.push([connection.stateRevision, connection.ready, connection.on]);
+  });
+
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_METADATA, 'on', true),
+  );
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_METADATA, 'on', true),
+  );
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [createStateProperty(TEST_METADATA, 'on', false)],
+  });
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: false,
+    properties: [],
+  });
+
+  expect(values).toEqual([
+    [0, false, false],
+    [1, false, true],
+    [2, false, true],
+    [3, true, false],
+    [4, false, false],
+  ]);
+  disposeAutorun();
+});
+
+test('tracks observation revisions independently for each property alias', () => {
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_DIMMABLE_METADATA,
+    [new TestTransport()],
+  );
+
+  expect(connection.getObservationRevision(['on'])).toBe(0);
+  expect(connection.getObservationRevision(['brightness'])).toBe(0);
+
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_DIMMABLE_METADATA, 'on', true),
+  );
+  expect(connection.getObservationRevision(['on'])).toBe(1);
+  expect(connection.getObservationRevision(['brightness'])).toBe(0);
+
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_DIMMABLE_METADATA, 'on', true),
+  );
+  expect(connection.getObservationRevision(['on'])).toBe(2);
+
+  connection.handlePropertyUpdate(
+    createStateProperty(TEST_DIMMABLE_METADATA, 'brightness', 50),
+  );
+  expect(connection.getObservationRevision(['on'])).toBe(2);
+  expect(connection.getObservationRevision(['brightness'])).toBe(3);
+  expect(connection.getObservationRevision(['on', 'brightness'])).toBe(3);
+
+  connection.handleStateUpdate({
+    did: TEST_DIMMABLE_METADATA.device.did,
+    online: true,
+    properties: [
+      createStateProperty(TEST_DIMMABLE_METADATA, 'on', false),
+      createStateProperty(TEST_DIMMABLE_METADATA, 'brightness', 60),
+      createStateProperty(TEST_DIMMABLE_METADATA, 'colorTemperature', 4_100),
+    ],
+  });
+  expect(connection.getObservationRevision(['on'])).toBe(4);
+  expect(connection.getObservationRevision(['brightness'])).toBe(4);
+  expect(connection.getObservationRevision(['colorTemperature'])).toBe(4);
+
+  connection.handleStateUpdate({
+    did: TEST_DIMMABLE_METADATA.device.did,
+    online: false,
+    properties: [],
+  });
+  expect(connection.stateRevision).toBe(5);
+  expect(connection.getObservationRevision(['on', 'brightness'])).toBe(4);
+});
+
 test('rejects incomplete initial state without exposing partial values', () => {
   const connection = new MiotLightEndpointConnection(
     new MiotProvider('provider'),
@@ -862,6 +1226,9 @@ test('rejects incomplete initial state without exposing partial values', () => {
   expect(connection.on).toBe(false);
   expect(connection.brightness).toBe(0);
   expect(connection.colorTemperature).toBe(2_600);
+  expect(
+    connection.getObservationRevision(['on', 'brightness', 'colorTemperature']),
+  ).toBe(0);
 });
 
 test('normalizes optional light property state', () => {
@@ -1007,6 +1374,26 @@ function createExpectedSetPropertyRequest(
   );
 }
 
+function createStateProperty(
+  metadata: MiotEndpointConnectionResolvedMetadata,
+  name: string,
+  value: unknown,
+): {
+  readonly did: string;
+  readonly siid: number;
+  readonly piid: number;
+  readonly value: unknown;
+} {
+  const {service, property} = getMiotEndpointConnectionProperty(metadata, name);
+
+  return {
+    did: metadata.device.did,
+    siid: service.iid,
+    piid: property.iid,
+    value,
+  };
+}
+
 function createMetadataWithBrightnessRange(
   valueRange: [number, number, number],
 ): MiotEndpointConnectionResolvedMetadata {
@@ -1097,8 +1484,8 @@ class TestTransport extends MiotEndpointConnectionTransport {
 }
 
 class TestValueListEndpointConnection extends MiotEndpointConnection<never> {
-  override processCommand(_command: never): Promise<void> {
-    return Promise.resolve();
+  override prepareCommand(_command: never): CommandExecution {
+    return {execute: () => Promise.resolve()};
   }
 }
 
@@ -1115,7 +1502,34 @@ class TestMultiResourceEndpointConnection extends MiotEndpointConnection<never> 
     return (this.getState('relativeHumidity') as number | undefined) ?? 0;
   }
 
-  override processCommand(_command: never): Promise<void> {
-    return Promise.resolve();
+  override prepareCommand(_command: never): CommandExecution {
+    return {execute: () => Promise.resolve()};
   }
+}
+
+async function executeCommand(
+  connection: EndpointConnection<LightEndpointCommand>,
+  command: LightEndpointCommand,
+): Promise<CommandEffect | undefined> {
+  const execution = connection.prepareCommand(command);
+  await execution.execute();
+  return execution.effect;
+}
+
+function requireEffect(effect: CommandEffect | undefined): CommandEffect {
+  if (effect === undefined) {
+    throw new Error('MIoT stateful command returned no effect.');
+  }
+
+  return effect;
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 8; index++) {
+    await Promise.resolve();
+  }
+}
+
+function wait(delay: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, delay));
 }

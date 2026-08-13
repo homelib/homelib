@@ -1,5 +1,8 @@
 import {
   AirConditionerEndpoint,
+  type Command,
+  type CommandEffect,
+  type CommandExecution,
   DehumidifierEndpoint,
   type EndpointReference,
   FanEndpoint,
@@ -35,7 +38,7 @@ import {
 } from './dehumidifier.js';
 import {MiotFanEndpointConnection, miotFanEndpointAdapter} from './fan.js';
 
-defineOnOffEndpointTests({
+defineOnOffEndpointTests<MiotAirConditionerEndpointConnection>({
   name: 'air conditioner',
   deviceType: 'urn:miot-spec-v2:device:air-conditioner:0000A004',
   serviceType: 'urn:miot-spec-v2:service:air-conditioner:0000780F',
@@ -50,11 +53,13 @@ defineOnOffEndpointTests({
       [transport],
     ),
   setOn: async (connection, value) => {
-    await connection.processCommand(new SetAirConditionerOnCommand(value));
+    return requireEffect(
+      await executeCommand(connection, new SetAirConditionerOnCommand(value)),
+    );
   },
 });
 
-defineOnOffEndpointTests({
+defineOnOffEndpointTests<MiotDehumidifierEndpointConnection>({
   name: 'dehumidifier',
   deviceType: 'urn:miot-spec-v2:device:dehumidifier:0000A02D',
   serviceType: 'urn:miot-spec-v2:service:dehumidifier:00007841',
@@ -69,11 +74,13 @@ defineOnOffEndpointTests({
       [transport],
     ),
   setOn: async (connection, value) => {
-    await connection.processCommand(new SetDehumidifierOnCommand(value));
+    return requireEffect(
+      await executeCommand(connection, new SetDehumidifierOnCommand(value)),
+    );
   },
 });
 
-defineOnOffEndpointTests({
+defineOnOffEndpointTests<MiotFanEndpointConnection>({
   name: 'fan',
   deviceType: 'urn:miot-spec-v2:device:fan:0000A005',
   serviceType: 'urn:miot-spec-v2:service:fan:00007808',
@@ -86,7 +93,9 @@ defineOnOffEndpointTests({
       transport,
     ]),
   setOn: async (connection, value) => {
-    await connection.processCommand(new SetFanOnCommand(value));
+    return requireEffect(
+      await executeCommand(connection, new SetFanOnCommand(value)),
+    );
   },
 });
 
@@ -94,6 +103,16 @@ type OnOffConnection = {
   readonly on: boolean;
   readonly stateProperties: readonly MiotProperty[];
   readonly handlePropertyUpdate: (update: MiotPropertyUpdate) => void;
+  readonly handleStateUpdate: (update: {
+    readonly did: string;
+    readonly online: boolean;
+    readonly properties: readonly MiotPropertyUpdate[];
+  }) => void;
+};
+
+type OnOffEndpoint<TConnection extends OnOffConnection> = EndpointReference & {
+  readonly on: boolean;
+  readonly bindConnection: (connection: TConnection | undefined) => void;
 };
 
 type OnOffEndpointTestOptions<TConnection extends OnOffConnection> = {
@@ -103,12 +122,15 @@ type OnOffEndpointTestOptions<TConnection extends OnOffConnection> = {
   readonly Endpoint: unknown;
   readonly Connection: Function;
   readonly adapter: MiotEndpointAdapter;
-  readonly createEndpoint: () => EndpointReference;
+  readonly createEndpoint: () => OnOffEndpoint<TConnection>;
   readonly createConnection: (
     metadata: MiotEndpointConnectionResolvedMetadata,
     transport: TestTransport,
   ) => TConnection;
-  readonly setOn: (connection: TConnection, value: boolean) => Promise<void>;
+  readonly setOn: (
+    connection: TConnection,
+    value: boolean,
+  ) => Promise<CommandEffect>;
 };
 
 function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
@@ -243,6 +265,35 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
       ]);
     });
 
+    test('returns an on effect that follows observed endpoint state', async () => {
+      const metadata = createMetadata(options);
+      const transport = new TestTransport();
+      const connection = options.createConnection(metadata, transport);
+      const endpoint = options.createEndpoint();
+      endpoint.bindConnection(connection);
+      const [property] = connection.stateProperties;
+
+      if (property === undefined) {
+        throw new Error('Test connection has no state property.');
+      }
+
+      connection.handleStateUpdate({
+        did: metadata.device.did,
+        online: true,
+        properties: [{...property, value: true}],
+      });
+      const effect = await options.setOn(connection, true);
+      const equivalentEffect = await options.setOn(connection, true);
+      const differentEffect = await options.setOn(connection, false);
+
+      expect(effect.equals(equivalentEffect)).toBe(true);
+      expect(effect.equals(differentEffect)).toBe(false);
+      expect(effect.matches(endpoint)).toBe(true);
+
+      connection.handlePropertyUpdate({...property, value: false});
+      expect(effect.matches(endpoint)).toBe(false);
+    });
+
     test('projects MIoT property updates to observable on state', () => {
       const metadata = createMetadata(options);
       const connection = options.createConnection(
@@ -266,6 +317,23 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
       disposeAutorun();
     });
   });
+}
+
+function requireEffect(effect: CommandEffect | undefined): CommandEffect {
+  if (effect === undefined) {
+    throw new Error('MIoT stateful command returned no effect.');
+  }
+
+  return effect;
+}
+
+async function executeCommand<TCommand extends Command>(
+  connection: {prepareCommand(command: TCommand): CommandExecution},
+  command: TCommand,
+): Promise<CommandEffect | undefined> {
+  const execution = connection.prepareCommand(command);
+  await execution.execute();
+  return execution.effect;
 }
 
 function createMetadata(

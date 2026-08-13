@@ -1,7 +1,7 @@
 import {computed} from 'mobx';
 
 import type {Temperature} from '../atomics/index.js';
-import {Command} from '../command.js';
+import {StatefulCommand} from '../command.js';
 import type {HumiditySensor, TemperatureSensor} from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
@@ -58,15 +58,6 @@ export class AirConditioner
   turnOn(): this {
     this.endpoint.turnOn();
     return this;
-  }
-
-  /** Enqueues power-on only when the currently observed `on` state is false. */
-  ensureOn(): this {
-    if (this.on) {
-      return this;
-    }
-
-    return this.turnOn();
   }
 
   turnOff(): this {
@@ -150,15 +141,6 @@ export class AirConditionerEndpoint<
     return this.enqueueCommand(new SetAirConditionerOnCommand(true));
   }
 
-  /** Enqueues power-on only when the currently observed `on` state is false. */
-  ensureOn(): this {
-    if (this.on) {
-      return this;
-    }
-
-    return this.turnOn();
-  }
-
   turnOff(): this {
     return this.enqueueCommand(new SetAirConditionerOnCommand(false));
   }
@@ -192,15 +174,11 @@ export type AirConditionerEndpointConnection =
       readonly targetRelativeHumidity: number | undefined;
     };
 
-export abstract class AirConditionerCommand extends Command {}
+export abstract class AirConditionerCommand extends StatefulCommand {}
 
 export class SetAirConditionerOnCommand extends AirConditionerCommand {
   constructor(readonly value: boolean) {
     super();
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetAirConditionerOnCommand;
   }
 
   override toLogString(): string {
@@ -213,10 +191,6 @@ export class SetAirConditionerModeCommand extends AirConditionerCommand {
     super();
   }
 
-  override supersedes(command: Command): boolean {
-    return command instanceof SetAirConditionerModeCommand;
-  }
-
   override toLogString(): string {
     return `set mode=${this.value}`;
   }
@@ -225,10 +199,6 @@ export class SetAirConditionerModeCommand extends AirConditionerCommand {
 export class SetAirConditionerTargetTemperatureCommand extends AirConditionerCommand {
   constructor(readonly value: Temperature) {
     super();
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetAirConditionerTargetTemperatureCommand;
   }
 
   override toLogString(): string {
@@ -250,10 +220,6 @@ export class SetAirConditionerTargetHumidityCommand extends AirConditionerComman
         'Target relative humidity must be a finite number from 0 to 1.',
       );
     }
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetAirConditionerTargetHumidityCommand;
   }
 
   override toLogString(): string {

@@ -1,4 +1,5 @@
 import {
+  type CommandExecution,
   LightEndpoint,
   type LightEndpointCommand,
   type LightEndpointConnection,
@@ -421,8 +422,8 @@ class TestLightEndpointConnection
     return undefined;
   }
 
-  override processCommand(_command: LightEndpointCommand): Promise<void> {
-    return Promise.resolve();
+  override prepareCommand(_command: LightEndpointCommand): CommandExecution {
+    return {execute: () => Promise.resolve()};
   }
 }
 

@@ -1,6 +1,6 @@
 import {computed} from 'mobx';
 
-import {Command} from '../command.js';
+import {StatefulCommand} from '../command.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
   Endpoint,
@@ -40,15 +40,6 @@ export class Light extends Device {
   turnOff(): this {
     this.endpoint.turnOff();
     return this;
-  }
-
-  /** Enqueues turn-on only when the currently observed `on` state is false. */
-  ensureOn(): this {
-    if (this.on) {
-      return this;
-    }
-
-    return this.turnOn();
   }
 
   /**
@@ -110,15 +101,6 @@ export class LightEndpoint<
     return this.enqueueCommand(new SetLightOnCommand(false));
   }
 
-  /** Enqueues turn-on only when the currently observed `on` state is false. */
-  ensureOn(): this {
-    if (this.on) {
-      return this;
-    }
-
-    return this.turnOn();
-  }
-
   /**
    * Sets brightness using a normalized ratio from 0 to 1.
    * A value of 0 turns the light off.
@@ -144,15 +126,11 @@ export type LightEndpointConnection =
     readonly colorTemperature: number | undefined;
   };
 
-export abstract class LightCommand extends Command {}
+export abstract class LightCommand extends StatefulCommand {}
 
 export class SetLightOnCommand extends LightCommand {
   constructor(readonly value: boolean) {
     super();
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetLightOnCommand;
   }
 
   override toLogString(): string {
@@ -172,10 +150,6 @@ export class SetLightBrightnessCommand extends LightCommand {
     }
   }
 
-  override supersedes(command: Command): boolean {
-    return command instanceof SetLightBrightnessCommand;
-  }
-
   override toLogString(): string {
     return `set brightness=${this.value}`;
   }
@@ -190,10 +164,6 @@ export class SetLightColorTemperatureCommand extends LightCommand {
         'Color temperature must be a finite number greater than 0.',
       );
     }
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetLightColorTemperatureCommand;
   }
 
   override toLogString(): string {

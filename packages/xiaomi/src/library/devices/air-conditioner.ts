@@ -4,6 +4,7 @@ import {
   type AirConditionerEndpointConnection,
   type AirConditionerMode,
   CommandError,
+  type CommandExecution,
   SetAirConditionerModeCommand,
   SetAirConditionerOnCommand,
   SetAirConditionerTargetHumidityCommand,
@@ -22,20 +23,21 @@ import {
   MiotEndpointConnection,
   type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionTransports,
-  getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
 import {
   type MiotEndpointMatcher,
-  type MiotExecutionRequest,
   type MiotPropertyMatcher,
-  MiotSetPropertyRequest,
   type MiotSpecProperty,
   type MiotSpecValueRange,
   isValidMiotSpecValueRange,
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
 
-import {clampAndQuantizeValue} from './value-range.js';
+import {
+  MiotCommandEffect,
+  type MiotCommandEffectConnection,
+  type MiotCommandEffectValues,
+} from './command-effect.js';
 
 const MiotAirConditionerOn = x.boolean;
 
@@ -287,12 +289,17 @@ export class MiotAirConditionerEndpointConnection
       );
   }
 
-  override async processCommand(
+  override prepareCommand(
     command: AirConditionerEndpointCommand,
-  ): Promise<void> {
-    await this.executeRequest(
-      createMiotAirConditionerRequest(command, this.metadata, this.properties),
+  ): CommandExecution {
+    const effect = createMiotAirConditionerEffect(
+      command,
+      this,
+      this.properties,
     );
+    const {request} = effect;
+
+    return {effect, execute: () => this.executeRequest(request)};
   }
 }
 
@@ -329,57 +336,43 @@ type MiotAirConditionerEndpointProperties = {
   readonly relativeHumidity?: MiotSpecProperty;
 };
 
-function createMiotAirConditionerRequest(
+function createMiotAirConditionerEffect(
   command: AirConditionerEndpointCommand,
-  metadata: MiotEndpointConnectionResolvedMetadata,
+  connection: MiotCommandEffectConnection,
   properties: MiotAirConditionerEndpointProperties,
-): MiotExecutionRequest {
+): MiotAirConditionerCommandEffect {
   if (command instanceof SetAirConditionerOnCommand) {
-    return createSetPropertyRequest(metadata, 'on', command.value);
+    return new MiotAirConditionerCommandEffect(connection, {
+      on: command.value,
+    });
   } else if (command instanceof SetAirConditionerModeCommand) {
-    const property = properties.mode;
-
-    if (property === undefined) {
+    if (properties.mode === undefined) {
       throw new CommandError('MIoT air conditioner does not support mode.');
     }
 
-    const rawValue = getMiotAirConditionerMode(command.value);
-
-    return createSetPropertyRequest(metadata, 'mode', rawValue);
+    return new MiotAirConditionerCommandEffect(connection, {
+      mode: getMiotAirConditionerMode(command.value),
+    });
   } else if (command instanceof SetAirConditionerTargetTemperatureCommand) {
-    const property = properties.targetTemperature;
-
-    if (property === undefined) {
+    if (properties.targetTemperature === undefined) {
       throw new CommandError(
         'MIoT air conditioner does not support target temperature.',
       );
     }
 
-    const valueRange = getPropertyValueRange('air conditioner', property);
-    const value = command.value.celsius;
-
-    return createSetPropertyRequest(
-      metadata,
-      'targetTemperature',
-      clampAndQuantizeValue(value, valueRange),
-    );
+    return new MiotAirConditionerCommandEffect(connection, {
+      targetTemperature: command.value,
+    });
   } else if (command instanceof SetAirConditionerTargetHumidityCommand) {
-    const property = properties.targetRelativeHumidity;
-
-    if (property === undefined) {
+    if (properties.targetRelativeHumidity === undefined) {
       throw new CommandError(
         'MIoT air conditioner does not support target humidity.',
       );
     }
 
-    const valueRange = getPropertyValueRange('air conditioner', property);
-    const rawValue = command.relativeHumidity * 100;
-
-    return createSetPropertyRequest(
-      metadata,
-      'targetRelativeHumidity',
-      clampAndQuantizeValue(rawValue, valueRange),
-    );
+    return new MiotAirConditionerCommandEffect(connection, {
+      targetRelativeHumidity: command.relativeHumidity,
+    });
   }
 
   throw new TypeError('Unsupported MIoT air conditioner endpoint command.');
@@ -402,24 +395,23 @@ function getMiotAirConditionerMode(mode: AirConditionerMode): number {
   }
 }
 
-function createSetPropertyRequest(
-  metadata: MiotEndpointConnectionResolvedMetadata,
-  propertyName: keyof MiotAirConditionerEndpointProperties,
-  value: unknown,
-): MiotSetPropertyRequest {
-  const {service, property} = getMiotEndpointConnectionProperty(
-    metadata,
-    propertyName,
-  );
-
-  return new MiotSetPropertyRequest(
-    {
-      did: metadata.device.did,
-      siid: service.iid,
-      piid: property.iid,
-    },
-    value,
-  );
+class MiotAirConditionerCommandEffect extends MiotCommandEffect<
+  AirConditionerEndpoint,
+  keyof MiotAirConditionerEndpointProperties
+> {
+  protected getValues(
+    endpoint: AirConditionerEndpoint,
+  ): MiotCommandEffectValues<keyof MiotAirConditionerEndpointProperties> {
+    return {
+      on: endpoint.on,
+      mode:
+        endpoint.mode === undefined
+          ? undefined
+          : getMiotAirConditionerMode(endpoint.mode),
+      targetTemperature: endpoint.targetTemperature,
+      targetRelativeHumidity: endpoint.targetRelativeHumidity,
+    };
+  }
 }
 
 function getOptionalNumberState(value: unknown): number | undefined {

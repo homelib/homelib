@@ -1,7 +1,7 @@
 import {computed} from 'mobx';
 
 import type {Temperature} from '../atomics/index.js';
-import {Command} from '../command.js';
+import {StatefulCommand} from '../command.js';
 import type {HumiditySensor, TemperatureSensor} from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
@@ -58,15 +58,6 @@ export class Dehumidifier
   turnOff(): this {
     this.endpoint.turnOff();
     return this;
-  }
-
-  /** Queues turn-on only when the currently observed state is off. */
-  ensureOn(): this {
-    if (this.on) {
-      return this;
-    }
-
-    return this.turnOn();
   }
 
   setMode(value: DehumidifierMode): this {
@@ -138,15 +129,6 @@ export class DehumidifierEndpoint<
     return this.enqueueCommand(new SetDehumidifierOnCommand(false));
   }
 
-  /** Queues turn-on only when the currently observed state is off. */
-  ensureOn(): this {
-    if (this.on) {
-      return this;
-    }
-
-    return this.turnOn();
-  }
-
   setMode(value: DehumidifierMode): this {
     return this.enqueueCommand(new SetDehumidifierModeCommand(value));
   }
@@ -169,15 +151,11 @@ export type DehumidifierEndpointConnection =
       readonly targetRelativeHumidity: number | undefined;
     };
 
-export abstract class DehumidifierCommand extends Command {}
+export abstract class DehumidifierCommand extends StatefulCommand {}
 
 export class SetDehumidifierOnCommand extends DehumidifierCommand {
   constructor(readonly value: boolean) {
     super();
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetDehumidifierOnCommand;
   }
 
   override toLogString(): string {
@@ -188,10 +166,6 @@ export class SetDehumidifierOnCommand extends DehumidifierCommand {
 export class SetDehumidifierModeCommand extends DehumidifierCommand {
   constructor(readonly value: DehumidifierMode) {
     super();
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetDehumidifierModeCommand;
   }
 
   override toLogString(): string {
@@ -213,10 +187,6 @@ export class SetDehumidifierTargetHumidityCommand extends DehumidifierCommand {
         'Target relative humidity must be a finite number from 0 to 1.',
       );
     }
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetDehumidifierTargetHumidityCommand;
   }
 
   override toLogString(): string {

@@ -1,4 +1,5 @@
 import {DeviceEntry} from '../device.js';
+import type {CommandExecution} from '../endpoint.js';
 
 import {
   Light,
@@ -23,13 +24,13 @@ test('light commands support chaining', () => {
   expect(endpoint.setBrightness(0)).toBe(endpoint);
 });
 
-test('light ensureOn queues turn-on only when needed', async () => {
+test('light turnOn queues turn-on for devices and endpoints', async () => {
   const deviceCase = createLight();
   const deviceConnection = new TestLightEndpointConnection(false);
   deviceCase.endpoint.bindConnection(deviceConnection);
 
   expect(
-    deviceCase.light.ensureOn().setBrightness(0.5).setColorTemperature(3_000),
+    deviceCase.light.turnOn().setBrightness(0.5).setColorTemperature(3_000),
   ).toBe(deviceCase.light);
   await flushMicrotasks();
   expect(deviceConnection.commands).toEqual([
@@ -42,18 +43,9 @@ test('light ensureOn queues turn-on only when needed', async () => {
   const endpointConnection = new TestLightEndpointConnection(false);
   endpointCase.endpoint.bindConnection(endpointConnection);
 
-  expect(endpointCase.endpoint.ensureOn()).toBe(endpointCase.endpoint);
+  expect(endpointCase.endpoint.turnOn()).toBe(endpointCase.endpoint);
   await flushMicrotasks();
   expect(endpointConnection.commands).toEqual([new SetLightOnCommand(true)]);
-
-  const onCase = createLight();
-  const onConnection = new TestLightEndpointConnection(true);
-  onCase.endpoint.bindConnection(onConnection);
-
-  expect(onCase.light.ensureOn()).toBe(onCase.light);
-  expect(onCase.endpoint.ensureOn()).toBe(onCase.endpoint);
-  await flushMicrotasks();
-  expect(onConnection.commands).toEqual([]);
 });
 
 function createLight(): {light: Light; endpoint: LightEndpoint} {
@@ -71,6 +63,8 @@ function createLight(): {light: Light; endpoint: LightEndpoint} {
 class TestLightEndpointConnection implements LightEndpointConnection {
   readonly ready = true;
 
+  readonly stateRevision = 0;
+
   readonly brightness = 0.5;
 
   readonly colorTemperature = 3_000;
@@ -79,8 +73,12 @@ class TestLightEndpointConnection implements LightEndpointConnection {
 
   constructor(readonly on: boolean) {}
 
-  async processCommand(command: LightEndpointCommand): Promise<void> {
-    this.commands.push(command);
+  prepareCommand(command: LightEndpointCommand): CommandExecution {
+    return {
+      execute: async () => {
+        this.commands.push(command);
+      },
+    };
   }
 }
 

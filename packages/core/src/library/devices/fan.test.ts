@@ -1,4 +1,5 @@
 import {DeviceEntry} from '../device.js';
+import type {CommandExecution} from '../endpoint.js';
 
 import {
   Fan,
@@ -34,14 +35,14 @@ test('fan commands support chaining', () => {
   expect(endpoint.setSpeed(0)).toBe(endpoint);
 });
 
-test('fan ensureOn queues turn-on only when needed', async () => {
+test('fan turnOn queues turn-on for devices and endpoints', async () => {
   const deviceCase = createFan();
   const deviceConnection = new TestFanEndpointConnection(false);
   deviceCase.endpoint.bindConnection(deviceConnection);
 
   expect(
     deviceCase.fan
-      .ensureOn()
+      .turnOn()
       .setWindMode('normal')
       .setSpeed(0.5)
       .setHorizontalSwing(false),
@@ -58,18 +59,9 @@ test('fan ensureOn queues turn-on only when needed', async () => {
   const endpointConnection = new TestFanEndpointConnection(false);
   endpointCase.endpoint.bindConnection(endpointConnection);
 
-  expect(endpointCase.endpoint.ensureOn()).toBe(endpointCase.endpoint);
+  expect(endpointCase.endpoint.turnOn()).toBe(endpointCase.endpoint);
   await flushMicrotasks();
   expect(endpointConnection.commands).toEqual([new SetFanOnCommand(true)]);
-
-  const onCase = createFan();
-  const onConnection = new TestFanEndpointConnection(true);
-  onCase.endpoint.bindConnection(onConnection);
-
-  expect(onCase.fan.ensureOn()).toBe(onCase.fan);
-  expect(onCase.endpoint.ensureOn()).toBe(onCase.endpoint);
-  await flushMicrotasks();
-  expect(onConnection.commands).toEqual([]);
 });
 
 function createFan(): {fan: Fan; endpoint: FanEndpoint} {
@@ -87,6 +79,8 @@ function createFan(): {fan: Fan; endpoint: FanEndpoint} {
 class TestFanEndpointConnection implements FanEndpointConnection {
   readonly ready = true;
 
+  readonly stateRevision = 0;
+
   readonly windMode = 'natural';
 
   readonly speed = 0.5;
@@ -97,8 +91,12 @@ class TestFanEndpointConnection implements FanEndpointConnection {
 
   constructor(readonly on: boolean) {}
 
-  async processCommand(command: FanEndpointCommand): Promise<void> {
-    this.commands.push(command);
+  prepareCommand(command: FanEndpointCommand): CommandExecution {
+    return {
+      execute: async () => {
+        this.commands.push(command);
+      },
+    };
   }
 }
 

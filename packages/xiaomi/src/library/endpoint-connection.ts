@@ -1,6 +1,7 @@
 import {
   type Command,
   CommandError,
+  type CommandExecution,
   type EndpointConnection,
   EndpointConnectionError,
   type EndpointConnectionMetadata,
@@ -79,11 +80,20 @@ export abstract class MiotEndpointConnection<
 
   @observable private accessor readyValue = false;
 
+  @observable private accessor stateRevisionValue = 0;
+
+  private readonly observationRevisionMap = new Map<string, number>();
+
   protected readonly transports: MiotEndpointConnectionTransports;
 
   @computed
   get ready(): boolean {
     return this.readyValue;
+  }
+
+  @computed
+  get stateRevision(): number {
+    return this.stateRevisionValue;
   }
 
   get stateProperties(): readonly MiotProperty[] {
@@ -97,6 +107,17 @@ export abstract class MiotEndpointConnection<
         };
       });
     });
+  }
+
+  /** Returns the latest observation revision among the resolved aliases. */
+  getObservationRevision(names: Iterable<string>): number {
+    let revision = 0;
+
+    for (const name of names) {
+      revision = Math.max(revision, this.observationRevisionMap.get(name) ?? 0);
+    }
+
+    return revision;
   }
 
   constructor(
@@ -116,6 +137,8 @@ export abstract class MiotEndpointConnection<
     }
 
     this.stateMap.set(state.name, state.value);
+    this.stateRevisionValue++;
+    this.observationRevisionMap.set(state.name, this.stateRevisionValue);
   }
 
   @action
@@ -126,6 +149,7 @@ export abstract class MiotEndpointConnection<
 
     if (!update.online) {
       this.readyValue = false;
+      this.stateRevisionValue++;
       return;
     }
 
@@ -140,9 +164,14 @@ export abstract class MiotEndpointConnection<
     }
 
     this.readyValue = true;
+    this.stateRevisionValue++;
+
+    for (const {name} of states) {
+      this.observationRevisionMap.set(name, this.stateRevisionValue);
+    }
   }
 
-  abstract processCommand(command: TCommand): Promise<void>;
+  abstract prepareCommand(command: TCommand): CommandExecution;
 
   protected getState(name: string): unknown {
     return this.stateMap.get(name);
@@ -182,7 +211,7 @@ export abstract class MiotEndpointConnection<
       return;
     }
 
-    throw createMiotEndpointConnectionTransportError(lastUnavailableError);
+    throw createMiotEndpointConnectionError(lastUnavailableError);
   }
 
   private prepareStateUpdates(
@@ -262,6 +291,19 @@ export abstract class MiotEndpointConnectionTransport {
  * transport.
  */
 export class MiotEndpointConnectionTransportUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = new.target.name;
+  }
+}
+
+/**
+ * Signals that a transport failed after a request may have been published.
+ *
+ * Unlike {@link MiotEndpointConnectionTransportUnavailableError}, this error
+ * must not trigger transport fallback or automatic command retries.
+ */
+export class MiotEndpointConnectionTransportError extends Error {
   constructor(message: string) {
     super(message);
     this.name = new.target.name;
@@ -409,6 +451,16 @@ function getMiotEndpointPropertyCount(
 }
 
 function createMiotEndpointConnectionTransportError(
+  error: unknown,
+): MiotEndpointConnectionTransportError {
+  const message =
+    error instanceof Error
+      ? `MIoT transport failed: ${error.message}`
+      : 'MIoT transport failed.';
+  return new MiotEndpointConnectionTransportError(message);
+}
+
+function createMiotEndpointConnectionError(
   error: unknown,
 ): EndpointConnectionError {
   const message =

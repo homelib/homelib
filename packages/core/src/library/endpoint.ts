@@ -1,6 +1,6 @@
 import {action, comparer, computed, observable, reaction} from 'mobx';
 
-import {type Command} from './command.js';
+import {type Command, CommandError, StatefulCommand} from './command.js';
 import {
   hasEndpointLogTarget,
   logEndpointCommand,
@@ -26,6 +26,12 @@ export abstract class Endpoint<
 
   private logStateReactionDisposer: (() => void) | undefined;
 
+  private acknowledgedCommands: AcknowledgedCommand[] = [];
+
+  private commandsWithUncertainEffects: UncertainCommandEffect[] = [];
+
+  private connectionStateGeneration = 0;
+
   constructor(readonly name = '') {}
 
   @computed
@@ -49,8 +55,10 @@ export abstract class Endpoint<
 
     this.connectionReactionDisposer?.();
     this.logStateReactionDisposer?.();
+    this.clearCommandEffectState();
 
     this.connection_ = connection;
+    this.connectionStateGeneration++;
     this.connectionErrorBackoff.reset();
 
     this.logStateReactionDisposer =
@@ -66,13 +74,28 @@ export abstract class Endpoint<
 
     this.connectionReactionDisposer = connection
       ? reaction(
-          () => connection.ready,
-          ready => {
+          () => ({
+            ready: connection.ready,
+            stateRevision: connection.stateRevision,
+          }),
+          (state, previousState) => {
+            const {ready} = state;
+
             if (ready) {
+              if (
+                previousState !== undefined &&
+                state.stateRevision !== previousState.stateRevision
+              ) {
+                this.reconcileCommandEffects();
+              }
+
               void this.processPendingCommands().catch(logEndpointError);
+            } else {
+              this.connectionStateGeneration++;
+              this.clearCommandEffectState();
             }
           },
-          {fireImmediately: true},
+          {equals: comparer.structural, fireImmediately: true},
         )
       : undefined;
   }
@@ -110,14 +133,80 @@ export abstract class Endpoint<
         this.pendingCommands.length > 0
       ) {
         const command = this.pendingCommands[0];
-
+        const connection = this.connection;
+        let executionStarted = false;
+        let executionEffect: CommandEffect | undefined;
+        let executionEffectObservationRevision: number | undefined;
+        let executionStateGeneration: number | undefined;
         try {
-          logEndpointCommand(this, this.connection, command);
-          await this.connection.processCommand(command);
+          const execution = connection.prepareCommand(command);
+          executionEffect = execution.effect;
+
+          if (this.isStatefulCommandSatisfied(command, execution.effect)) {
+            logEndpointCommand(this, connection, command, 'skip');
+            consumeCommand(this.pendingCommands, command);
+            this.connectionErrorBackoff.reset();
+            continue;
+          }
+
+          executionEffectObservationRevision =
+            execution.effect?.observationRevision;
+          executionStateGeneration = this.connectionStateGeneration;
+
+          logEndpointCommand(this, connection, command, 'execute');
+          executionStarted = true;
+          await execution.execute();
+
+          if (command instanceof StatefulCommand) {
+            this.removeAcknowledgedCommandsSupersededBy(command);
+            this.removeUncertainEffectsSupersededBy(command);
+          }
+
+          if (
+            command instanceof StatefulCommand &&
+            execution.effect !== undefined &&
+            this.connection === connection &&
+            connection.ready
+          ) {
+            this.acknowledgeCommand(
+              command,
+              execution.effect,
+              connection,
+              executionEffectObservationRevision,
+              executionStateGeneration,
+            );
+          } else if (
+            command instanceof StatefulCommand &&
+            execution.effect === undefined
+          ) {
+            this.markCommandEffectUncertain(
+              command,
+              undefined,
+              connection,
+              undefined,
+              executionStateGeneration,
+            );
+          }
         } catch (error) {
           if (error instanceof EndpointConnectionError) {
             await this.connectionErrorBackoff;
             continue;
+          }
+
+          if (
+            executionStarted &&
+            command instanceof StatefulCommand &&
+            !(error instanceof CommandError)
+          ) {
+            this.removeAcknowledgedCommandsSupersededBy(command);
+            this.removeUncertainEffectsSupersededBy(command);
+            this.markCommandEffectUncertain(
+              command,
+              executionEffect,
+              connection,
+              executionEffectObservationRevision,
+              executionStateGeneration,
+            );
           }
 
           logEndpointError(error);
@@ -140,6 +229,228 @@ export abstract class Endpoint<
       }
     }
   }
+
+  private isStatefulCommandSatisfied(
+    command: TCommand,
+    preparedEffect: CommandEffect | undefined,
+  ): boolean {
+    if (!(command instanceof StatefulCommand) || preparedEffect === undefined) {
+      return false;
+    }
+
+    if (
+      this.commandsWithUncertainEffects.some(uncertainEffect =>
+        command.supersedes(uncertainEffect.command),
+      )
+    ) {
+      return false;
+    }
+
+    let supersededAcknowledgedCommand = false;
+
+    for (const acknowledgedCommand of this.acknowledgedCommands) {
+      if (command.supersedes(acknowledgedCommand.command)) {
+        supersededAcknowledgedCommand = true;
+
+        if (acknowledgedCommand.effect.equals(preparedEffect)) {
+          return true;
+        }
+      }
+    }
+
+    if (supersededAcknowledgedCommand) {
+      return false;
+    }
+
+    return preparedEffect.matches(this);
+  }
+
+  private acknowledgeCommand(
+    command: Command,
+    effect: CommandEffect,
+    connection: TConnection,
+    observationRevision: number | undefined,
+    connectionStateGeneration: number | undefined,
+  ): void {
+    if (
+      observationRevision === undefined ||
+      connectionStateGeneration === undefined ||
+      !this.isCurrentConnectionState(connection, connectionStateGeneration)
+    ) {
+      return;
+    }
+
+    const currentObservationRevision = effect.observationRevision;
+
+    if (currentObservationRevision !== observationRevision) {
+      if (effect.matches(this)) {
+        this.acknowledgedCommands.push({
+          command,
+          effect,
+          observationRevision: currentObservationRevision,
+        });
+      } else {
+        this.commandsWithUncertainEffects.push({
+          command,
+          effect,
+          observationRevision: currentObservationRevision,
+        });
+      }
+
+      return;
+    }
+
+    this.acknowledgedCommands.push({
+      command,
+      effect,
+      observationRevision: currentObservationRevision,
+    });
+  }
+
+  private removeAcknowledgedCommandsSupersededBy(command: Command): void {
+    for (const acknowledgedCommand of [...this.acknowledgedCommands]) {
+      if (command.supersedes(acknowledgedCommand.command)) {
+        this.removeAcknowledgedCommand(acknowledgedCommand);
+      }
+    }
+  }
+
+  private removeUncertainEffectsSupersededBy(command: Command): void {
+    this.commandsWithUncertainEffects =
+      this.commandsWithUncertainEffects.filter(
+        uncertainEffect => !command.supersedes(uncertainEffect.command),
+      );
+  }
+
+  private markCommandEffectUncertain(
+    command: Command,
+    effect: CommandEffect | undefined,
+    connection: TConnection,
+    observationRevision: number | undefined,
+    connectionStateGeneration: number | undefined,
+  ): void {
+    if (
+      connectionStateGeneration === undefined ||
+      !this.isCurrentConnectionState(connection, connectionStateGeneration)
+    ) {
+      return;
+    }
+
+    if (effect === undefined) {
+      this.commandsWithUncertainEffects.push({command, effect});
+      return;
+    }
+
+    if (observationRevision === undefined) {
+      return;
+    }
+
+    const currentObservationRevision = effect.observationRevision;
+
+    if (currentObservationRevision !== observationRevision) {
+      if (effect.matches(this)) {
+        this.acknowledgedCommands.push({
+          command,
+          effect,
+          observationRevision: currentObservationRevision,
+        });
+      } else {
+        this.commandsWithUncertainEffects.push({
+          command,
+          effect,
+          observationRevision: currentObservationRevision,
+        });
+      }
+
+      return;
+    }
+
+    this.commandsWithUncertainEffects.push({
+      command,
+      effect,
+      observationRevision,
+    });
+  }
+
+  private removeAcknowledgedCommand(
+    acknowledgedCommand: AcknowledgedCommand,
+  ): void {
+    const index = this.acknowledgedCommands.indexOf(acknowledgedCommand);
+
+    if (index === -1) {
+      return;
+    }
+
+    this.acknowledgedCommands.splice(index, 1);
+  }
+
+  private reconcileCommandEffects(): void {
+    for (const acknowledgedCommand of [...this.acknowledgedCommands]) {
+      const observationRevision =
+        acknowledgedCommand.effect.observationRevision;
+
+      if (observationRevision === acknowledgedCommand.observationRevision) {
+        continue;
+      }
+
+      if (acknowledgedCommand.effect.matches(this)) {
+        acknowledgedCommand.observationRevision = observationRevision;
+      } else {
+        this.removeAcknowledgedCommand(acknowledgedCommand);
+      }
+    }
+
+    for (const uncertainEffect of [...this.commandsWithUncertainEffects]) {
+      if (
+        uncertainEffect.effect === undefined ||
+        uncertainEffect.observationRevision === undefined
+      ) {
+        continue;
+      }
+
+      const observationRevision = uncertainEffect.effect.observationRevision;
+
+      if (observationRevision === uncertainEffect.observationRevision) {
+        continue;
+      }
+
+      this.removeUncertainCommandEffect(uncertainEffect);
+
+      if (uncertainEffect.effect.matches(this)) {
+        this.acknowledgedCommands.push({
+          command: uncertainEffect.command,
+          effect: uncertainEffect.effect,
+          observationRevision,
+        });
+      }
+    }
+  }
+
+  private removeUncertainCommandEffect(
+    uncertainEffect: UncertainCommandEffect,
+  ): void {
+    const index = this.commandsWithUncertainEffects.indexOf(uncertainEffect);
+
+    if (index !== -1) {
+      this.commandsWithUncertainEffects.splice(index, 1);
+    }
+  }
+
+  private isCurrentConnectionState(
+    connection: TConnection,
+    connectionStateGeneration: number,
+  ): boolean {
+    return (
+      this.connection === connection &&
+      connection.ready &&
+      this.connectionStateGeneration === connectionStateGeneration
+    );
+  }
+
+  private clearCommandEffectState(): void {
+    this.acknowledgedCommands = [];
+    this.commandsWithUncertainEffects = [];
+  }
 }
 
 export type EndpointConnectionMetadata = {};
@@ -153,10 +464,67 @@ export type EndpointReference = {
   readonly ready: boolean;
 };
 
+export type CommandEffect = {
+  /**
+   * Revision of the observations relevant to the result of {@link matches}.
+   *
+   * It must increase only after every value relevant to {@link matches} has
+   * been observed since its previous revision, including observations equal to
+   * the previous values. It must remain unchanged for partial or unrelated
+   * updates. Every change must accompany a change to the owning connection's
+   * `stateRevision`; equality deliberately ignores this lifecycle value.
+   */
+  readonly observationRevision: number;
+  /**
+   * Whether this and `effect` describe the same desired state.
+   *
+   * Core only compares effects for stateful commands in the same effect slot,
+   * as determined by `StatefulCommand.supersedes`, and from the same bound
+   * endpoint connection lifecycle.
+   */
+  equals(effect: CommandEffect): boolean;
+  /**
+   * Whether the endpoint's latest complete state already reflects this effect.
+   *
+   * Core only calls this with the endpoint that owns the effect while its
+   * current connection is ready. Implementations need not repeat connection
+   * readiness or endpoint ownership checks.
+   */
+  matches(endpoint: EndpointReference): boolean;
+};
+
+export type CommandExecution = {
+  /** The desired state effect, available before execution for noop detection. */
+  readonly effect?: CommandEffect;
+  /** Starts the externally observable command execution. */
+  readonly execute: () => PromiseLike<void>;
+};
+
 export type EndpointConnection<in TCommand extends Command> = {
   readonly ready: boolean;
-  readonly processCommand: (command: TCommand) => PromiseLike<void>;
+  /**
+   * Monotonically increases after every complete or incremental state update,
+   * including updates whose values equal the previously observed state.
+   */
+  readonly stateRevision: number;
+  /**
+   * Validates and prepares an inert execution plan. External execution must not
+   * begin until the returned `execute()` function is called.
+   */
+  readonly prepareCommand: (command: TCommand) => CommandExecution;
   readonly toLogString?: () => string;
+};
+
+type AcknowledgedCommand = {
+  readonly command: Command;
+  readonly effect: CommandEffect;
+  observationRevision: number;
+};
+
+type UncertainCommandEffect = {
+  readonly command: Command;
+  readonly effect: CommandEffect | undefined;
+  readonly observationRevision?: number;
 };
 
 export type EndpointConnectionBinding = {

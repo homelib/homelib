@@ -3,7 +3,7 @@ import {action, autorun, observable} from 'mobx';
 import {Temperature} from '../atomics/index.js';
 import type {Command} from '../command.js';
 import {type Device, type DeviceConstructor, DeviceEntry} from '../device.js';
-import type {EndpointConnection} from '../endpoint.js';
+import type {CommandExecution, EndpointConnection} from '../endpoint.js';
 import {
   type EndpointStateLogEvent,
   addLogListener,
@@ -619,12 +619,18 @@ class BaseTestOnOffEndpointConnection<
 > implements EndpointConnection<TCommand> {
   readonly ready = true;
 
+  readonly stateRevision = 0;
+
   readonly commands: TCommand[] = [];
 
   constructor(readonly on: boolean) {}
 
-  async processCommand(command: TCommand): Promise<void> {
-    this.commands.push(command);
+  prepareCommand(command: TCommand): CommandExecution {
+    return {
+      execute: async () => {
+        this.commands.push(command);
+      },
+    };
   }
 }
 
@@ -633,12 +639,18 @@ abstract class BaseTestSensorEndpointConnection<
 > implements EndpointConnection<TCommand> {
   @observable accessor ready = false;
 
+  @observable accessor stateRevision = 0;
+
   @observable accessor on = false;
 
   readonly commands: TCommand[] = [];
 
-  async processCommand(command: TCommand): Promise<void> {
-    this.commands.push(command);
+  prepareCommand(command: TCommand): CommandExecution {
+    return {
+      execute: async () => {
+        this.commands.push(command);
+      },
+    };
   }
 }
 

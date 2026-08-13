@@ -1,5 +1,6 @@
 import {
   CommandError,
+  type CommandExecution,
   DehumidifierEndpoint,
   type DehumidifierEndpointCommand,
   type DehumidifierEndpointConnection,
@@ -21,20 +22,21 @@ import {
   MiotEndpointConnection,
   type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionTransports,
-  getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
 import {
   type MiotEndpointMatcher,
-  type MiotExecutionRequest,
   type MiotPropertyMatcher,
-  MiotSetPropertyRequest,
   type MiotSpecProperty,
   type MiotSpecValueRange,
   isValidMiotSpecValueRange,
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
 
-import {clampAndQuantizeValue} from './value-range.js';
+import {
+  MiotCommandEffect,
+  type MiotCommandEffectConnection,
+  type MiotCommandEffectValues,
+} from './command-effect.js';
 
 const MiotDehumidifierOn = x.boolean;
 
@@ -254,12 +256,13 @@ export class MiotDehumidifierEndpointConnection
       );
   }
 
-  override async processCommand(
+  override prepareCommand(
     command: DehumidifierEndpointCommand,
-  ): Promise<void> {
-    await this.executeRequest(
-      createMiotDehumidifierRequest(command, this.metadata, this.properties),
-    );
+  ): CommandExecution {
+    const effect = createMiotDehumidifierEffect(command, this, this.properties);
+    const {request} = effect;
+
+    return {effect, execute: () => this.executeRequest(request)};
   }
 }
 
@@ -294,42 +297,31 @@ type MiotDehumidifierEndpointProperties = {
   readonly relativeHumidity?: MiotSpecProperty;
 };
 
-function createMiotDehumidifierRequest(
+function createMiotDehumidifierEffect(
   command: DehumidifierEndpointCommand,
-  metadata: MiotEndpointConnectionResolvedMetadata,
+  connection: MiotCommandEffectConnection,
   properties: MiotDehumidifierEndpointProperties,
-): MiotExecutionRequest {
+): MiotDehumidifierCommandEffect {
   if (command instanceof SetDehumidifierOnCommand) {
-    return createSetPropertyRequest(metadata, 'on', command.value);
+    return new MiotDehumidifierCommandEffect(connection, {on: command.value});
   } else if (command instanceof SetDehumidifierModeCommand) {
-    const property = properties.mode;
-
-    if (property === undefined) {
+    if (properties.mode === undefined) {
       throw new CommandError('MIoT dehumidifier does not support mode.');
     }
 
-    return createSetPropertyRequest(
-      metadata,
-      'mode',
-      getMiotDehumidifierMode(command.value),
-    );
+    return new MiotDehumidifierCommandEffect(connection, {
+      mode: getMiotDehumidifierMode(command.value),
+    });
   } else if (command instanceof SetDehumidifierTargetHumidityCommand) {
-    const property = properties.targetRelativeHumidity;
-
-    if (property === undefined) {
+    if (properties.targetRelativeHumidity === undefined) {
       throw new CommandError(
         'MIoT dehumidifier does not support target humidity.',
       );
     }
 
-    const valueRange = getPropertyValueRange('dehumidifier', property);
-    const rawValue = command.relativeHumidity * 100;
-
-    return createSetPropertyRequest(
-      metadata,
-      'targetRelativeHumidity',
-      clampAndQuantizeValue(rawValue, valueRange),
-    );
+    return new MiotDehumidifierCommandEffect(connection, {
+      targetRelativeHumidity: command.relativeHumidity,
+    });
   }
 
   throw new TypeError('Unsupported MIoT dehumidifier endpoint command.');
@@ -346,24 +338,22 @@ function getMiotDehumidifierMode(mode: DehumidifierMode): number {
   }
 }
 
-function createSetPropertyRequest(
-  metadata: MiotEndpointConnectionResolvedMetadata,
-  propertyName: keyof MiotDehumidifierEndpointProperties,
-  value: unknown,
-): MiotSetPropertyRequest {
-  const {service, property} = getMiotEndpointConnectionProperty(
-    metadata,
-    propertyName,
-  );
-
-  return new MiotSetPropertyRequest(
-    {
-      did: metadata.device.did,
-      siid: service.iid,
-      piid: property.iid,
-    },
-    value,
-  );
+class MiotDehumidifierCommandEffect extends MiotCommandEffect<
+  DehumidifierEndpoint,
+  keyof MiotDehumidifierEndpointProperties
+> {
+  protected getValues(
+    endpoint: DehumidifierEndpoint,
+  ): MiotCommandEffectValues<keyof MiotDehumidifierEndpointProperties> {
+    return {
+      on: endpoint.on,
+      mode:
+        endpoint.mode === undefined
+          ? undefined
+          : getMiotDehumidifierMode(endpoint.mode),
+      targetRelativeHumidity: endpoint.targetRelativeHumidity,
+    };
+  }
 }
 
 function getOptionalNumberState(value: unknown): number | undefined {

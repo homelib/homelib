@@ -1,5 +1,6 @@
 import type {Temperature} from '../atomics/index.js';
 import {DeviceEntry} from '../device.js';
+import type {CommandExecution} from '../endpoint.js';
 
 import {
   Dehumidifier,
@@ -24,10 +25,10 @@ test('dehumidifier power commands support chaining', () => {
   expect(endpoint.turnOn().turnOff()).toBe(endpoint);
 });
 
-test('chains dehumidifier setters after ensuring it is on', async () => {
+test('chains dehumidifier setters after turning it on', async () => {
   const {connection, dehumidifier, endpoint} = createDehumidifier(false);
 
-  expect(dehumidifier.ensureOn().setMode('sleep').setTargetHumidity(0.5)).toBe(
+  expect(dehumidifier.turnOn().setMode('sleep').setTargetHumidity(0.5)).toBe(
     dehumidifier,
   );
   await flushMicrotasks();
@@ -40,16 +41,6 @@ test('chains dehumidifier setters after ensuring it is on', async () => {
   expect(endpoint.setMode('auto')).toBe(endpoint);
   expect(endpoint.setTargetHumidity(0.45)).toBe(endpoint);
   await flushMicrotasks();
-});
-
-test('does not enqueue a command when ensuring an active dehumidifier is on', async () => {
-  const {connection, dehumidifier, endpoint} = createDehumidifier(true);
-
-  expect(dehumidifier.ensureOn()).toBe(dehumidifier);
-  expect(endpoint.ensureOn()).toBe(endpoint);
-  await flushMicrotasks();
-
-  expect(connection.commands).toEqual([]);
 });
 
 function createDehumidifier(on: boolean): {
@@ -74,6 +65,8 @@ function createDehumidifier(on: boolean): {
 class TestDehumidifierEndpointConnection implements DehumidifierEndpointConnection {
   readonly ready = true;
 
+  readonly stateRevision = 0;
+
   readonly mode = 'auto' as const;
 
   readonly targetRelativeHumidity = 0.5;
@@ -86,8 +79,12 @@ class TestDehumidifierEndpointConnection implements DehumidifierEndpointConnecti
 
   constructor(readonly on: boolean) {}
 
-  async processCommand(command: DehumidifierEndpointCommand): Promise<void> {
-    this.commands.push(command);
+  prepareCommand(command: DehumidifierEndpointCommand): CommandExecution {
+    return {
+      execute: async () => {
+        this.commands.push(command);
+      },
+    };
   }
 }
 

@@ -10,6 +10,13 @@ export abstract class Command {
   }
 }
 
+/** A desired-state command whose effect can be compared with state and commands. */
+export abstract class StatefulCommand extends Command {
+  override supersedes(command: Command): boolean {
+    return command.constructor === this.constructor;
+  }
+}
+
 export class CommandError extends Error {
   constructor(message: string) {
     super(message);

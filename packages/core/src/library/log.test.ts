@@ -12,15 +12,18 @@ test('emits structured endpoint log events', () => {
   const endpoint = {};
   const events: LogEvent[] = [];
   const removeListener = addLogListener(event => events.push(event));
+  const originalDateNow = Date.now;
+  const timestamp = 1_765_000_000_123;
 
   try {
+    Date.now = () => timestamp;
     setEndpointLogTarget(endpoint, {
       scopePath: ['home', 'room'],
       deviceName: 'light',
       endpointName: 'main',
     });
 
-    logEndpointCommand(endpoint, {}, new TestCommand());
+    logEndpointCommand(endpoint, {}, new TestCommand(), 'execute');
     logEndpointState(
       endpoint,
       {},
@@ -31,6 +34,8 @@ test('emits structured endpoint log events', () => {
     expect(events).toEqual([
       {
         type: 'endpoint-command',
+        timestamp,
+        action: 'execute',
         target: {
           scopePath: ['home', 'room'],
           deviceName: 'light',
@@ -41,6 +46,7 @@ test('emits structured endpoint log events', () => {
       },
       {
         type: 'endpoint-state',
+        timestamp,
         target: {
           scopePath: ['home', 'room'],
           deviceName: 'light',
@@ -52,24 +58,27 @@ test('emits structured endpoint log events', () => {
       },
     ]);
   } finally {
+    Date.now = originalDateNow;
     removeListener();
   }
 });
 
 test('isolates log listeners and removes them independently', () => {
   const events: LogEvent[] = [];
+  const firstError = new Error('first');
   const removeThrowingListener = addLogListener(() => {
     throw new Error('listener failed');
   });
   const removeListener = addLogListener(event => events.push(event));
 
-  logEndpointError(new Error('first'));
+  logEndpointError(firstError);
   removeThrowingListener();
   removeListener();
   logEndpointError(new Error('second'));
 
-  expect(events).toHaveLength(1);
-  expect(events[0]?.type).toBe('error');
+  expect(events).toEqual([
+    {type: 'error', timestamp: expect.any(Number), error: firstError},
+  ]);
 });
 
 class TestCommand extends Command {

@@ -117,12 +117,6 @@ export function setupTemperatureHumidityControl({
           relativeHumidity,
         );
 
-      const idealTemperatureLimitsChanged =
-        Math.abs(nextIdealTemperatureUpperLimit - idealTemperatureUpperLimit) >
-          IDEAL_TEMPERATURE_DEVIATION ||
-        Math.abs(nextIdealTemperatureLowerLimit - idealTemperatureLowerLimit) >
-          IDEAL_TEMPERATURE_DEVIATION;
-
       idealTemperatureUpperLimit = nextIdealTemperatureUpperLimit;
       idealTemperatureLowerLimit = nextIdealTemperatureLowerLimit;
 
@@ -137,14 +131,6 @@ export function setupTemperatureHumidityControl({
       const relativeHumidityState =
         relativeHumidityMatcher.update(relativeHumidity);
 
-      if (
-        !temperatureState.changed &&
-        !relativeHumidityState.changed &&
-        !idealTemperatureLimitsChanged
-      ) {
-        return;
-      }
-
       console.info({temperatureState, relativeHumidityState});
 
       if (
@@ -152,23 +138,23 @@ export function setupTemperatureHumidityControl({
         relativeHumidityState.state === 'high'
       ) {
         airConditioner
-          .ensureOn()
+          .turnOn()
           .setMode('dry')
           .setTargetHumidity(IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT);
 
         dehumidifier
-          .ensureOn()
+          .turnOn()
           .setTargetHumidity(SOFT_POWER_OFF_RELATIVE_HUMIDITY);
       } else if (temperatureState.state === 'high') {
         airConditioner
-          .ensureOn()
+          .turnOn()
           .setMode('cool')
           .setTargetTemperature(
             Temperature.fromCelsius(idealTemperatureUpperLimit),
           );
       } else if (relativeHumidityState.state === 'high') {
         airConditioner
-          .ensureOn()
+          .turnOn()
           .setMode('cool')
           .setTargetTemperature(
             Temperature.fromCelsius(
@@ -177,36 +163,36 @@ export function setupTemperatureHumidityControl({
           );
 
         dehumidifier
-          .ensureOn()
+          .turnOn()
           .setTargetHumidity(IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT);
       } else if (
         temperatureState.state === 'low' &&
         relativeHumidityState.state === 'low'
       ) {
         airConditioner
-          .ensureOn()
+          .turnOn()
           .setMode('heat')
           .setTargetTemperature(
             Temperature.fromCelsius(idealTemperatureLowerLimit),
           );
 
         dehumidifier
-          .ensureOn()
+          .turnOn()
           .setTargetHumidity(SOFT_POWER_OFF_RELATIVE_HUMIDITY);
       } else if (temperatureState.state === 'low') {
         airConditioner
-          .ensureOn()
+          .turnOn()
           .setMode('heat')
           .setTargetTemperature(
             Temperature.fromCelsius(idealTemperatureLowerLimit),
           );
 
         dehumidifier
-          .ensureOn()
+          .turnOn()
           .setTargetHumidity(SOFT_POWER_OFF_RELATIVE_HUMIDITY);
       } else if (relativeHumidityState.state === 'low') {
         airConditioner
-          .ensureOn()
+          .turnOn()
           .setMode('heat')
           .setTargetTemperature(
             Temperature.fromCelsius(
@@ -215,21 +201,21 @@ export function setupTemperatureHumidityControl({
           );
 
         dehumidifier
-          .ensureOn()
+          .turnOn()
           .setTargetHumidity(SOFT_POWER_OFF_RELATIVE_HUMIDITY);
       } else {
         switch (airConditioner.mode) {
           case 'dry':
             airConditioner
-              .ensureOn()
+              .turnOn()
               .setTargetHumidity(IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT);
             dehumidifier
-              .ensureOn()
+              .turnOn()
               .setTargetHumidity(SOFT_POWER_OFF_RELATIVE_HUMIDITY);
             break;
           case 'cool':
             airConditioner
-              .ensureOn()
+              .turnOn()
               .setTargetTemperature(
                 Temperature.fromCelsius(
                   idealTemperatureUpperLimit + TEMPERATURE_BACKOFF,
@@ -237,12 +223,12 @@ export function setupTemperatureHumidityControl({
               );
 
             dehumidifier
-              .ensureOn()
+              .turnOn()
               .setTargetHumidity(IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT);
             break;
           case 'heat':
             airConditioner
-              .ensureOn()
+              .turnOn()
               .setTargetTemperature(
                 Temperature.fromCelsius(
                   idealTemperatureLowerLimit - TEMPERATURE_BACKOFF,
@@ -250,7 +236,7 @@ export function setupTemperatureHumidityControl({
               );
 
             dehumidifier
-              .ensureOn()
+              .turnOn()
               .setTargetHumidity(SOFT_POWER_OFF_RELATIVE_HUMIDITY);
             break;
         }

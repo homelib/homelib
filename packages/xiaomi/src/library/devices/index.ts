@@ -28,6 +28,7 @@ export function getMiotEndpointAdapter(
 }
 
 export * from './air-conditioner.js';
+export * from './command-effect.js';
 export * from './dehumidifier.js';
 export * from './fan.js';
 export * from './light.js';

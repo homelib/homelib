@@ -1,5 +1,6 @@
 import {Temperature} from '../atomics/index.js';
 import {DeviceEntry} from '../device.js';
+import type {CommandExecution} from '../endpoint.js';
 
 import {
   AirConditioner,
@@ -12,12 +13,11 @@ import {
   SetAirConditionerTargetTemperatureCommand,
 } from './air-conditioner.js';
 
-test('commands and ensureOn return their receiver', () => {
+test('commands return their receiver', () => {
   const {airConditioner, endpoint} = createAirConditioner();
   const targetTemperature = Temperature.fromCelsius(24);
 
   expect(airConditioner.turnOn()).toBe(airConditioner);
-  expect(airConditioner.ensureOn()).toBe(airConditioner);
   expect(airConditioner.setMode('cool')).toBe(airConditioner);
   expect(airConditioner.setTargetTemperature(targetTemperature)).toBe(
     airConditioner,
@@ -26,27 +26,13 @@ test('commands and ensureOn return their receiver', () => {
   expect(airConditioner.turnOff()).toBe(airConditioner);
 
   expect(endpoint.turnOn()).toBe(endpoint);
-  expect(endpoint.ensureOn()).toBe(endpoint);
   expect(endpoint.setMode('dry')).toBe(endpoint);
   expect(endpoint.setTargetTemperature(targetTemperature)).toBe(endpoint);
   expect(endpoint.setTargetHumidity(0.6)).toBe(endpoint);
   expect(endpoint.turnOff()).toBe(endpoint);
 });
 
-test('ensureOn does not enqueue a command when already on', async () => {
-  const {airConditioner, endpoint} = createAirConditioner();
-  const connection = new TestAirConditionerEndpointConnection(true);
-
-  endpoint.bindConnection(connection);
-
-  airConditioner.ensureOn();
-  endpoint.ensureOn();
-  await flushMicrotasks();
-
-  expect(connection.commands).toEqual([]);
-});
-
-test('ensureOn enqueues on before chained setters when off', async () => {
+test('turnOn enqueues on before chained setters when off', async () => {
   const {airConditioner, endpoint} = createAirConditioner();
   const connection = new TestAirConditionerEndpointConnection(false);
   const targetTemperature = Temperature.fromCelsius(24);
@@ -54,7 +40,7 @@ test('ensureOn enqueues on before chained setters when off', async () => {
   endpoint.bindConnection(connection);
 
   airConditioner
-    .ensureOn()
+    .turnOn()
     .setMode('cool')
     .setTargetTemperature(targetTemperature)
     .setTargetHumidity(0.5);
@@ -86,6 +72,8 @@ function createAirConditioner(): {
 class TestAirConditionerEndpointConnection implements AirConditionerEndpointConnection {
   readonly ready = true;
 
+  readonly stateRevision = 0;
+
   readonly mode = undefined;
 
   readonly targetTemperature = undefined;
@@ -100,8 +88,12 @@ class TestAirConditionerEndpointConnection implements AirConditionerEndpointConn
 
   constructor(readonly on: boolean) {}
 
-  async processCommand(command: AirConditionerEndpointCommand): Promise<void> {
-    this.commands.push(command);
+  prepareCommand(command: AirConditionerEndpointCommand): CommandExecution {
+    return {
+      execute: async () => {
+        this.commands.push(command);
+      },
+    };
   }
 }
 

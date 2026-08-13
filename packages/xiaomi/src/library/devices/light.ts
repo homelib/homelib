@@ -1,5 +1,6 @@
 import {
   CommandError,
+  type CommandExecution,
   LightEndpoint,
   type LightEndpointCommand,
   type LightEndpointConnection,
@@ -19,20 +20,21 @@ import {
   MiotEndpointConnection,
   type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionTransports,
-  getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
 import {
   type MiotEndpointMatcher,
-  type MiotExecutionRequest,
   type MiotPropertyMatcher,
-  MiotSetPropertyRequest,
   type MiotSpecProperty,
   type MiotSpecValueRange,
   isValidMiotSpecValueRange,
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
 
-import {clampAndQuantizeValue} from './value-range.js';
+import {
+  MiotCommandEffect,
+  type MiotCommandEffectConnection,
+  type MiotCommandEffectValues,
+} from './command-effect.js';
 
 const MiotLightOn = x.boolean;
 
@@ -138,10 +140,11 @@ export class MiotLightEndpointConnection
       );
   }
 
-  override async processCommand(command: LightEndpointCommand): Promise<void> {
-    await this.executeRequest(
-      createMiotLightRequest(command, this.metadata, this.properties),
-    );
+  override prepareCommand(command: LightEndpointCommand): CommandExecution {
+    const effect = createMiotLightEffect(command, this, this.properties);
+    const {request} = effect;
+
+    return {effect, execute: () => this.executeRequest(request)};
   }
 }
 
@@ -174,66 +177,47 @@ type MiotLightEndpointProperties = {
   readonly colorTemperature?: MiotSpecProperty;
 };
 
-function createMiotLightRequest(
+function createMiotLightEffect(
   command: LightEndpointCommand,
-  metadata: MiotEndpointConnectionResolvedMetadata,
+  connection: MiotCommandEffectConnection,
   properties: MiotLightEndpointProperties,
-): MiotExecutionRequest {
+): MiotLightCommandEffect {
   if (command instanceof SetLightOnCommand) {
-    return createSetPropertyRequest(metadata, 'on', command.value);
+    return new MiotLightCommandEffect(connection, {on: command.value});
   } else if (command instanceof SetLightBrightnessCommand) {
-    const property = properties.brightness;
-
-    if (property === undefined) {
+    if (properties.brightness === undefined) {
       throw new CommandError('MIoT light does not support brightness.');
     }
 
-    const valueRange = getPropertyValueRange(property);
-    const [, maximum] = valueRange;
-    const rawValue = command.value * maximum;
-
-    return createSetPropertyRequest(
-      metadata,
-      'brightness',
-      clampAndQuantizeValue(rawValue, valueRange),
-    );
+    return new MiotLightCommandEffect(connection, {
+      brightness: command.value,
+    });
   } else if (command instanceof SetLightColorTemperatureCommand) {
-    const property = properties.colorTemperature;
-
-    if (property === undefined) {
+    if (properties.colorTemperature === undefined) {
       throw new CommandError('MIoT light does not support color temperature.');
     }
 
-    const valueRange = getPropertyValueRange(property);
-
-    return createSetPropertyRequest(
-      metadata,
-      'colorTemperature',
-      clampAndQuantizeValue(command.value, valueRange),
-    );
+    return new MiotLightCommandEffect(connection, {
+      colorTemperature: command.value,
+    });
   }
 
   throw new TypeError('Unsupported MIoT light endpoint command.');
 }
 
-function createSetPropertyRequest(
-  metadata: MiotEndpointConnectionResolvedMetadata,
-  propertyName: keyof MiotLightEndpointProperties,
-  value: unknown,
-): MiotSetPropertyRequest {
-  const {service, property} = getMiotEndpointConnectionProperty(
-    metadata,
-    propertyName,
-  );
-
-  return new MiotSetPropertyRequest(
-    {
-      did: metadata.device.did,
-      siid: service.iid,
-      piid: property.iid,
-    },
-    value,
-  );
+class MiotLightCommandEffect extends MiotCommandEffect<
+  LightEndpoint,
+  keyof MiotLightEndpointProperties
+> {
+  protected getValues(
+    endpoint: LightEndpoint,
+  ): MiotCommandEffectValues<keyof MiotLightEndpointProperties> {
+    return {
+      on: endpoint.on,
+      brightness: endpoint.brightness,
+      colorTemperature: endpoint.colorTemperature,
+    };
+  }
 }
 
 function getOptionalNumberState(value: unknown): number | undefined {

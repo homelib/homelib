@@ -8,6 +8,7 @@ import * as x from 'x-value';
 import {Command} from '../command.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
+  type CommandExecution,
   Endpoint,
   type EndpointConnection,
   type EndpointReference,
@@ -238,6 +239,8 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
 class TestEndpointConnection implements EndpointConnection<TestCommand> {
   @observable accessor ready = false;
 
+  readonly stateRevision = 0;
+
   constructor(readonly provider: TestProvider) {}
 
   @action
@@ -245,7 +248,11 @@ class TestEndpointConnection implements EndpointConnection<TestCommand> {
     this.ready = true;
   }
 
-  async processCommand(command: TestCommand): Promise<void> {
-    this.provider.processedValues.push(command.value);
+  prepareCommand(command: TestCommand): CommandExecution {
+    return {
+      execute: async () => {
+        this.provider.processedValues.push(command.value);
+      },
+    };
   }
 }

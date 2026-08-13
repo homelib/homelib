@@ -15,6 +15,10 @@ export type LogEvent =
 
 export type EndpointCommandLogEvent = {
   readonly type: 'endpoint-command';
+  /** Unix timestamp in milliseconds. */
+  readonly timestamp: number;
+  /** The execution decision made by Core. */
+  readonly action: 'execute' | 'skip';
   readonly target: EndpointLogTarget;
   readonly connectionDescription: string | undefined;
   readonly commandDescription: string;
@@ -22,6 +26,8 @@ export type EndpointCommandLogEvent = {
 
 export type EndpointStateLogEvent = {
   readonly type: 'endpoint-state';
+  /** Unix timestamp in milliseconds. */
+  readonly timestamp: number;
   readonly target: EndpointLogTarget;
   readonly connectionDescription: string | undefined;
   readonly state: EndpointLogState;
@@ -30,6 +36,8 @@ export type EndpointStateLogEvent = {
 
 export type ErrorLogEvent = {
   readonly type: 'error';
+  /** Unix timestamp in milliseconds. */
+  readonly timestamp: number;
   readonly error: unknown;
 };
 
@@ -58,6 +66,7 @@ export function logEndpointCommand(
   endpoint: object,
   connection: Loggable,
   command: Command,
+  action: EndpointCommandLogEvent['action'],
 ): void {
   try {
     const target = endpointLogTargetMap.get(endpoint);
@@ -65,6 +74,7 @@ export function logEndpointCommand(
     if (target !== undefined) {
       emitLogEvent({
         type: 'endpoint-command',
+        action,
         target,
         connectionDescription: safeLogString(connection),
         commandDescription: safeLogString(command) ?? command.constructor.name,
@@ -102,10 +112,12 @@ export function logEndpointError(error: unknown): void {
   emitLogEvent({type: 'error', error});
 }
 
-function emitLogEvent(event: LogEvent): void {
+function emitLogEvent(event: LogEventWithoutTimestamp): void {
+  const timestampedEvent = {...event, timestamp: Date.now()} as LogEvent;
+
   for (const listener of logListenerSet) {
     try {
-      listener(event);
+      listener(timestampedEvent);
     } catch {
       // A log listener must never affect another listener or homelib itself.
     }
@@ -127,3 +139,8 @@ function safeLogString(value: Loggable): string | undefined {
 export type Loggable = {
   readonly toLogString?: () => string;
 };
+
+type LogEventWithoutTimestamp =
+  | Omit<EndpointCommandLogEvent, 'timestamp'>
+  | Omit<EndpointStateLogEvent, 'timestamp'>
+  | Omit<ErrorLogEvent, 'timestamp'>;

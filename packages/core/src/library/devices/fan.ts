@@ -1,6 +1,6 @@
 import {computed} from 'mobx';
 
-import {Command} from '../command.js';
+import {StatefulCommand} from '../command.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
   Endpoint,
@@ -47,15 +47,6 @@ export class Fan extends Device {
   turnOff(): this {
     this.endpoint.turnOff();
     return this;
-  }
-
-  /** Enqueues turn-on only when the currently observed `on` state is false. */
-  ensureOn(): this {
-    if (this.on) {
-      return this;
-    }
-
-    return this.turnOn();
   }
 
   setWindMode(value: FanWindMode): this {
@@ -128,15 +119,6 @@ export class FanEndpoint<
     return this.enqueueCommand(new SetFanOnCommand(false));
   }
 
-  /** Enqueues turn-on only when the currently observed `on` state is false. */
-  ensureOn(): this {
-    if (this.on) {
-      return this;
-    }
-
-    return this.turnOn();
-  }
-
   setWindMode(value: FanWindMode): this {
     return this.enqueueCommand(new SetFanWindModeCommand(value));
   }
@@ -166,15 +148,11 @@ export type FanEndpointConnection = EndpointConnection<FanEndpointCommand> & {
   readonly horizontalSwing: boolean | undefined;
 };
 
-export abstract class FanCommand extends Command {}
+export abstract class FanCommand extends StatefulCommand {}
 
 export class SetFanOnCommand extends FanCommand {
   constructor(readonly value: boolean) {
     super();
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetFanOnCommand;
   }
 
   override toLogString(): string {
@@ -185,10 +163,6 @@ export class SetFanOnCommand extends FanCommand {
 export class SetFanWindModeCommand extends FanCommand {
   constructor(readonly value: FanWindMode) {
     super();
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetFanWindModeCommand;
   }
 
   override toLogString(): string {
@@ -208,10 +182,6 @@ export class SetFanSpeedCommand extends FanCommand {
     }
   }
 
-  override supersedes(command: Command): boolean {
-    return command instanceof SetFanSpeedCommand;
-  }
-
   override toLogString(): string {
     return `set speed=${this.value}`;
   }
@@ -220,10 +190,6 @@ export class SetFanSpeedCommand extends FanCommand {
 export class SetFanHorizontalSwingCommand extends FanCommand {
   constructor(readonly value: boolean) {
     super();
-  }
-
-  override supersedes(command: Command): boolean {
-    return command instanceof SetFanHorizontalSwingCommand;
   }
 
   override toLogString(): string {

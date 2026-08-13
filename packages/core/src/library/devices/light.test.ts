@@ -1,6 +1,7 @@
 import {action, observable} from 'mobx';
 
 import {DeviceEntry} from '../device.js';
+import type {CommandExecution} from '../endpoint.js';
 import {
   type EndpointStateLogEvent,
   addLogListener,
@@ -146,6 +147,8 @@ test('logs an atomic semantic light state update', () => {
 class TestLightEndpointConnection implements LightEndpointConnection {
   readonly ready = true;
 
+  readonly stateRevision = 0;
+
   readonly commands: LightEndpointCommand[] = [];
 
   constructor(
@@ -154,13 +157,19 @@ class TestLightEndpointConnection implements LightEndpointConnection {
     readonly colorTemperature: number | undefined,
   ) {}
 
-  async processCommand(command: LightEndpointCommand): Promise<void> {
-    this.commands.push(command);
+  prepareCommand(command: LightEndpointCommand): CommandExecution {
+    return {
+      execute: async () => {
+        this.commands.push(command);
+      },
+    };
   }
 }
 
 class ObservableTestLightEndpointConnection implements LightEndpointConnection {
   @observable accessor ready = false;
+
+  @observable accessor stateRevision = 0;
 
   @observable accessor on = false;
 
@@ -177,11 +186,12 @@ class ObservableTestLightEndpointConnection implements LightEndpointConnection {
     this.on = on;
     this.brightness = brightness;
     this.colorTemperature = colorTemperature;
+    this.stateRevision++;
     this.ready = true;
   }
 
-  processCommand(_command: LightEndpointCommand): Promise<void> {
-    return Promise.resolve();
+  prepareCommand(_command: LightEndpointCommand): CommandExecution {
+    return {execute: () => Promise.resolve()};
   }
 }
 
