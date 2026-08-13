@@ -68,6 +68,14 @@
               {
                 "package": "@homelib/core",
                 "project": "library"
+              },
+              {
+                "package": "@homelib/terminal",
+                "project": "library"
+              },
+              {
+                "package": "@homelib/web",
+                "project": "library"
               }
             ]
           },

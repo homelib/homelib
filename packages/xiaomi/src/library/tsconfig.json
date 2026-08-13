@@ -10,6 +10,12 @@
   "references": [
     {
       "path": "../../../core/src/library"
+    },
+    {
+      "path": "../../../terminal/src/library"
+    },
+    {
+      "path": "../../../web/src/library"
     }
   ]
 }

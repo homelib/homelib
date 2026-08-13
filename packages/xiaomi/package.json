@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@homelib/core": "*",
+    "@homelib/terminal": "*",
+    "@homelib/web": "*",
     "bonjour-service": "^1.4.2",
     "mobx": "^6.16.1",
     "mqtt": "^5.13.0",
