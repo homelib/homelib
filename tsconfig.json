@@ -10,6 +10,12 @@
       "path": "packages/core/src/web"
     },
     {
+      "path": "packages/terminal/src/library"
+    },
+    {
+      "path": "packages/web/src/library"
+    },
+    {
       "path": "packages/xiaomi/src/library"
     },
     {

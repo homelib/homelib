@@ -13,11 +13,15 @@
     "test": "npm run lint-prettier && npm run build && npm run lint && npm run bare-test",
     "core": "npm run --workspace @homelib/core",
     "playground": "npm run --workspace @homelib/playground",
+    "terminal": "npm run --workspace @homelib/terminal",
+    "web": "npm run --workspace @homelib/web",
     "xiaomi": "npm run --workspace @homelib/xiaomi"
   },
   "workspaces": [
     "packages/core",
     "packages/playground",
+    "packages/terminal",
+    "packages/web",
     "packages/xiaomi"
   ],
   "devDependencies": {

@@ -29,6 +29,36 @@
         ]
       },
       {
+        "name": "@homelib/terminal",
+        "projects": [
+          {
+            "name": "library",
+            "test": true,
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "@homelib/web",
+        "projects": [
+          {
+            "name": "library",
+            "test": true,
+            "references": [
+              {
+                "package": "@homelib/core",
+                "project": "library"
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "@homelib/xiaomi",
         "projects": [
           {
@@ -58,8 +88,12 @@
                 "project": "library"
               },
               {
-                "package": "@homelib/core",
-                "project": "web"
+                "package": "@homelib/terminal",
+                "project": "library"
+              },
+              {
+                "package": "@homelib/web",
+                "project": "library"
               },
               {
                 "package": "@homelib/xiaomi",
