@@ -1,20 +1,19 @@
-import {stripVTControlCharacters, styleText} from 'node:util';
-
-import {formatLogText} from './@log-format.js';
 import {Command} from './command.js';
 import {
+  type LogEvent,
+  addLogListener,
   logEndpointCommand,
+  logEndpointError,
   logEndpointState,
   setEndpointLogTarget,
 } from './log.js';
 
-test('keeps endpoint log text stable when colors are rendered', () => {
+test('emits structured endpoint log events', () => {
   const endpoint = {};
-  const messages: string[] = [];
-  const originalInfo = console.info;
+  const events: LogEvent[] = [];
+  const removeListener = addLogListener(event => events.push(event));
 
   try {
-    console.info = message => messages.push(message);
     setEndpointLogTarget(endpoint, {
       scopePath: ['home', 'room'],
       deviceName: 'light',
@@ -29,23 +28,48 @@ test('keeps endpoint log text stable when colors are rendered', () => {
       undefined,
     );
 
-    expect(messages.map(stripVTControlCharacters)).toEqual([
-      '[homelib] home › room · device light · endpoint main command set brightness=0.4',
-      '[homelib] home › room · device light · endpoint main state ready=true on=false brightness=0.4',
+    expect(events).toEqual([
+      {
+        type: 'endpoint-command',
+        target: {
+          scopePath: ['home', 'room'],
+          deviceName: 'light',
+          endpointName: 'main',
+        },
+        connectionDescription: undefined,
+        commandDescription: 'set brightness=0.4',
+      },
+      {
+        type: 'endpoint-state',
+        target: {
+          scopePath: ['home', 'room'],
+          deviceName: 'light',
+          endpointName: 'main',
+        },
+        connectionDescription: undefined,
+        state: {ready: true, on: false, brightness: 0.4},
+        previousState: undefined,
+      },
     ]);
   } finally {
-    console.info = originalInfo;
+    removeListener();
   }
 });
 
-test('renders deterministic colored and uncolored log tokens', () => {
-  expect(formatLogText(['bold', 'yellow'], 'command', 'always')).toBe(
-    styleText(['bold', 'yellow'], 'command', {validateStream: false}),
-  );
-  expect(formatLogText('cyan', 'state', 'always')).toBe(
-    styleText('cyan', 'state', {validateStream: false}),
-  );
-  expect(formatLogText('cyan', 'state', 'never')).toBe('state');
+test('isolates log listeners and removes them independently', () => {
+  const events: LogEvent[] = [];
+  const removeThrowingListener = addLogListener(() => {
+    throw new Error('listener failed');
+  });
+  const removeListener = addLogListener(event => events.push(event));
+
+  logEndpointError(new Error('first'));
+  removeThrowingListener();
+  removeListener();
+  logEndpointError(new Error('second'));
+
+  expect(events).toHaveLength(1);
+  expect(events[0]?.type).toBe('error');
 });
 
 class TestCommand extends Command {

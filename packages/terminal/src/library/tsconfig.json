@@ -2,7 +2,8 @@
   "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
-    "types": ["jest"],
+    "jsx": "react-jsx",
+    "types": ["jest", "node"],
     "rootDir": ".",
     "outDir": "../../bld/library"
   },

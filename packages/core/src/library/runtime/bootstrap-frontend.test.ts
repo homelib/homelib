@@ -1,0 +1,204 @@
+import type {EndpointReference} from '../endpoint.js';
+import type {RuntimeProvider} from '../provider.js';
+
+import {
+  BindingFile,
+  EndpointBinding,
+  EndpointPath,
+  ProviderReference,
+  getEndpointPathKey,
+} from './binding.js';
+import {
+  type BootstrapBindingScope,
+  type ProviderBindingDevice,
+  type ProviderBindingRequest,
+  applyProviderBindingRequests,
+  registerBootstrapFrontend,
+} from './bootstrap-frontend.js';
+
+const PROVIDER_REFERENCE = ProviderReference.satisfies({
+  namespace: 'test',
+  name: 'provider',
+});
+const OTHER_PROVIDER_REFERENCE = ProviderReference.satisfies({
+  namespace: 'other',
+  name: 'provider',
+});
+const MAIN_PATH = createEndpointPath('main');
+const AMBIENT_PATH = createEndpointPath('ambient');
+const MAIN_ENDPOINT: EndpointReference = {name: 'main', ready: false};
+const AMBIENT_ENDPOINT: EndpointReference = {name: 'ambient', ready: false};
+const DEVICE: ProviderBindingDevice = {
+  name: 'light',
+  endpoints: [
+    {path: MAIN_PATH, endpoint: MAIN_ENDPOINT, binding: undefined},
+    {path: AMBIENT_PATH, endpoint: AMBIENT_ENDPOINT, binding: undefined},
+  ],
+};
+const SCOPES: readonly BootstrapBindingScope[] = [
+  {
+    path: ['home'],
+    scopes: [],
+    devices: [
+      {
+        name: 'light',
+        endpoints: [
+          {path: MAIN_PATH, endpoint: MAIN_ENDPOINT},
+          {path: AMBIENT_PATH, endpoint: AMBIENT_ENDPOINT},
+        ],
+      },
+    ],
+  },
+];
+const PROVIDER: RuntimeProvider = {
+  name: PROVIDER_REFERENCE.name,
+  endpointConnections: [],
+  createEndpointConnectionBindingPlan(_endpoint, metadata) {
+    if (
+      typeof metadata !== 'object' ||
+      metadata === null ||
+      !('resourceKey' in metadata) ||
+      typeof metadata.resourceKey !== 'string'
+    ) {
+      throw new TypeError('Invalid test metadata.');
+    }
+
+    return {
+      resourceKeys: [metadata.resourceKey],
+      create() {
+        return Promise.resolve({bind() {}, async dispose() {}});
+      },
+    };
+  },
+};
+
+test('rejects duplicate bootstrap frontend registration', () => {
+  registerBootstrapFrontend(() => undefined);
+
+  expect(() => registerBootstrapFrontend(() => undefined)).toThrow(
+    'Duplicate bootstrap frontend registration.',
+  );
+});
+
+test('applies a complete provider binding batch atomically', () => {
+  const bindingFile = createBindingFile([
+    createBinding(MAIN_PATH, PROVIDER_REFERENCE, 'main resource'),
+    createBinding(AMBIENT_PATH, PROVIDER_REFERENCE, 'ambient resource'),
+  ]);
+  const nextBindingFile = applyRequests(bindingFile, [
+    createRequest(MAIN_PATH, 'ambient resource'),
+    createRequest(AMBIENT_PATH, 'main resource'),
+  ]);
+
+  expect(getResourceKey(nextBindingFile, MAIN_PATH)).toBe('ambient resource');
+  expect(getResourceKey(nextBindingFile, AMBIENT_PATH)).toBe('main resource');
+  expect(getResourceKey(bindingFile, MAIN_PATH)).toBe('main resource');
+});
+
+test('rejects duplicate endpoints and provider resources', () => {
+  const bindingFile = createBindingFile([]);
+
+  expect(() =>
+    applyRequests(bindingFile, [
+      createRequest(MAIN_PATH, 'first'),
+      createRequest(MAIN_PATH, 'second'),
+    ]),
+  ).toThrow('Duplicate endpoint binding request');
+  expect(() =>
+    applyRequests(bindingFile, [
+      createRequest(MAIN_PATH, 'shared'),
+      createRequest(AMBIENT_PATH, 'shared'),
+    ]),
+  ).toThrow('Provider resource is already bound: shared.');
+  expect(bindingFile.bindings).toEqual([]);
+});
+
+test('requires confirmation before replacing another provider', () => {
+  const bindingFile = createBindingFile([
+    createBinding(MAIN_PATH, OTHER_PROVIDER_REFERENCE, 'resource'),
+  ]);
+
+  expect(() =>
+    applyRequests(bindingFile, [createRequest(MAIN_PATH, 'resource')]),
+  ).toThrow('Replacing another provider binding requires confirmation.');
+  expect(
+    applyRequests(bindingFile, [createRequest(MAIN_PATH, 'resource', true)])
+      .bindings[0]?.provider,
+  ).toEqual(PROVIDER_REFERENCE);
+});
+
+test('rejects a provider request outside its logical device', () => {
+  const unknownPath = EndpointPath.satisfies({
+    scopePath: ['home'],
+    deviceName: 'other light',
+    endpointName: 'main',
+  });
+
+  expect(() =>
+    applyRequests(createBindingFile([]), [
+      createRequest(unknownPath, 'resource'),
+    ]),
+  ).toThrow('Unknown endpoint selected for binding.');
+});
+
+function applyRequests(
+  bindingFile: BindingFile,
+  requests: readonly ProviderBindingRequest[],
+): BindingFile {
+  return applyProviderBindingRequests(
+    bindingFile,
+    requests,
+    PROVIDER_REFERENCE,
+    PROVIDER,
+    DEVICE,
+    SCOPES,
+  );
+}
+
+function createEndpointPath(endpointName: string): EndpointPath {
+  return EndpointPath.satisfies({
+    scopePath: ['home'],
+    deviceName: 'light',
+    endpointName,
+  });
+}
+
+function createBindingFile(bindings: readonly EndpointBinding[]): BindingFile {
+  return BindingFile.satisfies({version: 0, bindings});
+}
+
+function createBinding(
+  endpoint: EndpointPath,
+  provider: EndpointBinding['provider'],
+  resourceKey: string,
+): EndpointBinding {
+  return EndpointBinding.satisfies({
+    endpoint,
+    provider,
+    metadata: {resourceKey},
+  });
+}
+
+function createRequest(
+  endpoint: EndpointPath,
+  resourceKey: string,
+  replaceExisting = false,
+): ProviderBindingRequest {
+  return {endpoint, metadata: {resourceKey}, replaceExisting};
+}
+
+function getResourceKey(
+  bindingFile: BindingFile,
+  endpoint: EndpointPath,
+): unknown {
+  const endpointPathKey = getEndpointPathKey(endpoint);
+  const metadata = bindingFile.bindings.find(
+    binding => getEndpointPathKey(binding.endpoint) === endpointPathKey,
+  )?.metadata;
+
+  return typeof metadata === 'object' &&
+    metadata !== null &&
+    'resourceKey' in metadata
+    ? metadata.resourceKey
+    : undefined;
+}

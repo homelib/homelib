@@ -17,6 +17,10 @@ import {type EndpointConnectionBindingPlan, Provider} from '../provider.js';
 import {register, registerRootScope} from '../registry.js';
 import {Scope} from '../scope.js';
 
+import {
+  type BootstrapContext,
+  registerBootstrapFrontend,
+} from './bootstrap-frontend.js';
 import {bootstrap} from './bootstrap.js';
 
 const TestEndpointConnectionMetadata = x.object({
@@ -52,10 +56,8 @@ test('binds configured endpoints before resolving', async () => {
     join(tmpdir(), 'homelib-bootstrap-test-'),
   );
   const originalEnvironmentDirectory = process.env.HOMELIB_DIRECTORY;
-  const originalArguments = process.argv;
 
   process.env.HOMELIB_DIRECTORY = environmentDirectory;
-  process.argv = [process.execPath, '/automation.js', '--automation'];
 
   try {
     const provider = new TestProvider('provider');
@@ -83,11 +85,27 @@ test('binds configured endpoints before resolving', async () => {
               endpointName: '',
             },
             provider: {namespace: 'test', name: 'provider'},
-            metadata: {value: 'metadata'},
+            metadata: {value: 'initial metadata'},
           },
         ],
       }),
     );
+
+    let bootstrapContext: BootstrapContext | undefined;
+
+    registerBootstrapFrontend(async context => {
+      bootstrapContext = context;
+      expect(context.providers).toEqual([{namespace: 'test', provider}]);
+      expect(context.bindingScopes[0]?.path).toEqual(['home']);
+
+      await context.updateBindingFile(bindingFile => ({
+        ...bindingFile,
+        bindings: bindingFile.bindings.map(binding => ({
+          ...binding,
+          metadata: {value: 'updated metadata'},
+        })),
+      }));
+    });
 
     await bootstrap();
     await Promise.resolve();
@@ -99,7 +117,15 @@ test('binds configured endpoints before resolving', async () => {
     await Promise.resolve();
 
     expect(provider.processedValues).toEqual([1, 2]);
-    expect(provider.receivedMetadata).toEqual({value: 'metadata'});
+    expect(provider.receivedMetadata).toEqual({value: 'updated metadata'});
+
+    if (bootstrapContext === undefined) {
+      throw new Error('Bootstrap frontend was not presented.');
+    }
+
+    await expect(
+      bootstrapContext.updateBindingFile(bindingFile => bindingFile),
+    ).rejects.toThrow('Bootstrap context is closed.');
     expect(() => home.$scope('late')).toThrow(
       'Logical declarations are closed.',
     );
@@ -109,8 +135,6 @@ test('binds configured endpoints before resolving', async () => {
     } else {
       process.env.HOMELIB_DIRECTORY = originalEnvironmentDirectory;
     }
-
-    process.argv = originalArguments;
     await rm(environmentDirectory, {recursive: true, force: true});
   }
 });

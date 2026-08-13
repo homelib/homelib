@@ -1,5 +1,3 @@
-import {stripVTControlCharacters} from 'node:util';
-
 import {action, observable, reaction} from 'mobx';
 
 import {Command} from './command.js';
@@ -9,7 +7,7 @@ import {
   EndpointConnectionError,
   createEndpointConnectionBinding,
 } from './endpoint.js';
-import {setEndpointLogTarget} from './log.js';
+import {type LogEvent, addLogListener, setEndpointLogTarget} from './log.js';
 
 test('consumes pending commands after binding becomes ready', async () => {
   const endpoint = new TestEndpoint();
@@ -118,12 +116,11 @@ test('does not immediately retry a connection error', async () => {
 test('logs every command attempt while retrying connection errors', async () => {
   const endpoint = new TestEndpoint();
   const connection = new TestEndpointConnection();
-  const logMessages: string[] = [];
-  const originalInfo = console.info;
+  const logEvents: LogEvent[] = [];
+  const removeLogListener = addLogListener(event => logEvents.push(event));
   let attempts = 0;
 
   try {
-    console.info = message => logMessages.push(message);
     setEndpointLogTarget(endpoint, {
       scopePath: ['home', 'room'],
       deviceName: 'device',
@@ -148,27 +145,23 @@ test('logs every command attempt while retrying connection errors', async () => 
     expect(attempts).toBe(2);
     expect(connection.processedValues).toEqual([1]);
     expect(
-      logMessages
-        .map(stripVTControlCharacters)
-        .filter(message => message.includes(' command ')),
-    ).toEqual([
-      '[homelib] home › room · device device · endpoint main command TestCommand',
-      '[homelib] home › room · device device · endpoint main command TestCommand',
-    ]);
+      logEvents
+        .filter(event => event.type === 'endpoint-command')
+        .map(event => event.commandDescription),
+    ).toEqual(['TestCommand', 'TestCommand']);
   } finally {
-    console.info = originalInfo;
+    removeLogListener();
   }
 });
 
 test('does not let logging failures prevent command processing', async () => {
   const endpoint = new TestEndpoint();
   const connection = new TestEndpointConnection();
-  const originalInfo = console.info;
+  const removeLogListener = addLogListener(() => {
+    throw new Error('Log listener failed.');
+  });
 
   try {
-    console.info = () => {
-      throw new Error('Log sink failed.');
-    };
     setEndpointLogTarget(endpoint, {
       scopePath: ['home'],
       deviceName: 'device',
@@ -181,18 +174,17 @@ test('does not let logging failures prevent command processing', async () => {
 
     expect(connection.processedValues).toEqual([1]);
   } finally {
-    console.info = originalInfo;
+    removeLogListener();
   }
 });
 
 test('logs an initially unready endpoint state', () => {
   const endpoint = new TestEndpoint();
   const connection = new TestEndpointConnection();
-  const logMessages: string[] = [];
-  const originalInfo = console.info;
+  const logEvents: LogEvent[] = [];
+  const removeLogListener = addLogListener(event => logEvents.push(event));
 
   try {
-    console.info = message => logMessages.push(message);
     setEndpointLogTarget(endpoint, {
       scopePath: ['home'],
       deviceName: 'device',
@@ -200,23 +192,32 @@ test('logs an initially unready endpoint state', () => {
     });
     endpoint.bindConnection(connection);
 
-    expect(logMessages.map(stripVTControlCharacters)).toEqual([
-      '[homelib] home · device device state ready=false',
+    expect(logEvents).toEqual([
+      {
+        type: 'endpoint-state',
+        target: {
+          scopePath: ['home'],
+          deviceName: 'device',
+          endpointName: '',
+        },
+        connectionDescription: undefined,
+        state: {ready: false},
+        previousState: undefined,
+      },
     ]);
   } finally {
-    console.info = originalInfo;
+    removeLogListener();
   }
 });
 
 test('does not let error logging failures stall command processing', async () => {
   const endpoint = new TestEndpoint();
   const connection = new TestEndpointConnection();
-  const originalError = console.error;
+  const removeLogListener = addLogListener(() => {
+    throw new Error('Log listener failed.');
+  });
 
   try {
-    console.error = () => {
-      throw new Error('Log sink failed.');
-    };
     connection.processCommandWith = async command => {
       if (command.value === 1) {
         throw new Error('Command failed.');
@@ -234,7 +235,7 @@ test('does not let error logging failures stall command processing', async () =>
 
     expect(connection.processedValues).toEqual([2]);
   } finally {
-    console.error = originalError;
+    removeLogListener();
   }
 });
 

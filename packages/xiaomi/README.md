@@ -1,50 +1,20 @@
 # @homelib/xiaomi
 
-Xiaomi MIoT 智能家居集成库，支持三种设备控制路径。
+Xiaomi MIoT 智能家居 provider。将包纳入 homelib 后，在终端中添加并授权 MIoT provider；OAuth 会话、设备发现和家庭筛选均由 provider 管理。
 
 ## 控制方式
 
-### 1. 云端控制（HTTP API）
+### 云端控制
 
-通过小米云 HTTP API 控制设备，无需局域网访问。
+provider 通过 Xiaomi 云端服务发现设备、读取状态和执行控制。授权完成后，无需在应用中直接管理 OAuth client、access token 或 HTTP client。
 
-```typescript
-import {
-  XiaomiHttpClient,
-  XiaomiOAuthClient,
-  OAUTH2_CLIENT_ID,
-} from '@homelib/xiaomi';
-
-const oauth = new XiaomiOAuthClient({cloudServer: 'cn', uuid, redirectUrl});
-const auth = await oauth.getAccessToken(code);
-
-const http = new XiaomiHttpClient({
-  cloudServer: 'cn',
-  clientId: OAUTH2_CLIENT_ID,
-  accessToken: auth.access_token,
-});
-
-await http.setProp(did, 2, 1, true); // 开灯
-```
-
-### 2. 中枢网关本地控制（mTLS MQTT）
+### 中枢网关本地控制（mTLS MQTT）
 
 中国大陆账号的 MIoT provider 会自动启用本地 MQTT：复用已缓存的完整设备列表，通过 mDNS 与局域网探测发现中枢，自动签发并轮换 mTLS 证书，再按设备能力动态选择本地或云端路由。属性快照、属性通知和事件通知优先使用可用的本地链路；本地控制请求在发布前不可路由时才安全回退到云端。
 
 支持独立网关、路由器内置网关和中枢控制器。证书按 provider 隔离保存在 homelib 私有目录中，无需脚本管理。
 
-### 3. LAN 直连控制（UDP OT 协议）
-
-直接与 WiFi 设备通信，不经过网关或云端。仅适用于 WiFi 直连 IP 设备。
-
-```typescript
-import {XiaomiLanClient} from '@homelib/xiaomi';
-
-const lan = new XiaomiLanClient({did, token, ip: '192.168.31.x'});
-await lan.init();
-await lan.probe();
-await lan.setProp(did, 2, 1, true); // 开灯（直连）
-```
+当前本地路径仅支持中枢网关的 mTLS MQTT。历史 LAN 直连（UDP OT）客户端不再作为本包 API 提供。
 
 ## 关键技术要点
 

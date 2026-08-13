@@ -15,8 +15,8 @@ import {autorun} from 'mobx';
 import {
   CloudDeviceChannel,
   type CloudDeviceMessageSource,
-} from './cloud/device.js';
-import type {CloudMqttDeviceMessageHandler} from './cloud/mqtt.js';
+  type CloudMqttDeviceMessageHandler,
+} from './cloud/index.js';
 import type {MiotPlaceholderCommand} from './command.js';
 import {MiotLightEndpointConnection} from './devices/index.js';
 import {

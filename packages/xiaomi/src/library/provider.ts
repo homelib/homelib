@@ -16,10 +16,12 @@ import {action, observable} from 'mobx';
 
 import type {CloudServer} from './backend/index.js';
 import {BackendClient} from './backend/index.js';
-import {CloudClient} from './cloud/client.js';
-import type {CloudDeviceSubscription} from './cloud/device.js';
-import {CloudMqttClient} from './cloud/mqtt.js';
-import {MiotEndpointConnectionCloudTransport} from './cloud/transport.js';
+import {
+  CloudClient,
+  type CloudDeviceSubscription,
+  CloudMqttClient,
+  MiotEndpointConnectionCloudTransport,
+} from './cloud/index.js';
 import {
   MiotProviderConfiguration,
   type MiotProviderConfigurationDiscovery,

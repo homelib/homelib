@@ -1,12 +1,14 @@
-import {stripVTControlCharacters} from 'node:util';
-
 import {action, autorun, observable} from 'mobx';
 
 import {Temperature} from '../atomics/index.js';
 import type {Command} from '../command.js';
 import {type Device, type DeviceConstructor, DeviceEntry} from '../device.js';
 import type {EndpointConnection} from '../endpoint.js';
-import {setEndpointLogTarget} from '../log.js';
+import {
+  type EndpointStateLogEvent,
+  addLogListener,
+  setEndpointLogTarget,
+} from '../log.js';
 
 import {
   AirConditioner,
@@ -464,11 +466,14 @@ test('air conditioner logs temperature and humidity state', () => {
     throw new Error('Expected air conditioner endpoint was not created.');
   }
 
-  const logMessages: string[] = [];
-  const originalInfo = console.info;
+  const logEvents: EndpointStateLogEvent[] = [];
+  const removeLogListener = addLogListener(event => {
+    if (event.type === 'endpoint-state') {
+      logEvents.push(event);
+    }
+  });
 
   try {
-    console.info = message => logMessages.push(message);
     setEndpointLogTarget(endpoint, {
       scopePath: ['home'],
       deviceName: 'air conditioner',
@@ -485,12 +490,20 @@ test('air conditioner logs temperature and humidity state', () => {
       0.52,
     );
 
-    expect(logMessages.map(stripVTControlCharacters)).toEqual([
-      '[homelib] home · device air conditioner state ready=false',
-      '[homelib] home · device air conditioner state ready=true on=true mode="heat" targetTemperatureCelsius=21.5 targetHumidity=0.48 temperatureCelsius=23.25 humidity=0.52',
+    expect(logEvents.map(event => event.state)).toEqual([
+      {ready: false},
+      {
+        ready: true,
+        on: true,
+        mode: 'heat',
+        targetTemperatureCelsius: 21.5,
+        targetHumidity: 0.48,
+        temperatureCelsius: 23.25,
+        humidity: 0.52,
+      },
     ]);
   } finally {
-    console.info = originalInfo;
+    removeLogListener();
   }
 });
 
@@ -503,11 +516,14 @@ test('dehumidifier logs temperature and humidity state', () => {
     throw new Error('Expected dehumidifier endpoint was not created.');
   }
 
-  const logMessages: string[] = [];
-  const originalInfo = console.info;
+  const logEvents: EndpointStateLogEvent[] = [];
+  const removeLogListener = addLogListener(event => {
+    if (event.type === 'endpoint-state') {
+      logEvents.push(event);
+    }
+  });
 
   try {
-    console.info = message => logMessages.push(message);
     setEndpointLogTarget(endpoint, {
       scopePath: ['home'],
       deviceName: 'dehumidifier',
@@ -523,12 +539,19 @@ test('dehumidifier logs temperature and humidity state', () => {
       0.57,
     );
 
-    expect(logMessages.map(stripVTControlCharacters)).toEqual([
-      '[homelib] home · device dehumidifier state ready=false',
-      '[homelib] home · device dehumidifier state ready=true on=true mode="laundry" targetHumidity=0.45 temperatureCelsius=24.5 humidity=0.57',
+    expect(logEvents.map(event => event.state)).toEqual([
+      {ready: false},
+      {
+        ready: true,
+        on: true,
+        mode: 'laundry',
+        targetHumidity: 0.45,
+        temperatureCelsius: 24.5,
+        humidity: 0.57,
+      },
     ]);
   } finally {
-    console.info = originalInfo;
+    removeLogListener();
   }
 });
 

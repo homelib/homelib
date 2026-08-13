@@ -32,3 +32,4 @@ export * from './dehumidifier.js';
 export * from './fan.js';
 export * from './light.js';
 export * from './placeholder.js';
+export * from './value-range.js';

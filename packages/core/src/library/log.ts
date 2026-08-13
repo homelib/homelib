@@ -1,14 +1,47 @@
-import {formatLogText} from './@log-format.js';
 import type {Command} from './command.js';
 import type {EndpointLogState} from './endpoint.js';
 
 const endpointLogTargetMap = new WeakMap<object, EndpointLogTarget>();
+const logListenerSet = new Set<LogListener>();
 
 export type EndpointLogTarget = {
   readonly scopePath: readonly string[];
   readonly deviceName: string;
   readonly endpointName: string;
 };
+
+export type LogEvent =
+  EndpointCommandLogEvent | EndpointStateLogEvent | ErrorLogEvent;
+
+export type EndpointCommandLogEvent = {
+  readonly type: 'endpoint-command';
+  readonly target: EndpointLogTarget;
+  readonly connectionDescription: string | undefined;
+  readonly commandDescription: string;
+};
+
+export type EndpointStateLogEvent = {
+  readonly type: 'endpoint-state';
+  readonly target: EndpointLogTarget;
+  readonly connectionDescription: string | undefined;
+  readonly state: EndpointLogState;
+  readonly previousState: EndpointLogState | undefined;
+};
+
+export type ErrorLogEvent = {
+  readonly type: 'error';
+  readonly error: unknown;
+};
+
+export type LogListener = (event: LogEvent) => void;
+
+export function addLogListener(listener: LogListener): () => void {
+  logListenerSet.add(listener);
+
+  return () => {
+    logListenerSet.delete(listener);
+  };
+}
 
 export function setEndpointLogTarget(
   endpoint: object,
@@ -27,14 +60,15 @@ export function logEndpointCommand(
   command: Command,
 ): void {
   try {
-    const prefix = getEndpointLogPrefix(endpoint, connection);
+    const target = endpointLogTargetMap.get(endpoint);
 
-    if (prefix !== undefined) {
-      const description = safeLogString(command) ?? command.constructor.name;
-
-      console.info(
-        `${prefix} ${formatLogText(['bold', 'yellow'], 'command')} ${formatLogText('yellow', description)}`,
-      );
+    if (target !== undefined) {
+      emitLogEvent({
+        type: 'endpoint-command',
+        target,
+        connectionDescription: safeLogString(connection),
+        commandDescription: safeLogString(command) ?? command.constructor.name,
+      });
     }
   } catch {
     // Logging must never affect command processing.
@@ -48,18 +82,16 @@ export function logEndpointState(
   previousState: EndpointLogState | undefined,
 ): void {
   try {
-    const prefix = getEndpointLogPrefix(endpoint, connection);
+    const target = endpointLogTargetMap.get(endpoint);
 
-    if (prefix === undefined) {
-      return;
-    }
-
-    const changes = getLogStateChanges(state, previousState);
-
-    if (changes.length > 0) {
-      console.info(
-        `${prefix} ${formatLogText(['bold', 'cyan'], 'state')} ${changes.join(' ')}`,
-      );
+    if (target !== undefined) {
+      emitLogEvent({
+        type: 'endpoint-state',
+        target,
+        connectionDescription: safeLogString(connection),
+        state,
+        previousState,
+      });
     }
   } catch {
     // Logging must never affect state propagation.
@@ -67,83 +99,17 @@ export function logEndpointState(
 }
 
 export function logEndpointError(error: unknown): void {
-  try {
-    console.error(error);
-  } catch {
-    // Logging must never affect command processing.
-  }
+  emitLogEvent({type: 'error', error});
 }
 
-function getEndpointLogPrefix(
-  endpoint: object,
-  connection: Loggable,
-): string | undefined {
-  const target = endpointLogTargetMap.get(endpoint);
-
-  if (target === undefined) {
-    return undefined;
-  }
-
-  const separator = formatLogText('dim', ' · ');
-  const scope = target.scopePath.join(formatLogText('dim', ' › '));
-  const logicalTarget = [
-    scope,
-    `${formatLogText('cyan', 'device')} ${target.deviceName}`,
-    target.endpointName === ''
-      ? undefined
-      : `${formatLogText('cyan', 'endpoint')} ${target.endpointName}`,
-  ]
-    .filter(value => value !== undefined && value !== '')
-    .join(separator);
-  const connectionDescription = safeLogString(connection);
-  const physicalTarget =
-    connectionDescription === undefined
-      ? ''
-      : `${separator}${formatLogText('dim', connectionDescription)}`;
-
-  return `${formatLogText('dim', '[homelib]')} ${logicalTarget}${physicalTarget}`;
-}
-
-function getLogStateChanges(
-  state: EndpointLogState,
-  previousState: EndpointLogState | undefined,
-): string[] {
-  if (state.ready === false) {
-    return previousState?.ready === false
-      ? []
-      : [formatLogStateChange('ready', false)];
-  }
-
-  const changes: string[] = [];
-  const reportAll = previousState?.ready !== true;
-
-  for (const [name, value] of Object.entries(state)) {
-    if (
-      value !== undefined &&
-      (reportAll || !Object.is(value, previousState?.[name]))
-    ) {
-      changes.push(formatLogStateChange(name, value));
+function emitLogEvent(event: LogEvent): void {
+  for (const listener of logListenerSet) {
+    try {
+      listener(event);
+    } catch {
+      // A log listener must never affect another listener or homelib itself.
     }
   }
-
-  return changes;
-}
-
-function formatLogStateChange(
-  name: string,
-  value: EndpointLogStateValue,
-): string {
-  const formattedValue = formatLogStateValue(value);
-  const styledValue =
-    name === 'ready'
-      ? formatLogText(value === true ? 'green' : 'yellow', formattedValue)
-      : formattedValue;
-
-  return `${formatLogText('cyan', name)}${formatLogText('dim', '=')}${styledValue}`;
-}
-
-function formatLogStateValue(value: EndpointLogStateValue): string {
-  return typeof value === 'string' ? JSON.stringify(value) : String(value);
 }
 
 function safeLogString(value: Loggable): string | undefined {
@@ -161,5 +127,3 @@ function safeLogString(value: Loggable): string | undefined {
 export type Loggable = {
   readonly toLogString?: () => string;
 };
-
-type EndpointLogStateValue = string | number | boolean;

@@ -1,8 +1,8 @@
-import type {CloudDeviceMessageClient} from '../cloud/client.js';
 import type {
+  CloudDeviceMessageClient,
   CloudMqttConnectionStateListener,
   CloudMqttDeviceMessageHandler,
-} from '../cloud/mqtt.js';
+} from '../cloud/index.js';
 import type {MiotProperty} from '../miot/index.js';
 
 export class RoutedDeviceMessageClient implements CloudDeviceMessageClient {

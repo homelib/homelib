@@ -3,6 +3,11 @@
   "compilerOptions": {
     "composite": true,
     "types": ["jest"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react",
+    "useDefineForClassFields": true,
+    "lib": ["ESNext", "DOM"],
     "rootDir": ".",
     "outDir": "../../bld/library"
   },

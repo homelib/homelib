@@ -1,9 +1,11 @@
-import {stripVTControlCharacters} from 'node:util';
-
 import {action, observable} from 'mobx';
 
 import {DeviceEntry} from '../device.js';
-import {setEndpointLogTarget} from '../log.js';
+import {
+  type EndpointStateLogEvent,
+  addLogListener,
+  setEndpointLogTarget,
+} from '../log.js';
 
 import {
   Light,
@@ -116,11 +118,14 @@ test('logs an atomic semantic light state update', () => {
   }
 
   const connection = new ObservableTestLightEndpointConnection();
-  const logMessages: string[] = [];
-  const originalInfo = console.info;
+  const logEvents: EndpointStateLogEvent[] = [];
+  const removeLogListener = addLogListener(event => {
+    if (event.type === 'endpoint-state') {
+      logEvents.push(event);
+    }
+  });
 
   try {
-    console.info = message => logMessages.push(message);
     setEndpointLogTarget(endpoint, {
       scopePath: ['home', 'room'],
       deviceName: 'light',
@@ -129,12 +134,12 @@ test('logs an atomic semantic light state update', () => {
     endpoint.bindConnection(connection);
     connection.initialize(true, 0.4, 3_000);
 
-    expect(logMessages.map(stripVTControlCharacters)).toEqual([
-      '[homelib] home › room · device light state ready=false',
-      '[homelib] home › room · device light state ready=true on=true brightness=0.4 colorTemperature=3000',
+    expect(logEvents.map(event => event.state)).toEqual([
+      {ready: false},
+      {ready: true, on: true, brightness: 0.4, colorTemperature: 3000},
     ]);
   } finally {
-    console.info = originalInfo;
+    removeLogListener();
   }
 });
 

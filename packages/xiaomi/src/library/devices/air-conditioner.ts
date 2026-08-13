@@ -35,7 +35,7 @@ import {
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
 
-import {clampAndQuantizeValue} from './@value-range.js';
+import {clampAndQuantizeValue} from './value-range.js';
 
 const MiotAirConditionerOn = x.boolean;
 

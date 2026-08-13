@@ -1,5 +1,3 @@
-import {basename} from 'node:path';
-
 import {
   beginBootstrap,
   completeBootstrap,
@@ -15,23 +13,27 @@ import {
   createEndpointConnectionBindings,
   disposeEndpointConnectionBindings,
 } from './@binding-creation.js';
-import {isAutomationRequested} from './@bootstrap-arguments.js';
-import {type StartupBindingScope, presentStartup} from './@tui/startup.js';
 import {
-  type BindingFile,
+  BindingFile,
   type EndpointPath,
   getEndpointPath,
   getEndpointPathKey,
   readBindingFile,
+  writeBindingFile,
 } from './binding.js';
+import {
+  type BootstrapBindingScope,
+  type BootstrapContext,
+  getBootstrapFrontend,
+} from './bootstrap-frontend.js';
 
 /**
  * Finalizes declarations and binds all configured endpoint connections.
  *
  * Resolves after every binding is installed. Individual endpoints may still be
  * waiting to become ready; commands issued after this promise resolves remain
- * queued until their connection is ready. Pass `--automation` on the command
- * line to skip the interactive startup screen.
+ * queued until their connection is ready. A registered bootstrap frontend may
+ * inspect and update bindings before connections are created.
  */
 export function bootstrap(): Promise<void> {
   beginBootstrap();
@@ -51,17 +53,13 @@ async function bootstrapInternal(): Promise<void> {
   const initialBindingFile = await readBindingFile();
   const rootScopes = [...getRootScopes()];
   const {scopes, endpointMap} = collectBindingTopology(rootScopes);
+  const {context, close} = createBootstrapContext(initialBindingFile, scopes);
+  const frontend = getBootstrapFrontend();
 
-  if (!isAutomationRequested(process.argv)) {
-    await presentStartup({
-      scriptName: getScriptName(),
-      providers: Array.from(getProviderEntries(), ([namespace, provider]) => ({
-        namespace,
-        provider,
-      })),
-      bindingScopes: scopes,
-      bindingFile: initialBindingFile,
-    });
+  try {
+    await frontend?.(context);
+  } finally {
+    await close();
   }
 
   const bindingFile = await readBindingFile();
@@ -102,7 +100,7 @@ async function bootstrapInternal(): Promise<void> {
 }
 
 function collectBindingTopology(rootScopes: readonly Scope[]): {
-  readonly scopes: readonly StartupBindingScope[];
+  readonly scopes: readonly BootstrapBindingScope[];
   readonly endpointMap: ReadonlyMap<string, EndpointReference>;
 } {
   const endpointMap = new Map<string, EndpointReference>();
@@ -118,7 +116,7 @@ function collectBindingScope(
   scope: Scope,
   endpointMap: Map<string, EndpointReference>,
   scopePathSet: Set<string>,
-): StartupBindingScope {
+): BootstrapBindingScope {
   const scopePathKey = getScopePathKey(scope);
 
   if (scopePathSet.has(scopePathKey)) {
@@ -223,12 +221,52 @@ function getScopePathKey(scope: Scope): string {
   return JSON.stringify(scope.path);
 }
 
-function getScriptName(): string {
-  const scriptPath = process.argv.at(1);
+function createBootstrapContext(
+  initialBindingFile: BindingFile,
+  bindingScopes: readonly BootstrapBindingScope[],
+): {
+  readonly context: BootstrapContext;
+  readonly close: () => Promise<void>;
+} {
+  let bindingFile = initialBindingFile;
+  let bindingFileUpdateQueue = Promise.resolve();
+  let active = true;
 
-  if (scriptPath === undefined) {
-    return 'automation';
-  }
+  const context: BootstrapContext = {
+    providers: Array.from(getProviderEntries(), ([namespace, provider]) => ({
+      namespace,
+      provider,
+    })),
+    bindingScopes,
+    initialBindingFile,
+    updateBindingFile(createNextBindingFile) {
+      if (!active) {
+        return Promise.reject(new Error('Bootstrap context is closed.'));
+      }
 
-  return basename(scriptPath);
+      const operation = bindingFileUpdateQueue.then(async () => {
+        const nextBindingFile = BindingFile.satisfies(
+          createNextBindingFile(bindingFile),
+        );
+
+        await writeBindingFile(nextBindingFile);
+        bindingFile = nextBindingFile;
+        return nextBindingFile;
+      });
+
+      bindingFileUpdateQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+  };
+
+  return {
+    context,
+    async close() {
+      active = false;
+      await bindingFileUpdateQueue;
+    },
+  };
 }
