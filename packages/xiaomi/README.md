@@ -2,7 +2,7 @@
 
 # @homelib/xiaomi
 
-Homelib 的 Xiaomi MIoT provider，提供米家账号授权、设备发现、绑定、状态同步与控制。
+HomeLib 的 Xiaomi MIoT provider，提供米家账号授权、设备发现、绑定、状态同步与控制。
 
 ## 支持的设备
 
