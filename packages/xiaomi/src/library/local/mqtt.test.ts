@@ -284,7 +284,44 @@ test('uses topic identifiers omitted from local notification payloads', async ()
   await client.disconnect();
 });
 
-test('rejects malformed or inconsistent local notification addresses', async () => {
+test('uses payload identifiers when local notification topics omit them', async () => {
+  const mqttClient = new TestMqttClient();
+  const client = createClient(mqttClient);
+  await client.connect();
+  const properties: unknown[] = [];
+  const events: unknown[] = [];
+  const propertySubscription = await client.subscribeProperties(
+    'device-1',
+    update => {
+      properties.push(update);
+    },
+  );
+  const eventSubscription = await client.subscribeEvents('device-1', event => {
+    events.push(event);
+  });
+
+  mqttClient.notifyProperty(
+    {did: 'device-1', siid: 2, piid: 1, value: false},
+    'unspecified',
+  );
+  mqttClient.notifyEvent(
+    {did: 'device-1', siid: '3', eiid: '1', arguments: ['pressed']},
+    'unspecified',
+  );
+
+  expect(properties).toEqual([
+    {did: 'device-1', siid: 2, piid: 1, value: false},
+  ]);
+  expect(events).toEqual([
+    {did: 'device-1', siid: 3, eiid: 1, arguments: ['pressed']},
+  ]);
+
+  await propertySubscription.dispose();
+  await eventSubscription.dispose();
+  await client.disconnect();
+});
+
+test('ignores unrouteable and rejects inconsistent local notifications', async () => {
   const mqttClient = new TestMqttClient();
   const client = createClient(mqttClient);
   const errors: unknown[] = [];
@@ -306,6 +343,16 @@ test('rejects malformed or inconsistent local notification addresses', async () 
       '2.1',
     );
     mqttClient.notifyProperty({did: 'device-1', value: true}, '02.1');
+    mqttClient.notifyProperty(
+      {did: 'device-1', siid: 'invalid', piid: 1, value: true},
+      '2.1',
+    );
+    mqttClient.notifyProperty(
+      {did: 'device-1', siid: 2, value: true},
+      'unspecified',
+    );
+    mqttClient.notifyEvent({did: 'device-1', siid: 3, eiid: 2}, '3.1');
+    mqttClient.notifyEvent({did: 'device-1'}, 'undefined.undefined');
 
     expect(updates).toHaveLength(0);
     expect(errors).toHaveLength(2);

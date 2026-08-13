@@ -873,20 +873,18 @@ export class LocalMqttClient extends MiotEndpointConnectionTransport {
       message.did,
       'local property notification DID',
     );
-    const [siid, piid] = requireNotificationInstance(
+    const notificationInstance = resolveNotificationInstance(
       instance,
+      message.siid,
+      message.piid,
       'local property notification',
     );
-    assertOptionalNotificationIdentifier(
-      message.siid,
-      siid,
-      'local property notification SIID',
-    );
-    assertOptionalNotificationIdentifier(
-      message.piid,
-      piid,
-      'local property notification PIID',
-    );
+
+    if (notificationInstance === undefined) {
+      return;
+    }
+
+    const [siid, piid] = notificationInstance;
 
     if (messageDid !== did) {
       throw new LocalMqttProtocolError(
@@ -935,20 +933,18 @@ export class LocalMqttClient extends MiotEndpointConnectionTransport {
       message.did,
       'local event notification DID',
     );
-    const [siid, eiid] = requireNotificationInstance(
+    const notificationInstance = resolveNotificationInstance(
       instance,
+      message.siid,
+      message.eiid,
       'local event notification',
     );
-    assertOptionalNotificationIdentifier(
-      message.siid,
-      siid,
-      'local event notification SIID',
-    );
-    assertOptionalNotificationIdentifier(
-      message.eiid,
-      eiid,
-      'local event notification EIID',
-    );
+
+    if (notificationInstance === undefined) {
+      return;
+    }
+
+    const [siid, eiid] = notificationInstance;
 
     if (messageDid !== did) {
       throw new LocalMqttProtocolError(
@@ -1391,7 +1387,7 @@ function requirePositiveInteger(value: unknown, name: string): number {
   return integer;
 }
 
-function requireNotificationIdentifier(value: unknown, name: string): number {
+function readNotificationIdentifier(value: unknown): number | undefined {
   // Some central-gateway firmware serializes notification IIDs as decimal
   // JSON strings even though request/response IIDs are numbers.
   if (typeof value === 'number') {
@@ -1406,38 +1402,57 @@ function requireNotificationIdentifier(value: unknown, name: string): number {
     }
   }
 
-  throw new LocalMqttProtocolError(
-    `${name} is not a positive integer identifier (${value === null ? 'null' : typeof value}).`,
-  );
+  return undefined;
 }
 
-function requireNotificationInstance(
+function readNotificationTopicInstance(
   instance: string,
-  name: string,
-): readonly [number, number] {
+): readonly [number, number] | undefined {
   const match = /^([1-9]\d*)\.([1-9]\d*)$/u.exec(instance);
 
   if (match === null) {
-    throw new LocalMqttProtocolError(`${name} topic has an invalid instance.`);
+    return undefined;
   }
 
-  return [
-    requireNotificationIdentifier(match[1], `${name} topic SIID`),
-    requireNotificationIdentifier(match[2], `${name} topic IID`),
-  ];
+  const first = readNotificationIdentifier(match[1]);
+  const second = readNotificationIdentifier(match[2]);
+
+  return first === undefined || second === undefined
+    ? undefined
+    : [first, second];
 }
 
-function assertOptionalNotificationIdentifier(
-  value: unknown,
-  expected: number,
+function resolveNotificationInstance(
+  topicInstance: string,
+  firstValue: unknown,
+  secondValue: unknown,
   name: string,
-): void {
+): readonly [number, number] | undefined {
+  const topic = readNotificationTopicInstance(topicInstance);
+  const first = readNotificationIdentifier(firstValue);
+  const second = readNotificationIdentifier(secondValue);
+
+  if (topic === undefined) {
+    return first === undefined || second === undefined
+      ? undefined
+      : [first, second];
+  }
+
   if (
-    value !== undefined &&
-    requireNotificationIdentifier(value, name) !== expected
+    (firstValue !== undefined && first === undefined) ||
+    (secondValue !== undefined && second === undefined)
+  ) {
+    return undefined;
+  }
+
+  if (
+    (first !== undefined && first !== topic[0]) ||
+    (second !== undefined && second !== topic[1])
   ) {
     throw new LocalMqttProtocolError(`${name} does not match its topic.`);
   }
+
+  return topic;
 }
 
 function requireString(value: unknown, name: string): string {
