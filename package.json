@@ -14,6 +14,7 @@
     "core": "npm run --workspace @homelib/core",
     "playground": "npm run --workspace @homelib/playground",
     "terminal": "npm run --workspace @homelib/terminal",
+    "utils": "npm run --workspace @homelib/utils",
     "web": "npm run --workspace @homelib/web",
     "xiaomi": "npm run --workspace @homelib/xiaomi"
   },
@@ -21,6 +22,7 @@
     "packages/core",
     "packages/playground",
     "packages/terminal",
+    "packages/utils",
     "packages/web",
     "packages/xiaomi"
   ],

@@ -13,6 +13,9 @@
       "path": "packages/web/src/library"
     },
     {
+      "path": "packages/utils/src/library"
+    },
+    {
       "path": "packages/xiaomi/src/library"
     },
     {
