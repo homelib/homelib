@@ -15,6 +15,7 @@ import {
   createEndpointConnectionBindings,
   disposeEndpointConnectionBindings,
 } from './@binding-creation.js';
+import {isAutomationRequested} from './@bootstrap-arguments.js';
 import {type StartupBindingScope, presentStartup} from './@tui/startup.js';
 import {
   type BindingFile,
@@ -29,7 +30,8 @@ import {
  *
  * Resolves after every binding is installed. Individual endpoints may still be
  * waiting to become ready; commands issued after this promise resolves remain
- * queued until their connection is ready.
+ * queued until their connection is ready. Pass `--automation` on the command
+ * line to skip the interactive startup screen.
  */
 export function bootstrap(): Promise<void> {
   beginBootstrap();
@@ -50,15 +52,17 @@ async function bootstrapInternal(): Promise<void> {
   const rootScopes = [...getRootScopes()];
   const {scopes, endpointMap} = collectBindingTopology(rootScopes);
 
-  await presentStartup({
-    scriptName: getScriptName(),
-    providers: Array.from(getProviderEntries(), ([namespace, provider]) => ({
-      namespace,
-      provider,
-    })),
-    bindingScopes: scopes,
-    bindingFile: initialBindingFile,
-  });
+  if (!isAutomationRequested(process.argv)) {
+    await presentStartup({
+      scriptName: getScriptName(),
+      providers: Array.from(getProviderEntries(), ([namespace, provider]) => ({
+        namespace,
+        provider,
+      })),
+      bindingScopes: scopes,
+      bindingFile: initialBindingFile,
+    });
+  }
 
   const bindingFile = await readBindingFile();
   const connectionBindingPlans = createConnectionBindingPlans(

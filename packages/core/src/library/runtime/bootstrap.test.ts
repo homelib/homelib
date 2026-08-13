@@ -52,8 +52,10 @@ test('binds configured endpoints before resolving', async () => {
     join(tmpdir(), 'homelib-bootstrap-test-'),
   );
   const originalEnvironmentDirectory = process.env.HOMELIB_DIRECTORY;
+  const originalArguments = process.argv;
 
   process.env.HOMELIB_DIRECTORY = environmentDirectory;
+  process.argv = [process.execPath, '/automation.js', '--automation'];
 
   try {
     const provider = new TestProvider('provider');
@@ -108,6 +110,7 @@ test('binds configured endpoints before resolving', async () => {
       process.env.HOMELIB_DIRECTORY = originalEnvironmentDirectory;
     }
 
+    process.argv = originalArguments;
     await rm(environmentDirectory, {recursive: true, force: true});
   }
 });
