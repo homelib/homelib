@@ -90,11 +90,11 @@ class TestAirConditionerEndpointConnection implements AirConditionerEndpointConn
 
   readonly targetTemperature = undefined;
 
-  readonly targetHumidity = undefined;
+  readonly targetRelativeHumidity = undefined;
 
   readonly temperature = undefined;
 
-  readonly humidity = undefined;
+  readonly relativeHumidity = undefined;
 
   readonly commands: AirConditionerEndpointCommand[] = [];
 

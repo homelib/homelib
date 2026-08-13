@@ -11,15 +11,15 @@ const SATURATION_TEMPERATURE_OFFSET = 243.5;
  *
  * Uses `AT = T - 4 + 2.01696 × RH × exp(17.67 × T / (T + 243.5))`.
  */
-export function getApparentTemperatureByTemperatureAndHumidity(
+export function getApparentTemperatureByTemperatureAndRelativeHumidity(
   temperature: number,
-  humidity: number,
+  relativeHumidity: number,
 ): number {
   return (
     temperature -
     APPARENT_TEMPERATURE_OFFSET +
     VAPOR_PRESSURE_FACTOR *
-      humidity *
+      relativeHumidity *
       Math.exp(
         (SATURATION_EXPONENT_FACTOR * temperature) /
           (temperature + SATURATION_TEMPERATURE_OFFSET),
@@ -35,11 +35,11 @@ export function getApparentTemperatureByTemperatureAndHumidity(
  *
  * Solves the apparent-temperature formula using Newton's method.
  */
-export function getTemperatureByApparentTemperatureAndHumidity(
+export function getTemperatureByApparentTemperatureAndRelativeHumidity(
   apparentTemperature: number,
-  humidity: number,
+  relativeHumidity: number,
 ): number {
-  if (humidity <= 1e-12) {
+  if (relativeHumidity <= 1e-12) {
     return apparentTemperature + APPARENT_TEMPERATURE_OFFSET;
   }
 
@@ -65,7 +65,7 @@ export function getTemperatureByApparentTemperatureAndHumidity(
       temperature -
       APPARENT_TEMPERATURE_OFFSET -
       apparentTemperature +
-      VAPOR_PRESSURE_FACTOR * humidity * exponentValue;
+      VAPOR_PRESSURE_FACTOR * relativeHumidity * exponentValue;
 
     if (Math.abs(difference) < 1e-9) {
       return temperature;
@@ -74,7 +74,10 @@ export function getTemperatureByApparentTemperatureAndHumidity(
     const denominator = temperature + SATURATION_TEMPERATURE_OFFSET;
     const derivative =
       1 +
-      (VAPOR_PRESSURE_FACTOR * humidity * exponentValue * derivativeFactor) /
+      (VAPOR_PRESSURE_FACTOR *
+        relativeHumidity *
+        exponentValue *
+        derivativeFactor) /
         (denominator * denominator);
 
     if (Math.abs(derivative) < 1e-15) {

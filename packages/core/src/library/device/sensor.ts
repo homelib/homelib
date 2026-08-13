@@ -6,5 +6,5 @@ export type TemperatureSensor = {
 
 export type HumiditySensor = {
   /** Relative humidity as a normalized ratio from 0 to 1. */
-  readonly humidity: number | undefined;
+  readonly relativeHumidity: number | undefined;
 };

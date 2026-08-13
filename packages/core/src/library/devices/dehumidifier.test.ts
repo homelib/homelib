@@ -76,11 +76,11 @@ class TestDehumidifierEndpointConnection implements DehumidifierEndpointConnecti
 
   readonly mode = 'auto' as const;
 
-  readonly targetHumidity = 0.5;
+  readonly targetRelativeHumidity = 0.5;
 
   readonly temperature: Temperature | undefined;
 
-  readonly humidity = 0.5;
+  readonly relativeHumidity = 0.5;
 
   readonly commands: DehumidifierEndpointCommand[] = [];
 

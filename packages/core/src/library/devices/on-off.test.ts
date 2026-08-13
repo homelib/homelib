@@ -133,9 +133,9 @@ test('air conditioner exposes mode, targets, and commands', async () => {
   expect(airConditioner.on).toBe(false);
   expect(airConditioner.mode).toBeUndefined();
   expect(airConditioner.targetTemperature).toBeUndefined();
-  expect(airConditioner.targetHumidity).toBeUndefined();
+  expect(airConditioner.targetRelativeHumidity).toBeUndefined();
   expect(airConditioner.temperature).toBeUndefined();
-  expect(airConditioner.humidity).toBeUndefined();
+  expect(airConditioner.relativeHumidity).toBeUndefined();
 
   if (!(endpoint instanceof AirConditionerEndpoint)) {
     throw new Error('Expected air conditioner endpoint was not created.');
@@ -156,12 +156,12 @@ test('air conditioner exposes mode, targets, and commands', async () => {
   expect(airConditioner.on).toBe(true);
   expect(airConditioner.mode).toBe('heat');
   expect(airConditioner.targetTemperature).toBe(targetTemperature);
-  expect(airConditioner.targetHumidity).toBe(0.48);
-  expect(endpoint.targetHumidity).toBe(0.48);
+  expect(airConditioner.targetRelativeHumidity).toBe(0.48);
+  expect(endpoint.targetRelativeHumidity).toBe(0.48);
   expect(airConditioner.temperature).toBe(temperature);
-  expect(airConditioner.humidity).toBe(0.52);
+  expect(airConditioner.relativeHumidity).toBe(0.52);
   expect(endpoint.temperature).toBe(temperature);
-  expect(endpoint.humidity).toBe(0.52);
+  expect(endpoint.relativeHumidity).toBe(0.52);
 
   airConditioner.setMode('cool');
   const nextTargetTemperature = Temperature.fromCelsius(24);
@@ -176,7 +176,7 @@ test('air conditioner exposes mode, targets, and commands', async () => {
   ]);
 });
 
-test('dehumidifier exposes mode, target humidity, and commands', async () => {
+test('dehumidifier exposes mode, target relative humidity, and commands', async () => {
   const entry = new DeviceEntry('dehumidifier');
   const dehumidifier = entry.createInstance(Dehumidifier);
   const endpoint = entry.getEndpoint();
@@ -184,9 +184,9 @@ test('dehumidifier exposes mode, target humidity, and commands', async () => {
 
   expect(dehumidifier.on).toBe(false);
   expect(dehumidifier.mode).toBeUndefined();
-  expect(dehumidifier.targetHumidity).toBeUndefined();
+  expect(dehumidifier.targetRelativeHumidity).toBeUndefined();
   expect(dehumidifier.temperature).toBeUndefined();
-  expect(dehumidifier.humidity).toBeUndefined();
+  expect(dehumidifier.relativeHumidity).toBeUndefined();
 
   if (!(endpoint instanceof DehumidifierEndpoint)) {
     throw new Error('Expected dehumidifier endpoint was not created.');
@@ -199,11 +199,11 @@ test('dehumidifier exposes mode, target humidity, and commands', async () => {
 
   expect(dehumidifier.on).toBe(true);
   expect(dehumidifier.mode).toBe('laundry');
-  expect(dehumidifier.targetHumidity).toBe(0.45);
+  expect(dehumidifier.targetRelativeHumidity).toBe(0.45);
   expect(dehumidifier.temperature).toBe(temperature);
-  expect(dehumidifier.humidity).toBe(0.57);
+  expect(dehumidifier.relativeHumidity).toBe(0.57);
   expect(endpoint.temperature).toBe(temperature);
-  expect(endpoint.humidity).toBe(0.57);
+  expect(endpoint.relativeHumidity).toBe(0.57);
 
   dehumidifier.setMode('sleep');
   dehumidifier.setTargetHumidity(0.6);
@@ -228,13 +228,13 @@ test('publishes sensor state and readiness atomically', () => {
   const observedStates: Array<{
     ready: boolean;
     temperature: number | undefined;
-    humidity: number | undefined;
+    relativeHumidity: number | undefined;
   }> = [];
   const dispose = autorun(() => {
     observedStates.push({
       ready: airConditioner.ready,
       temperature: airConditioner.temperature?.kelvin,
-      humidity: airConditioner.humidity,
+      relativeHumidity: airConditioner.relativeHumidity,
     });
   });
 
@@ -250,17 +250,20 @@ test('publishes sensor state and readiness atomically', () => {
     );
 
     expect(observedStates).toEqual([
-      {ready: false, temperature: undefined, humidity: undefined},
-      {ready: false, temperature: 0, humidity: 0},
+      {ready: false, temperature: undefined, relativeHumidity: undefined},
+      {ready: false, temperature: 0, relativeHumidity: 0},
       {
         ready: true,
         temperature: Temperature.fromCelsius(23.25).kelvin,
-        humidity: 0.52,
+        relativeHumidity: 0.52,
       },
     ]);
     expect(
       observedStates.some(
-        state => state.ready && state.temperature === 0 && state.humidity === 0,
+        state =>
+          state.ready &&
+          state.temperature === 0 &&
+          state.relativeHumidity === 0,
       ),
     ).toBe(false);
   } finally {
@@ -342,35 +345,49 @@ test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 0, 1.1, Infinity])(
   },
 );
 
-test.each([0, 0.5, 1])('accepts target humidity %p', value => {
-  expect(new SetDehumidifierTargetHumidityCommand(value).value).toBe(value);
-});
+test.each([0, 0.5, 1])(
+  'accepts target relative humidity %p',
+  relativeHumidity => {
+    expect(
+      new SetDehumidifierTargetHumidityCommand(relativeHumidity)
+        .relativeHumidity,
+    ).toBe(relativeHumidity);
+  },
+);
 
-test.each([0, 0.5, 1])('accepts air conditioner target humidity %p', value => {
-  expect(new SetAirConditionerTargetHumidityCommand(value).value).toBe(value);
-});
-
-test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 1.1, Infinity])(
-  'rejects invalid target humidity %p',
-  value => {
-    expect(() => new SetDehumidifierTargetHumidityCommand(value)).toThrow(
-      RangeError,
-    );
+test.each([0, 0.5, 1])(
+  'accepts air conditioner target relative humidity %p',
+  relativeHumidity => {
+    expect(
+      new SetAirConditionerTargetHumidityCommand(relativeHumidity)
+        .relativeHumidity,
+    ).toBe(relativeHumidity);
   },
 );
 
 test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 1.1, Infinity])(
-  'rejects invalid air conditioner target humidity %p',
-  value => {
-    expect(() => new SetAirConditionerTargetHumidityCommand(value)).toThrow(
-      RangeError,
-    );
+  'rejects invalid target relative humidity %p',
+  relativeHumidity => {
+    expect(
+      () => new SetDehumidifierTargetHumidityCommand(relativeHumidity),
+    ).toThrow(RangeError);
+  },
+);
+
+test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 1.1, Infinity])(
+  'rejects invalid air conditioner target relative humidity %p',
+  relativeHumidity => {
+    expect(
+      () => new SetAirConditionerTargetHumidityCommand(relativeHumidity),
+    ).toThrow(RangeError);
 
     const airConditioner = new DeviceEntry('air conditioner').createInstance(
       AirConditioner,
     );
 
-    expect(() => airConditioner.setTargetHumidity(value)).toThrow(RangeError);
+    expect(() => airConditioner.setTargetHumidity(relativeHumidity)).toThrow(
+      RangeError,
+    );
   },
 );
 
@@ -378,11 +395,11 @@ test('new device commands only supersede commands of the same class', () => {
   const airConditionerMode = new SetAirConditionerModeCommand('cool');
   const airConditionerTemperature =
     new SetAirConditionerTargetTemperatureCommand(Temperature.fromCelsius(24));
-  const airConditionerHumidity = new SetAirConditionerTargetHumidityCommand(
-    0.5,
-  );
+  const airConditionerTargetHumidityCommand =
+    new SetAirConditionerTargetHumidityCommand(0.5);
   const dehumidifierMode = new SetDehumidifierModeCommand('auto');
-  const dehumidifierHumidity = new SetDehumidifierTargetHumidityCommand(0.5);
+  const dehumidifierTargetHumidityCommand =
+    new SetDehumidifierTargetHumidityCommand(0.5);
   const fanWindMode = new SetFanWindModeCommand('normal');
   const fanSpeed = new SetFanSpeedCommand(0.5);
   const fanHorizontalSwing = new SetFanHorizontalSwingCommand(true);
@@ -391,7 +408,9 @@ test('new device commands only supersede commands of the same class', () => {
     airConditionerMode.supersedes(new SetAirConditionerModeCommand('dry')),
   ).toBe(true);
   expect(airConditionerMode.supersedes(airConditionerTemperature)).toBe(false);
-  expect(airConditionerMode.supersedes(airConditionerHumidity)).toBe(false);
+  expect(
+    airConditionerMode.supersedes(airConditionerTargetHumidityCommand),
+  ).toBe(false);
   expect(
     airConditionerTemperature.supersedes(
       new SetAirConditionerTargetTemperatureCommand(
@@ -399,23 +418,25 @@ test('new device commands only supersede commands of the same class', () => {
       ),
     ),
   ).toBe(true);
-  expect(airConditionerTemperature.supersedes(airConditionerHumidity)).toBe(
-    false,
-  );
   expect(
-    airConditionerHumidity.supersedes(
+    airConditionerTemperature.supersedes(airConditionerTargetHumidityCommand),
+  ).toBe(false);
+  expect(
+    airConditionerTargetHumidityCommand.supersedes(
       new SetAirConditionerTargetHumidityCommand(0.6),
     ),
   ).toBe(true);
-  expect(airConditionerHumidity.supersedes(airConditionerTemperature)).toBe(
-    false,
-  );
+  expect(
+    airConditionerTargetHumidityCommand.supersedes(airConditionerTemperature),
+  ).toBe(false);
   expect(
     dehumidifierMode.supersedes(new SetDehumidifierModeCommand('sleep')),
   ).toBe(true);
-  expect(dehumidifierMode.supersedes(dehumidifierHumidity)).toBe(false);
+  expect(dehumidifierMode.supersedes(dehumidifierTargetHumidityCommand)).toBe(
+    false,
+  );
   expect(
-    dehumidifierHumidity.supersedes(
+    dehumidifierTargetHumidityCommand.supersedes(
       new SetDehumidifierTargetHumidityCommand(0.6),
     ),
   ).toBe(true);
@@ -440,13 +461,13 @@ test('new device commands have semantic log strings', () => {
     ).toLogString(),
   ).toBe('set targetTemperatureCelsius=24');
   expect(new SetAirConditionerTargetHumidityCommand(0.5).toLogString()).toBe(
-    'set targetHumidity=0.5',
+    'set targetRelativeHumidity=0.5',
   );
   expect(new SetDehumidifierModeCommand('laundry').toLogString()).toBe(
     'set mode=laundry',
   );
   expect(new SetDehumidifierTargetHumidityCommand(0.5).toLogString()).toBe(
-    'set targetHumidity=0.5',
+    'set targetRelativeHumidity=0.5',
   );
   expect(new SetFanWindModeCommand('natural').toLogString()).toBe(
     'set windMode=natural',
@@ -457,7 +478,7 @@ test('new device commands have semantic log strings', () => {
   );
 });
 
-test('air conditioner logs temperature and humidity state', () => {
+test('air conditioner logs temperature and relative humidity state', () => {
   const entry = new DeviceEntry('air conditioner');
   entry.createInstance(AirConditioner);
   const endpoint = entry.getEndpoint();
@@ -497,9 +518,9 @@ test('air conditioner logs temperature and humidity state', () => {
         on: true,
         mode: 'heat',
         targetTemperatureCelsius: 21.5,
-        targetHumidity: 0.48,
+        targetRelativeHumidity: 0.48,
         temperatureCelsius: 23.25,
-        humidity: 0.52,
+        relativeHumidity: 0.52,
       },
     ]);
   } finally {
@@ -507,7 +528,7 @@ test('air conditioner logs temperature and humidity state', () => {
   }
 });
 
-test('dehumidifier logs temperature and humidity state', () => {
+test('dehumidifier logs temperature and relative humidity state', () => {
   const entry = new DeviceEntry('dehumidifier');
   entry.createInstance(Dehumidifier);
   const endpoint = entry.getEndpoint();
@@ -545,9 +566,9 @@ test('dehumidifier logs temperature and humidity state', () => {
         ready: true,
         on: true,
         mode: 'laundry',
-        targetHumidity: 0.45,
+        targetRelativeHumidity: 0.45,
         temperatureCelsius: 24.5,
-        humidity: 0.57,
+        relativeHumidity: 0.57,
       },
     ]);
   } finally {
@@ -630,29 +651,29 @@ class TestAirConditionerEndpointConnection
   @observable.ref
   accessor targetTemperature: AirConditionerEndpointConnection['targetTemperature'];
 
-  @observable accessor targetHumidity: number | undefined;
+  @observable accessor targetRelativeHumidity: number | undefined;
 
   @observable.ref
   accessor temperature: AirConditionerEndpointConnection['temperature'] =
     Temperature.fromKelvin(0);
 
-  @observable accessor humidity: number | undefined = 0;
+  @observable accessor relativeHumidity: number | undefined = 0;
 
   @action
   initialize(
     on: boolean,
     mode: AirConditionerEndpointConnection['mode'],
     targetTemperature: AirConditionerEndpointConnection['targetTemperature'],
-    targetHumidity: number | undefined,
+    targetRelativeHumidity: number | undefined,
     temperature: AirConditionerEndpointConnection['temperature'],
-    humidity: number | undefined,
+    relativeHumidity: number | undefined,
   ): void {
     this.on = on;
     this.mode = mode;
     this.targetTemperature = targetTemperature;
-    this.targetHumidity = targetHumidity;
+    this.targetRelativeHumidity = targetRelativeHumidity;
     this.temperature = temperature;
-    this.humidity = humidity;
+    this.relativeHumidity = relativeHumidity;
     this.ready = true;
   }
 }
@@ -663,27 +684,27 @@ class TestDehumidifierEndpointConnection
 {
   @observable accessor mode: DehumidifierEndpointConnection['mode'];
 
-  @observable accessor targetHumidity: number | undefined;
+  @observable accessor targetRelativeHumidity: number | undefined;
 
   @observable.ref
   accessor temperature: DehumidifierEndpointConnection['temperature'] =
     Temperature.fromKelvin(0);
 
-  @observable accessor humidity: number | undefined = 0;
+  @observable accessor relativeHumidity: number | undefined = 0;
 
   @action
   initialize(
     on: boolean,
     mode: DehumidifierEndpointConnection['mode'],
-    targetHumidity: number | undefined,
+    targetRelativeHumidity: number | undefined,
     temperature: DehumidifierEndpointConnection['temperature'],
-    humidity: number | undefined,
+    relativeHumidity: number | undefined,
   ): void {
     this.on = on;
     this.mode = mode;
-    this.targetHumidity = targetHumidity;
+    this.targetRelativeHumidity = targetRelativeHumidity;
     this.temperature = temperature;
-    this.humidity = humidity;
+    this.relativeHumidity = relativeHumidity;
     this.ready = true;
   }
 }

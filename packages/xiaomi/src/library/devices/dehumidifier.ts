@@ -54,7 +54,7 @@ const MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER: MiotDehumidifierEndpointMatcher = {
       access: ['read', 'write', 'notify'],
       valueList: [0, 1, 2],
     },
-    targetHumidity: {
+    targetRelativeHumidity: {
       type: 'urn:miot-spec-v2:property:target-humidity:00000022',
       format: 'uint8',
       access: ['read', 'write', 'notify'],
@@ -72,7 +72,7 @@ const MIOT_DEHUMIDIFIER_TEMPERATURE_MATCHER = {
   valueRange: true,
 } as const satisfies MiotPropertyMatcher;
 
-const MIOT_DEHUMIDIFIER_HUMIDITY_MATCHER = {
+const MIOT_DEHUMIDIFIER_RELATIVE_HUMIDITY_MATCHER = {
   type: 'urn:miot-spec-v2:property:relative-humidity:0000000C',
   format: 'uint8',
   access: ['read', 'notify'],
@@ -84,19 +84,23 @@ const MIOT_DEHUMIDIFIER_ENVIRONMENT_MATCHER = {
   service: 'urn:miot-spec-v2:service:environment:0000780A',
   properties: {
     temperature: MIOT_DEHUMIDIFIER_TEMPERATURE_MATCHER,
-    humidity: MIOT_DEHUMIDIFIER_HUMIDITY_MATCHER,
+    relativeHumidity: MIOT_DEHUMIDIFIER_RELATIVE_HUMIDITY_MATCHER,
   },
 };
 
 const MIOT_DEHUMIDIFIER_TEMPERATURE_ENVIRONMENT_MATCHER = {
   service: 'urn:miot-spec-v2:service:environment:0000780A',
   properties: {temperature: MIOT_DEHUMIDIFIER_TEMPERATURE_MATCHER},
-  optionalProperties: {humidity: MIOT_DEHUMIDIFIER_HUMIDITY_MATCHER},
+  optionalProperties: {
+    relativeHumidity: MIOT_DEHUMIDIFIER_RELATIVE_HUMIDITY_MATCHER,
+  },
 };
 
-const MIOT_DEHUMIDIFIER_HUMIDITY_ENVIRONMENT_MATCHER = {
+const MIOT_DEHUMIDIFIER_RELATIVE_HUMIDITY_ENVIRONMENT_MATCHER = {
   service: 'urn:miot-spec-v2:service:environment:0000780A',
-  properties: {humidity: MIOT_DEHUMIDIFIER_HUMIDITY_MATCHER},
+  properties: {
+    relativeHumidity: MIOT_DEHUMIDIFIER_RELATIVE_HUMIDITY_MATCHER,
+  },
   optionalProperties: {temperature: MIOT_DEHUMIDIFIER_TEMPERATURE_MATCHER},
 };
 
@@ -111,7 +115,7 @@ const MIOT_DEHUMIDIFIER_ENDPOINT_PROFILES = [
     services: [
       MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER,
       MIOT_DEHUMIDIFIER_TEMPERATURE_ENVIRONMENT_MATCHER,
-      MIOT_DEHUMIDIFIER_HUMIDITY_ENVIRONMENT_MATCHER,
+      MIOT_DEHUMIDIFIER_RELATIVE_HUMIDITY_ENVIRONMENT_MATCHER,
     ],
   },
   {
@@ -123,7 +127,7 @@ const MIOT_DEHUMIDIFIER_ENDPOINT_PROFILES = [
   {
     services: [
       MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER,
-      MIOT_DEHUMIDIFIER_HUMIDITY_ENVIRONMENT_MATCHER,
+      MIOT_DEHUMIDIFIER_RELATIVE_HUMIDITY_ENVIRONMENT_MATCHER,
     ],
   },
   {services: [MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER]},
@@ -171,14 +175,16 @@ export class MiotDehumidifierEndpointConnection
   }
 
   @computed
-  get targetHumidity(): number | undefined {
-    const {targetHumidity} = this.properties;
+  get targetRelativeHumidity(): number | undefined {
+    const {targetRelativeHumidity} = this.properties;
 
-    if (targetHumidity === undefined) {
+    if (targetRelativeHumidity === undefined) {
       return undefined;
     }
 
-    const value = getOptionalNumberState(this.getState('targetHumidity'));
+    const value = getOptionalNumberState(
+      this.getState('targetRelativeHumidity'),
+    );
 
     if (value === undefined) {
       return 0;
@@ -187,7 +193,7 @@ export class MiotDehumidifierEndpointConnection
     assertValueInRange(
       'dehumidifier target humidity',
       value,
-      getPropertyValueRange('dehumidifier', targetHumidity),
+      getPropertyValueRange('dehumidifier', targetRelativeHumidity),
     );
     return value / 100;
   }
@@ -215,23 +221,23 @@ export class MiotDehumidifierEndpointConnection
   }
 
   @computed
-  get humidity(): number | undefined {
-    const {humidity} = this.properties;
+  get relativeHumidity(): number | undefined {
+    const {relativeHumidity} = this.properties;
 
-    if (humidity === undefined) {
+    if (relativeHumidity === undefined) {
       return undefined;
     }
 
-    const value = getOptionalNumberState(this.getState('humidity'));
+    const value = getOptionalNumberState(this.getState('relativeHumidity'));
 
     if (value === undefined) {
       return 0;
     }
 
     assertValueInRange(
-      'dehumidifier humidity',
+      'dehumidifier relative humidity',
       value,
-      getPropertyValueRange('dehumidifier', humidity),
+      getPropertyValueRange('dehumidifier', relativeHumidity),
     );
     return value / 100;
   }
@@ -274,7 +280,7 @@ type MiotDehumidifierEndpointMatcher = Omit<
     },
     {
       readonly mode: MiotPropertyMatcher;
-      readonly targetHumidity: MiotPropertyMatcher;
+      readonly targetRelativeHumidity: MiotPropertyMatcher;
     }
   >,
   'device'
@@ -283,9 +289,9 @@ type MiotDehumidifierEndpointMatcher = Omit<
 type MiotDehumidifierEndpointProperties = {
   readonly on: MiotSpecProperty;
   readonly mode?: MiotSpecProperty;
-  readonly targetHumidity?: MiotSpecProperty;
+  readonly targetRelativeHumidity?: MiotSpecProperty;
   readonly temperature?: MiotSpecProperty;
-  readonly humidity?: MiotSpecProperty;
+  readonly relativeHumidity?: MiotSpecProperty;
 };
 
 function createMiotDehumidifierRequest(
@@ -308,7 +314,7 @@ function createMiotDehumidifierRequest(
       getMiotDehumidifierMode(command.value),
     );
   } else if (command instanceof SetDehumidifierTargetHumidityCommand) {
-    const property = properties.targetHumidity;
+    const property = properties.targetRelativeHumidity;
 
     if (property === undefined) {
       throw new CommandError(
@@ -317,11 +323,11 @@ function createMiotDehumidifierRequest(
     }
 
     const valueRange = getPropertyValueRange('dehumidifier', property);
-    const rawValue = command.value * 100;
+    const rawValue = command.relativeHumidity * 100;
 
     return createSetPropertyRequest(
       metadata,
-      'targetHumidity',
+      'targetRelativeHumidity',
       clampAndQuantizeValue(rawValue, valueRange),
     );
   }

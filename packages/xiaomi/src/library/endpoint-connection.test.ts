@@ -188,7 +188,7 @@ const TEST_ENVIRONMENT_TEMPERATURE_PROPERTY = {
   unit: 'celsius',
   'value-range': [-30, 100, 0.1],
 } satisfies MiotSpecProperty;
-const TEST_ENVIRONMENT_HUMIDITY_PROPERTY = {
+const TEST_ENVIRONMENT_RELATIVE_HUMIDITY_PROPERTY = {
   iid: 2,
   type: 'urn:miot-spec-v2:property:relative-humidity:0000000C',
   description: 'Relative Humidity',
@@ -204,12 +204,12 @@ const TEST_ENVIRONMENT_RESOURCE: MiotEndpointConnectionResolvedResource = {
     description: 'Environment',
     properties: [
       TEST_ENVIRONMENT_TEMPERATURE_PROPERTY,
-      TEST_ENVIRONMENT_HUMIDITY_PROPERTY,
+      TEST_ENVIRONMENT_RELATIVE_HUMIDITY_PROPERTY,
     ],
   },
   properties: {
     temperature: TEST_ENVIRONMENT_TEMPERATURE_PROPERTY,
-    humidity: TEST_ENVIRONMENT_HUMIDITY_PROPERTY,
+    relativeHumidity: TEST_ENVIRONMENT_RELATIVE_HUMIDITY_PROPERTY,
   },
 };
 const TEST_MULTI_RESOURCE_METADATA = createTestResolvedMetadata({
@@ -384,7 +384,10 @@ test('allows writable properties on every flat resource', () => {
         ...TEST_ENVIRONMENT_RESOURCE,
         service: {
           ...TEST_ENVIRONMENT_RESOURCE.service,
-          properties: [writableTemperature, TEST_ENVIRONMENT_HUMIDITY_PROPERTY],
+          properties: [
+            writableTemperature,
+            TEST_ENVIRONMENT_RELATIVE_HUMIDITY_PROPERTY,
+          ],
         },
         properties: {
           ...TEST_ENVIRONMENT_RESOURCE.properties,
@@ -407,7 +410,7 @@ test('commits a full multi-resource initial state and ready flag atomically', ()
       connection.ready,
       connection.on,
       connection.temperature,
-      connection.humidity,
+      connection.relativeHumidity,
     ]);
   });
 
@@ -1108,8 +1111,8 @@ class TestMultiResourceEndpointConnection extends MiotEndpointConnection<never> 
     return (this.getState('temperature') as number | undefined) ?? 0;
   }
 
-  get humidity(): number {
-    return (this.getState('humidity') as number | undefined) ?? 0;
+  get relativeHumidity(): number {
+    return (this.getState('relativeHumidity') as number | undefined) ?? 0;
   }
 
   override processCommand(_command: never): Promise<void> {

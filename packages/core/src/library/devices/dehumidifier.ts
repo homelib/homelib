@@ -30,8 +30,8 @@ export class Dehumidifier
 
   /** Target relative humidity as a normalized ratio from 0 to 1. */
   @computed
-  get targetHumidity(): number | undefined {
-    return this.endpoint.targetHumidity;
+  get targetRelativeHumidity(): number | undefined {
+    return this.endpoint.targetRelativeHumidity;
   }
 
   @computed
@@ -41,8 +41,8 @@ export class Dehumidifier
 
   /** Relative humidity as a normalized ratio from 0 to 1. */
   @computed
-  get humidity(): number | undefined {
-    return this.endpoint.humidity;
+  get relativeHumidity(): number | undefined {
+    return this.endpoint.relativeHumidity;
   }
 
   constructor(entry: DeviceEntry) {
@@ -75,8 +75,8 @@ export class Dehumidifier
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(value: number): this {
-    this.endpoint.setTargetHumidity(value);
+  setTargetHumidity(relativeHumidity: number): this {
+    this.endpoint.setTargetHumidity(relativeHumidity);
     return this;
   }
 }
@@ -100,8 +100,8 @@ export class DehumidifierEndpoint<
 
   /** Target relative humidity as a normalized ratio from 0 to 1. */
   @computed
-  get targetHumidity(): number | undefined {
-    return this.connection?.targetHumidity;
+  get targetRelativeHumidity(): number | undefined {
+    return this.connection?.targetRelativeHumidity;
   }
 
   @computed
@@ -111,8 +111,8 @@ export class DehumidifierEndpoint<
 
   /** Relative humidity as a normalized ratio from 0 to 1. */
   @computed
-  get humidity(): number | undefined {
-    return this.connection?.humidity;
+  get relativeHumidity(): number | undefined {
+    return this.connection?.relativeHumidity;
   }
 
   protected override get logState(): EndpointLogState {
@@ -124,9 +124,9 @@ export class DehumidifierEndpoint<
       ready: true,
       on: this.on,
       mode: this.mode,
-      targetHumidity: this.targetHumidity,
+      targetRelativeHumidity: this.targetRelativeHumidity,
       temperatureCelsius: this.temperature?.celsius,
-      humidity: this.humidity,
+      relativeHumidity: this.relativeHumidity,
     };
   }
 
@@ -152,8 +152,10 @@ export class DehumidifierEndpoint<
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(value: number): this {
-    return this.enqueueCommand(new SetDehumidifierTargetHumidityCommand(value));
+  setTargetHumidity(relativeHumidity: number): this {
+    return this.enqueueCommand(
+      new SetDehumidifierTargetHumidityCommand(relativeHumidity),
+    );
   }
 }
 
@@ -164,7 +166,7 @@ export type DehumidifierEndpointConnection =
       readonly on: boolean;
       readonly mode: DehumidifierMode | undefined;
       /** Target relative humidity as a normalized ratio from 0 to 1. */
-      readonly targetHumidity: number | undefined;
+      readonly targetRelativeHumidity: number | undefined;
     };
 
 export abstract class DehumidifierCommand extends Command {}
@@ -198,13 +200,17 @@ export class SetDehumidifierModeCommand extends DehumidifierCommand {
 }
 
 export class SetDehumidifierTargetHumidityCommand extends DehumidifierCommand {
-  /** `value` is a normalized relative-humidity ratio from 0 to 1. */
-  constructor(readonly value: number) {
+  /** A normalized relative-humidity ratio from 0 to 1. */
+  constructor(readonly relativeHumidity: number) {
     super();
 
-    if (!Number.isFinite(value) || value < 0 || value > 1) {
+    if (
+      !Number.isFinite(relativeHumidity) ||
+      relativeHumidity < 0 ||
+      relativeHumidity > 1
+    ) {
       throw new RangeError(
-        'Target humidity must be a finite number from 0 to 1.',
+        'Target relative humidity must be a finite number from 0 to 1.',
       );
     }
   }
@@ -214,7 +220,7 @@ export class SetDehumidifierTargetHumidityCommand extends DehumidifierCommand {
   }
 
   override toLogString(): string {
-    return `set targetHumidity=${this.value}`;
+    return `set targetRelativeHumidity=${this.relativeHumidity}`;
   }
 }
 

@@ -63,7 +63,7 @@ const MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER: MiotAirConditionerEndpointMatcher =
         unit: 'celsius',
         valueRange: true,
       },
-      targetHumidity: {
+      targetRelativeHumidity: {
         type: 'urn:miot-spec-v2:property:target-humidity:00000022',
         format: 'uint8',
         access: ['read', 'write', 'notify'],
@@ -81,7 +81,7 @@ const MIOT_AIR_CONDITIONER_TEMPERATURE_MATCHER = {
   valueRange: true,
 } as const satisfies MiotPropertyMatcher;
 
-const MIOT_AIR_CONDITIONER_HUMIDITY_MATCHER = {
+const MIOT_AIR_CONDITIONER_RELATIVE_HUMIDITY_MATCHER = {
   type: 'urn:miot-spec-v2:property:relative-humidity:0000000C',
   format: 'uint8',
   access: ['read', 'notify'],
@@ -93,19 +93,23 @@ const MIOT_AIR_CONDITIONER_ENVIRONMENT_MATCHER = {
   service: 'urn:miot-spec-v2:service:environment:0000780A',
   properties: {
     temperature: MIOT_AIR_CONDITIONER_TEMPERATURE_MATCHER,
-    humidity: MIOT_AIR_CONDITIONER_HUMIDITY_MATCHER,
+    relativeHumidity: MIOT_AIR_CONDITIONER_RELATIVE_HUMIDITY_MATCHER,
   },
 };
 
 const MIOT_AIR_CONDITIONER_TEMPERATURE_ENVIRONMENT_MATCHER = {
   service: 'urn:miot-spec-v2:service:environment:0000780A',
   properties: {temperature: MIOT_AIR_CONDITIONER_TEMPERATURE_MATCHER},
-  optionalProperties: {humidity: MIOT_AIR_CONDITIONER_HUMIDITY_MATCHER},
+  optionalProperties: {
+    relativeHumidity: MIOT_AIR_CONDITIONER_RELATIVE_HUMIDITY_MATCHER,
+  },
 };
 
-const MIOT_AIR_CONDITIONER_HUMIDITY_ENVIRONMENT_MATCHER = {
+const MIOT_AIR_CONDITIONER_RELATIVE_HUMIDITY_ENVIRONMENT_MATCHER = {
   service: 'urn:miot-spec-v2:service:environment:0000780A',
-  properties: {humidity: MIOT_AIR_CONDITIONER_HUMIDITY_MATCHER},
+  properties: {
+    relativeHumidity: MIOT_AIR_CONDITIONER_RELATIVE_HUMIDITY_MATCHER,
+  },
   optionalProperties: {temperature: MIOT_AIR_CONDITIONER_TEMPERATURE_MATCHER},
 };
 
@@ -120,7 +124,7 @@ const MIOT_AIR_CONDITIONER_ENDPOINT_PROFILES = [
     services: [
       MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER,
       MIOT_AIR_CONDITIONER_TEMPERATURE_ENVIRONMENT_MATCHER,
-      MIOT_AIR_CONDITIONER_HUMIDITY_ENVIRONMENT_MATCHER,
+      MIOT_AIR_CONDITIONER_RELATIVE_HUMIDITY_ENVIRONMENT_MATCHER,
     ],
   },
   {
@@ -132,7 +136,7 @@ const MIOT_AIR_CONDITIONER_ENDPOINT_PROFILES = [
   {
     services: [
       MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER,
-      MIOT_AIR_CONDITIONER_HUMIDITY_ENVIRONMENT_MATCHER,
+      MIOT_AIR_CONDITIONER_RELATIVE_HUMIDITY_ENVIRONMENT_MATCHER,
     ],
   },
   {services: [MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER]},
@@ -204,14 +208,16 @@ export class MiotAirConditionerEndpointConnection
   }
 
   @computed
-  get targetHumidity(): number | undefined {
-    const {targetHumidity} = this.properties;
+  get targetRelativeHumidity(): number | undefined {
+    const {targetRelativeHumidity} = this.properties;
 
-    if (targetHumidity === undefined) {
+    if (targetRelativeHumidity === undefined) {
       return undefined;
     }
 
-    const value = getOptionalNumberState(this.getState('targetHumidity'));
+    const value = getOptionalNumberState(
+      this.getState('targetRelativeHumidity'),
+    );
 
     if (value === undefined) {
       return 0;
@@ -220,7 +226,7 @@ export class MiotAirConditionerEndpointConnection
     assertValueInRange(
       'air conditioner target humidity',
       value,
-      getPropertyValueRange('air conditioner', targetHumidity),
+      getPropertyValueRange('air conditioner', targetRelativeHumidity),
     );
     return value / 100;
   }
@@ -248,23 +254,23 @@ export class MiotAirConditionerEndpointConnection
   }
 
   @computed
-  get humidity(): number | undefined {
-    const {humidity} = this.properties;
+  get relativeHumidity(): number | undefined {
+    const {relativeHumidity} = this.properties;
 
-    if (humidity === undefined) {
+    if (relativeHumidity === undefined) {
       return undefined;
     }
 
-    const value = getOptionalNumberState(this.getState('humidity'));
+    const value = getOptionalNumberState(this.getState('relativeHumidity'));
 
     if (value === undefined) {
       return 0;
     }
 
     assertValueInRange(
-      'air conditioner humidity',
+      'air conditioner relative humidity',
       value,
-      getPropertyValueRange('air conditioner', humidity),
+      getPropertyValueRange('air conditioner', relativeHumidity),
     );
     return value / 100;
   }
@@ -308,7 +314,7 @@ type MiotAirConditionerEndpointMatcher = Omit<
     {
       readonly mode: MiotPropertyMatcher;
       readonly targetTemperature: MiotPropertyMatcher;
-      readonly targetHumidity: MiotPropertyMatcher;
+      readonly targetRelativeHumidity: MiotPropertyMatcher;
     }
   >,
   'device'
@@ -318,9 +324,9 @@ type MiotAirConditionerEndpointProperties = {
   readonly on: MiotSpecProperty;
   readonly mode?: MiotSpecProperty;
   readonly targetTemperature?: MiotSpecProperty;
-  readonly targetHumidity?: MiotSpecProperty;
+  readonly targetRelativeHumidity?: MiotSpecProperty;
   readonly temperature?: MiotSpecProperty;
-  readonly humidity?: MiotSpecProperty;
+  readonly relativeHumidity?: MiotSpecProperty;
 };
 
 function createMiotAirConditionerRequest(
@@ -358,7 +364,7 @@ function createMiotAirConditionerRequest(
       clampAndQuantizeValue(value, valueRange),
     );
   } else if (command instanceof SetAirConditionerTargetHumidityCommand) {
-    const property = properties.targetHumidity;
+    const property = properties.targetRelativeHumidity;
 
     if (property === undefined) {
       throw new CommandError(
@@ -367,11 +373,11 @@ function createMiotAirConditionerRequest(
     }
 
     const valueRange = getPropertyValueRange('air conditioner', property);
-    const rawValue = command.value * 100;
+    const rawValue = command.relativeHumidity * 100;
 
     return createSetPropertyRequest(
       metadata,
-      'targetHumidity',
+      'targetRelativeHumidity',
       clampAndQuantizeValue(rawValue, valueRange),
     );
   }

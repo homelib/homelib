@@ -35,8 +35,8 @@ export class AirConditioner
 
   /** Target relative humidity as a normalized ratio from 0 to 1. */
   @computed
-  get targetHumidity(): number | undefined {
-    return this.endpoint.targetHumidity;
+  get targetRelativeHumidity(): number | undefined {
+    return this.endpoint.targetRelativeHumidity;
   }
 
   @computed
@@ -46,8 +46,8 @@ export class AirConditioner
 
   /** Relative humidity as a normalized ratio from 0 to 1. */
   @computed
-  get humidity(): number | undefined {
-    return this.endpoint.humidity;
+  get relativeHumidity(): number | undefined {
+    return this.endpoint.relativeHumidity;
   }
 
   constructor(entry: DeviceEntry) {
@@ -85,8 +85,8 @@ export class AirConditioner
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(value: number): this {
-    this.endpoint.setTargetHumidity(value);
+  setTargetHumidity(relativeHumidity: number): this {
+    this.endpoint.setTargetHumidity(relativeHumidity);
     return this;
   }
 }
@@ -115,8 +115,8 @@ export class AirConditionerEndpoint<
 
   /** Target relative humidity as a normalized ratio from 0 to 1. */
   @computed
-  get targetHumidity(): number | undefined {
-    return this.connection?.targetHumidity;
+  get targetRelativeHumidity(): number | undefined {
+    return this.connection?.targetRelativeHumidity;
   }
 
   @computed
@@ -126,8 +126,8 @@ export class AirConditionerEndpoint<
 
   /** Relative humidity as a normalized ratio from 0 to 1. */
   @computed
-  get humidity(): number | undefined {
-    return this.connection?.humidity;
+  get relativeHumidity(): number | undefined {
+    return this.connection?.relativeHumidity;
   }
 
   protected override get logState(): EndpointLogState {
@@ -140,9 +140,9 @@ export class AirConditionerEndpoint<
       on: this.on,
       mode: this.mode,
       targetTemperatureCelsius: this.targetTemperature?.celsius,
-      targetHumidity: this.targetHumidity,
+      targetRelativeHumidity: this.targetRelativeHumidity,
       temperatureCelsius: this.temperature?.celsius,
-      humidity: this.humidity,
+      relativeHumidity: this.relativeHumidity,
     };
   }
 
@@ -174,9 +174,9 @@ export class AirConditionerEndpoint<
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(value: number): this {
+  setTargetHumidity(relativeHumidity: number): this {
     return this.enqueueCommand(
-      new SetAirConditionerTargetHumidityCommand(value),
+      new SetAirConditionerTargetHumidityCommand(relativeHumidity),
     );
   }
 }
@@ -189,7 +189,7 @@ export type AirConditionerEndpointConnection =
       readonly mode: AirConditionerMode | undefined;
       readonly targetTemperature: Temperature | undefined;
       /** Target relative humidity as a normalized ratio from 0 to 1. */
-      readonly targetHumidity: number | undefined;
+      readonly targetRelativeHumidity: number | undefined;
     };
 
 export abstract class AirConditionerCommand extends Command {}
@@ -237,13 +237,17 @@ export class SetAirConditionerTargetTemperatureCommand extends AirConditionerCom
 }
 
 export class SetAirConditionerTargetHumidityCommand extends AirConditionerCommand {
-  /** `value` is a normalized relative-humidity ratio from 0 to 1. */
-  constructor(readonly value: number) {
+  /** A normalized relative-humidity ratio from 0 to 1. */
+  constructor(readonly relativeHumidity: number) {
     super();
 
-    if (!Number.isFinite(value) || value < 0 || value > 1) {
+    if (
+      !Number.isFinite(relativeHumidity) ||
+      relativeHumidity < 0 ||
+      relativeHumidity > 1
+    ) {
       throw new RangeError(
-        'Target humidity must be a finite number from 0 to 1.',
+        'Target relative humidity must be a finite number from 0 to 1.',
       );
     }
   }
@@ -253,7 +257,7 @@ export class SetAirConditionerTargetHumidityCommand extends AirConditionerComman
   }
 
   override toLogString(): string {
-    return `set targetHumidity=${this.value}`;
+    return `set targetRelativeHumidity=${this.relativeHumidity}`;
   }
 }
 
