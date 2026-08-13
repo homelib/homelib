@@ -1,4 +1,9 @@
 /** @type {import('jest').Config} */
 export default {
-  projects: ['packages/core', 'packages/xiaomi'],
+  projects: [
+    'packages/core',
+    'packages/terminal',
+    'packages/web',
+    'packages/xiaomi',
+  ],
 };

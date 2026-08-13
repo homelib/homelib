@@ -4,6 +4,8 @@ import {defineConfig, globalIgnores} from 'eslint/config';
 export default defineConfig([
   globalIgnores([
     'packages/core/bld/',
+    'packages/terminal/bld/',
+    'packages/web/bld/',
     'packages/xiaomi/bld/',
     'packages/playground/bld/',
   ]),
@@ -59,6 +61,38 @@ export default defineConfig([
   },
   {
     files: ['packages/core/src/web/**/*.test.{ts,tsx}'],
+    extends: [configs.dev],
+  },
+  // packages/terminal/src/library
+  {
+    files: ['packages/terminal/src/library/**/*.{ts,tsx}'],
+    plugins: {'@mufan': mufan},
+    extends: [configs.typescript],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
+    files: ['packages/terminal/src/library/**/*.test.{ts,tsx}'],
+    extends: [configs.dev],
+  },
+  // packages/web/src/library
+  {
+    files: ['packages/web/src/library/**/*.{ts,tsx}'],
+    plugins: {'@mufan': mufan},
+    extends: [configs.typescript],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
+    files: ['packages/web/src/library/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
   },
   // packages/xiaomi/src/library
