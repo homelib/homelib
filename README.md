@@ -31,6 +31,24 @@ light.turnOn();
 The terminal frontend handles setup and device binding during `bootstrap()`.
 Use `--automation` to run directly with existing bindings.
 
+## Try it out
+
+HomeLib is currently under development. To try it out:
+
+1. Clone the repository.
+2. Install dependencies:
+
+   ```sh
+   npm install
+   ```
+
+3. Write your automation in `packages/playground/src/program/home.ts`
+4. Bootstrap the automation:
+
+   ```sh
+   npx tsx packages/playground/src/program/home.ts
+   ```
+
 ## License
 
 MIT License.
