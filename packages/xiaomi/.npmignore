@@ -2,7 +2,4 @@
 !/src/library/**/*.{ts,tsx}
 !/bld/library/**
 /bld/library/**/*.test.js
-!/src/experiments/**/*.{ts,tsx}
-!/bld/experiments/**
-/bld/experiments/**/*.test.js
 *.tsbuildinfo

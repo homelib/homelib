@@ -47,22 +47,6 @@ export default defineConfig([
     files: ['packages/core/src/library/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
   },
-  // packages/core/src/web
-  {
-    files: ['packages/core/src/web/**/*.{ts,tsx}'],
-    plugins: {'@mufan': mufan},
-    extends: [configs.typescript],
-    languageOptions: {
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
-  },
-  {
-    files: ['packages/core/src/web/**/*.test.{ts,tsx}'],
-    extends: [configs.dev],
-  },
   // packages/terminal/src/library
   {
     files: ['packages/terminal/src/library/**/*.{ts,tsx}'],
@@ -110,18 +94,6 @@ export default defineConfig([
   {
     files: ['packages/xiaomi/src/library/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
-  },
-  // packages/xiaomi/src/experiments
-  {
-    files: ['packages/xiaomi/src/experiments/**/*.{ts,tsx}'],
-    plugins: {'@mufan': mufan},
-    extends: [configs.typescript],
-    languageOptions: {
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
   },
   // packages/playground/src/program
   {
