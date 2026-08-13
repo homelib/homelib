@@ -6,8 +6,6 @@
   "type": "module",
   "dependencies": {
     "@homelib/core": "*",
-    "@homelib/terminal": "*",
-    "@homelib/web": "*",
     "@homelib/xiaomi": "*",
     "tslib": "^2.8.1"
   }

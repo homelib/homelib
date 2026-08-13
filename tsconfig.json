@@ -7,9 +7,6 @@
       "path": "packages/core/src/library"
     },
     {
-      "path": "packages/core/src/web"
-    },
-    {
       "path": "packages/terminal/src/library"
     },
     {
@@ -17,9 +14,6 @@
     },
     {
       "path": "packages/xiaomi/src/library"
-    },
-    {
-      "path": "packages/xiaomi/src/experiments"
     },
     {
       "path": "packages/playground/src/program"

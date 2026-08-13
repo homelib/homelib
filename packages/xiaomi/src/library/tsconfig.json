@@ -7,7 +7,6 @@
     "rootDir": ".",
     "outDir": "../../bld/library"
   },
-  "exclude": ["@miot-exp"],
   "references": [
     {
       "path": "../../../core/src/library"
