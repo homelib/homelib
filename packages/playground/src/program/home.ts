@@ -14,4 +14,9 @@ const 客厅除湿机 = 客厅.$dehumidifier('除湿机');
 
 await bootstrap();
 
-setupTemperatureHumidityControl(客厅空调, 客厅除湿机);
+setupTemperatureHumidityControl({
+  temperatureSensor: 客厅除湿机,
+  humiditySensor: 客厅除湿机,
+  airConditioner: 客厅空调,
+  dehumidifier: 客厅除湿机,
+});

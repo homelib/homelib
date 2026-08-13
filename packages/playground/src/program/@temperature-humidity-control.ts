@@ -1,7 +1,9 @@
 import {
   type AirConditioner,
   type Dehumidifier,
+  type HumiditySensor,
   Temperature,
+  type TemperatureSensor,
 } from '@homelib/core';
 import {reaction} from '@homelib/core/mobx';
 import {
@@ -23,10 +25,17 @@ const IDEAL_HUMIDITY_DEVIATION = 0.02;
 
 const SOFT_POWER_OFF_HUMIDITY = 1;
 
-export function setupTemperatureHumidityControl(
-  airConditioner: AirConditioner,
-  dehumidifier: Dehumidifier,
-): void {
+export function setupTemperatureHumidityControl({
+  temperatureSensor,
+  humiditySensor,
+  airConditioner,
+  dehumidifier,
+}: {
+  temperatureSensor: TemperatureSensor;
+  humiditySensor: HumiditySensor;
+  airConditioner: AirConditioner;
+  dehumidifier: Dehumidifier;
+}): void {
   type LevelState = 'high' | 'ideal' | 'low';
 
   let idealTemperatureUpperLimit = IDEAL_APPARENT_TEMPERATURE_UPPER_LIMIT;
@@ -84,8 +93,8 @@ export function setupTemperatureHumidityControl(
     () =>
       airConditioner.ready && dehumidifier.ready
         ? {
-            temperature: dehumidifier.temperature?.celsius,
-            humidity: dehumidifier.humidity,
+            temperature: temperatureSensor.temperature?.celsius,
+            humidity: humiditySensor.humidity,
           }
         : {},
     ({temperature, humidity}) => {
