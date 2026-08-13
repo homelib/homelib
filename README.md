@@ -49,6 +49,8 @@ HomeLib is currently under development. To try it out:
    npx tsx packages/playground/src/program/home.ts
    ```
 
+Ask some AI agent to implement more devices so it will be actually useful.
+
 ## License
 
 MIT License.
