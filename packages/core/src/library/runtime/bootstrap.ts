@@ -160,18 +160,20 @@ function createConnectionBindingPlans(
 
   for (const binding of bindingFile.bindings) {
     const pathKey = getEndpointPathKey(binding.endpoint);
+    const endpoint = endpointMap.get(pathKey);
+
+    // Keep stale bindings available to bootstrap frontends for inspection and
+    // cleanup, but do not let declarations removed from the current script
+    // prevent the remaining endpoints from starting.
+    if (endpoint === undefined) {
+      continue;
+    }
 
     if (bindingPathSet.has(pathKey)) {
       throw new Error(`Duplicate endpoint binding: ${pathKey}.`);
     }
 
     bindingPathSet.add(pathKey);
-
-    const endpoint = endpointMap.get(pathKey);
-
-    if (endpoint === undefined) {
-      throw new Error(`Binding references an unknown endpoint: ${pathKey}.`);
-    }
 
     const provider = getProvider(
       binding.provider.namespace,

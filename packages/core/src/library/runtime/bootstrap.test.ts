@@ -17,6 +17,7 @@ import {type EndpointConnectionBindingPlan, Provider} from '../provider.js';
 import {register, registerRootScope} from '../registry.js';
 import {Scope} from '../scope.js';
 
+import {readBindingFile} from './binding.js';
 import {
   type BootstrapContext,
   registerBootstrapFrontend,
@@ -87,6 +88,24 @@ test('binds configured endpoints before resolving', async () => {
             provider: {namespace: 'test', name: 'provider'},
             metadata: {value: 'initial metadata'},
           },
+          {
+            endpoint: {
+              scopePath: ['home', 'room'],
+              deviceName: 'removed-device',
+              endpointName: '',
+            },
+            provider: {namespace: 'removed', name: 'provider'},
+            metadata: {value: 'stale metadata'},
+          },
+          {
+            endpoint: {
+              scopePath: ['home', 'room'],
+              deviceName: 'removed-device',
+              endpointName: '',
+            },
+            provider: {namespace: 'removed', name: 'duplicate'},
+            metadata: {value: 'duplicate stale metadata'},
+          },
         ],
       }),
     );
@@ -97,6 +116,7 @@ test('binds configured endpoints before resolving', async () => {
       bootstrapContext = context;
       expect(context.providers).toEqual([{namespace: 'test', provider}]);
       expect(context.bindingScopes[0]?.path).toEqual(['home']);
+      expect(context.initialBindingFile.bindings).toHaveLength(3);
 
       await context.updateBindingFile(bindingFile => ({
         ...bindingFile,
@@ -110,6 +130,14 @@ test('binds configured endpoints before resolving', async () => {
     await bootstrap();
     await Promise.resolve();
 
+    const persistedBindingFile = await readBindingFile();
+
+    expect(persistedBindingFile.bindings).toHaveLength(3);
+    expect(
+      persistedBindingFile.bindings.filter(
+        binding => binding.endpoint.deviceName === 'removed-device',
+      ),
+    ).toHaveLength(2);
     expect(provider.processedValues).toEqual([]);
 
     device.send(2);
