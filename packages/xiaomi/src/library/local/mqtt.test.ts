@@ -8,6 +8,7 @@ import {MiotSetPropertyRequest} from '../miot/index.js';
 import {decodeMipsMessage, encodeMipsMessage} from './message.js';
 import {
   LocalMqttClient,
+  LocalMqttProtocolError,
   LocalMqttRequestInterruptedError,
   LocalMqttRequestTimeoutError,
 } from './mqtt.js';
@@ -250,6 +251,71 @@ test('normalizes decimal string identifiers in local notifications', async () =>
   await propertySubscription.dispose();
   await eventSubscription.dispose();
   await client.disconnect();
+});
+
+test('uses topic identifiers omitted from local notification payloads', async () => {
+  const mqttClient = new TestMqttClient();
+  const client = createClient(mqttClient);
+  await client.connect();
+  const properties: unknown[] = [];
+  const events: unknown[] = [];
+  const propertySubscription = await client.subscribeProperties(
+    'device-1',
+    update => {
+      properties.push(update);
+    },
+  );
+  const eventSubscription = await client.subscribeEvents('device-1', event => {
+    events.push(event);
+  });
+
+  mqttClient.notifyProperty({did: 'device-1', value: false}, '2.1');
+  mqttClient.notifyEvent({did: 'device-1', arguments: ['pressed']}, '3.1');
+
+  expect(properties).toEqual([
+    {did: 'device-1', siid: 2, piid: 1, value: false},
+  ]);
+  expect(events).toEqual([
+    {did: 'device-1', siid: 3, eiid: 1, arguments: ['pressed']},
+  ]);
+
+  await propertySubscription.dispose();
+  await eventSubscription.dispose();
+  await client.disconnect();
+});
+
+test('rejects malformed or inconsistent local notification addresses', async () => {
+  const mqttClient = new TestMqttClient();
+  const client = createClient(mqttClient);
+  const errors: unknown[] = [];
+  const originalError = console.error;
+  console.error = error => {
+    errors.push(error);
+  };
+  let subscription: {dispose(): Promise<void>} | undefined;
+
+  try {
+    await client.connect();
+    const updates: unknown[] = [];
+    subscription = await client.subscribeProperties('device-1', update => {
+      updates.push(update);
+    });
+
+    mqttClient.notifyProperty(
+      {did: 'device-1', siid: 3, piid: 1, value: true},
+      '2.1',
+    );
+    mqttClient.notifyProperty({did: 'device-1', value: true}, '02.1');
+
+    expect(updates).toHaveLength(0);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toBeInstanceOf(LocalMqttProtocolError);
+    expect(errors[1]).toBeInstanceOf(LocalMqttProtocolError);
+  } finally {
+    await subscription?.dispose();
+    await client.disconnect();
+    console.error = originalError;
+  }
 });
 
 test('subscribes to and validates local device events', async () => {
@@ -536,28 +602,34 @@ class TestMqttClient extends EventEmitter {
     );
   }
 
-  notifyProperty(update: {
-    readonly did: string;
-    readonly siid: number | string;
-    readonly piid: number | string;
-    readonly value: unknown;
-  }): void {
+  notifyProperty(
+    update: {
+      readonly did: string;
+      readonly siid?: number | string;
+      readonly piid?: number | string;
+      readonly value: unknown;
+    },
+    instance = `${update.siid}.${update.piid}`,
+  ): void {
     this.emit(
       'message',
-      `virtual-did/appMsg/notify/iot/${update.did}/property/${update.siid}.${update.piid}`,
+      `virtual-did/appMsg/notify/iot/${update.did}/property/${instance}`,
       encodeMipsMessage({id: 1, payload: JSON.stringify(update)}),
     );
   }
 
-  notifyEvent(update: {
-    readonly did: string;
-    readonly siid: number | string;
-    readonly eiid: number | string;
-    readonly arguments?: readonly unknown[];
-  }): void {
+  notifyEvent(
+    update: {
+      readonly did: string;
+      readonly siid?: number | string;
+      readonly eiid?: number | string;
+      readonly arguments?: readonly unknown[];
+    },
+    instance = `${update.siid}.${update.eiid}`,
+  ): void {
     this.emit(
       'message',
-      `virtual-did/appMsg/notify/iot/${update.did}/event/${update.siid}.${update.eiid}`,
+      `virtual-did/appMsg/notify/iot/${update.did}/event/${instance}`,
       encodeMipsMessage({id: 1, payload: JSON.stringify(update)}),
     );
   }

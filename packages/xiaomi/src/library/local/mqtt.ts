@@ -873,16 +873,22 @@ export class LocalMqttClient extends MiotEndpointConnectionTransport {
       message.did,
       'local property notification DID',
     );
-    const siid = requireNotificationIdentifier(
+    const [siid, piid] = requireNotificationInstance(
+      instance,
+      'local property notification',
+    );
+    assertOptionalNotificationIdentifier(
       message.siid,
+      siid,
       'local property notification SIID',
     );
-    const piid = requireNotificationIdentifier(
+    assertOptionalNotificationIdentifier(
       message.piid,
+      piid,
       'local property notification PIID',
     );
 
-    if (messageDid !== did || instance !== `${siid}.${piid}`) {
+    if (messageDid !== did) {
       throw new LocalMqttProtocolError(
         'Local property notification does not match its topic.',
       );
@@ -929,16 +935,22 @@ export class LocalMqttClient extends MiotEndpointConnectionTransport {
       message.did,
       'local event notification DID',
     );
-    const siid = requireNotificationIdentifier(
+    const [siid, eiid] = requireNotificationInstance(
+      instance,
+      'local event notification',
+    );
+    assertOptionalNotificationIdentifier(
       message.siid,
+      siid,
       'local event notification SIID',
     );
-    const eiid = requireNotificationIdentifier(
+    assertOptionalNotificationIdentifier(
       message.eiid,
+      eiid,
       'local event notification EIID',
     );
 
-    if (messageDid !== did || instance !== `${siid}.${eiid}`) {
+    if (messageDid !== did) {
       throw new LocalMqttProtocolError(
         'Local event notification does not match its topic.',
       );
@@ -1397,6 +1409,35 @@ function requireNotificationIdentifier(value: unknown, name: string): number {
   throw new LocalMqttProtocolError(
     `${name} is not a positive integer identifier (${value === null ? 'null' : typeof value}).`,
   );
+}
+
+function requireNotificationInstance(
+  instance: string,
+  name: string,
+): readonly [number, number] {
+  const match = /^([1-9]\d*)\.([1-9]\d*)$/u.exec(instance);
+
+  if (match === null) {
+    throw new LocalMqttProtocolError(`${name} topic has an invalid instance.`);
+  }
+
+  return [
+    requireNotificationIdentifier(match[1], `${name} topic SIID`),
+    requireNotificationIdentifier(match[2], `${name} topic IID`),
+  ];
+}
+
+function assertOptionalNotificationIdentifier(
+  value: unknown,
+  expected: number,
+  name: string,
+): void {
+  if (
+    value !== undefined &&
+    requireNotificationIdentifier(value, name) !== expected
+  ) {
+    throw new LocalMqttProtocolError(`${name} does not match its topic.`);
+  }
 }
 
 function requireString(value: unknown, name: string): string {
