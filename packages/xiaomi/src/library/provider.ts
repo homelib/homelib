@@ -18,6 +18,7 @@ import type {CloudServer} from './backend/index.js';
 import {BackendClient} from './backend/index.js';
 import {CloudClient} from './cloud/client.js';
 import type {CloudDeviceSubscription} from './cloud/device.js';
+import {CloudMqttClient} from './cloud/mqtt.js';
 import {MiotEndpointConnectionCloudTransport} from './cloud/transport.js';
 import {
   MiotProviderConfiguration,
@@ -32,6 +33,11 @@ import {
   getMiotEndpointConnectionResourceKeys,
   normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
+import {
+  LocalController,
+  type LocalControllerDiscovery,
+  RoutedDeviceMessageClient,
+} from './local/index.js';
 import type {MiotProperty} from './miot/index.js';
 import {OAuthSessionManager} from './session-manager.js';
 import {
@@ -87,20 +93,33 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
 
   private readonly oauthUuidPath: string;
 
+  private readonly localCertificateDirectory: string;
+
+  private readonly providerDirectory: string;
+
   private readonly sessionManager: OAuthSessionManager;
 
   constructor(name: string) {
     super(name);
 
     const environmentDirectory = getEnvironmentDirectory();
-    const providerDirectory = join(
+    this.providerDirectory = join(
       environmentDirectory,
       'providers',
       MIOT_NAMESPACE,
     );
 
-    this.sessionPath = join(providerDirectory, `${name}.json`);
-    this.oauthUuidPath = join(providerDirectory, 'identity', `${name}.json`);
+    this.sessionPath = join(this.providerDirectory, `${name}.json`);
+    this.oauthUuidPath = join(
+      this.providerDirectory,
+      'identity',
+      `${name}.json`,
+    );
+    this.localCertificateDirectory = join(
+      this.providerDirectory,
+      'certificates',
+      name,
+    );
     this.sessionManager = new OAuthSessionManager({
       sessionPath: this.sessionPath,
       applyAccessToken: accessToken => {
@@ -164,11 +183,12 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
 
     try {
       cloud = await this.getCloud();
+      await cloud.client.connect();
       const {connection, binding} = endpointAdapter.createBinding(
         this,
         endpoint,
         metadata,
-        [cloud.transport],
+        [cloud.localController, cloud.transport],
         value => this.disposeEndpointConnection(value),
       );
       const stateProperties = connection.stateProperties;
@@ -245,13 +265,59 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     this.assertAuthorizationGeneration(authorizationGeneration);
 
     const backendClient = createBackendClient(session);
+    const localController = new LocalController({
+      session,
+      backendClient,
+      certificateDirectory: this.localCertificateDirectory,
+      loadDiscovery: () => this.loadLocalControllerDiscovery(),
+    });
+    const cloudMqttClient = new CloudMqttClient({
+      uuid: backendClient.uuid,
+      accessToken: backendClient.accessToken,
+      cloudServer: backendClient.cloudServer,
+    });
+    const messageClient = new RoutedDeviceMessageClient(
+      cloudMqttClient,
+      localController,
+    );
     const cloud = {
-      client: new CloudClient(backendClient),
+      client: new CloudClient(backendClient, messageClient, localController),
+      localController,
       transport: new MiotEndpointConnectionCloudTransport(backendClient),
     };
 
     this.cloudValue = cloud;
     return cloud;
+  }
+
+  private async loadLocalControllerDiscovery(): Promise<LocalControllerDiscovery> {
+    const discovery = await this.configuration.discoverDevices();
+
+    if (discovery === undefined || discovery.account.userId === null) {
+      return {candidates: []};
+    }
+
+    const candidates = discovery.devices.flatMap(device => {
+      if (
+        device.source !== 'owned' ||
+        device.homeId === undefined ||
+        device.homeName === undefined ||
+        !isCentralGatewayCandidateModel(device.model) ||
+        !isUnsignedDecimal(device.did)
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          did: device.did,
+          homeId: device.homeId,
+          homeName: device.homeName,
+        },
+      ];
+    });
+
+    return {userId: discovery.account.userId, candidates};
   }
 
   private async discoverConfigurationDevices(): Promise<
@@ -384,6 +450,15 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
   }
 
   private forgetConfigurationAuthorization(): Promise<void> {
+    if (
+      this.cloudPromise !== undefined ||
+      this.endpointConnectionValues.length > 0
+    ) {
+      throw new Error(
+        'Cannot forget a MIoT provider after its connections have started.',
+      );
+    }
+
     let forgetPromise = this.forgetAuthorizationPromise;
 
     if (forgetPromise === undefined) {
@@ -427,6 +502,10 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
       }
 
       await rm(this.sessionPath, {force: true});
+      await rm(this.localCertificateDirectory, {
+        recursive: true,
+        force: true,
+      });
     } finally {
       if (this.authorizationGeneration === generation) {
         this.authorizationInProgress = false;
@@ -614,6 +693,7 @@ export const $xiaomi = $constructor(MiotProvider)
 
 type MiotProviderCloud = {
   readonly client: CloudClient;
+  readonly localController: LocalController;
   readonly transport: MiotEndpointConnectionCloudTransport;
 };
 
@@ -633,4 +713,19 @@ function createBackendClient(session: OAuthSession): BackendClient {
     accessToken: session.token.accessToken,
     cloudServer: session.cloudServer,
   });
+}
+
+function isUnsignedDecimal(value: string): boolean {
+  return /^(?:0|[1-9]\d*)$/u.test(value);
+}
+
+function isCentralGatewayCandidateModel(model: string | undefined): boolean {
+  return (
+    model
+      ?.split('.')
+      .some(
+        part =>
+          part === 'controller' || part === 'gateway' || part === 'router',
+      ) ?? false
+  );
 }

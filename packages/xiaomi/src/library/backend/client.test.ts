@@ -177,6 +177,49 @@ test('gets and sets properties', async () => {
   }
 });
 
+test('requests a central certificate with a base64 encoded CSR', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody: Record<string, unknown> | undefined;
+
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return jsonResponse({cert: 'signed-certificate'});
+  };
+
+  try {
+    const client = new BackendClient({
+      uuid: 'test-uuid',
+      accessToken: 'test-access-token',
+    });
+
+    await expect(
+      client.getCentralCertificate('certificate-request'),
+    ).resolves.toBe('signed-certificate');
+    expect(requestBody).toEqual({
+      csr: Buffer.from('certificate-request').toString('base64'),
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('rejects an invalid central certificate response', async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => jsonResponse({});
+
+  try {
+    await expect(
+      new BackendClient({
+        uuid: 'test-uuid',
+        accessToken: 'test-access-token',
+      }).getCentralCertificate('certificate-request'),
+    ).rejects.toThrow('Cloud API returned an invalid central certificate.');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('gets a device online state with an exact device query', async () => {
   const originalFetch = globalThis.fetch;
   const requests: Record<string, unknown>[] = [];

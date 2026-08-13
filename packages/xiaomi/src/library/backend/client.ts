@@ -101,6 +101,7 @@ export class BackendClient {
           id: home.id,
           name: home.name,
           source: home.source,
+          userId: home.userId,
           rooms: [...home.rooms.values()].sort(compareNames),
         }))
         .sort(compareNames),
@@ -142,6 +143,22 @@ export class BackendClient {
     });
 
     return x.array(BackendPropertyResultValue).satisfies(result);
+  }
+
+  async getCentralCertificate(certificateRequest: string): Promise<string> {
+    const result = requireRecord(
+      await this.post('/app/v2/ha/oauth/get_central_crt', {
+        csr: Buffer.from(certificateRequest).toString('base64'),
+      }),
+      'central certificate result',
+    );
+    const certificate = readString(result.cert);
+
+    if (certificate === undefined) {
+      throw new Error('Cloud API returned an invalid central certificate.');
+    }
+
+    return certificate;
   }
 
   private async getHomes(): Promise<HomeDiscovery> {
@@ -363,6 +380,7 @@ export type BackendHome = {
   readonly id: string;
   readonly name: string;
   readonly source: BackendHomeSource;
+  readonly userId?: string;
   readonly rooms: readonly BackendRoom[];
 };
 

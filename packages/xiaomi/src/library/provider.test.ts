@@ -333,7 +333,8 @@ test('releases an acquired cloud when binding creation fails', async () => {
 });
 
 type TestCloud = {
-  readonly client: {disconnect(): Promise<void>};
+  readonly client: {connect(): Promise<void>; disconnect(): Promise<void>};
+  readonly localController: {};
   readonly transport: {};
 };
 
@@ -369,7 +370,11 @@ function getProviderCleanupInternals(
 }
 
 function createTestCloud(disconnect: () => Promise<void>): TestCloud {
-  return {client: {disconnect}, transport: {}};
+  return {
+    client: {connect: async () => undefined, disconnect},
+    localController: {},
+    transport: {},
+  };
 }
 
 function createDeferred<T>(): {

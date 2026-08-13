@@ -29,32 +29,9 @@ await http.setProp(did, 2, 1, true); // 开灯
 
 ### 2. 中枢网关本地控制（mTLS MQTT）
 
-通过局域网内的中枢网关控制设备，不经过小米云。支持独立网关和路由器内置网关。
+中国大陆账号的 MIoT provider 会自动启用本地 MQTT：复用已缓存的完整设备列表，通过 mDNS 与局域网探测发现中枢，自动签发并轮换 mTLS 证书，再按设备能力动态选择本地或云端路由。属性快照、属性通知和事件通知优先使用可用的本地链路；本地控制请求在发布前不可路由时才安全回退到云端。
 
-```typescript
-import {
-  XiaomiLocalMqttClient,
-  XiaomiCertManager,
-  discoverGatewaysWithFallback,
-} from '@homelib/xiaomi';
-
-// 自动发现网关（mDNS → 子网扫描）
-const gateways = await discoverGatewaysWithFallback([gatewayDid]);
-const gw = gateways[0];
-
-// 连接网关
-const local = new XiaomiLocalMqttClient({
-  did: virtualDid,
-  host: gw.address,
-  port: gw.port, // 8883 或 18883
-  caFile,
-  certFile,
-  keyFile,
-});
-
-await local.connect();
-await local.setProp(did, 2, 1, true); // 开灯（本地）
-```
+支持独立网关、路由器内置网关和中枢控制器。证书按 provider 隔离保存在 homelib 私有目录中，无需脚本管理。
 
 ### 3. LAN 直连控制（UDP OT 协议）
 

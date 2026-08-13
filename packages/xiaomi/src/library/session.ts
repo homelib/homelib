@@ -19,6 +19,7 @@ const OAUTH_SESSION_REFRESH_PROMISE_MAP = new Map<
   string,
   Promise<OAuthSession>
 >();
+const OAUTH_SESSION_LOAD_PROMISE_MAP = new Map<string, Promise<OAuthSession>>();
 const OAUTH_UUID_PROMISE_MAP = new Map<string, Promise<string>>();
 
 const OAuthTokenValue = x.object({
@@ -36,9 +37,30 @@ const OAuthSessionValue = x.object({
   token: OAuthTokenValue,
 });
 
-export async function loadValidOAuthSession(
-  path: string,
-): Promise<OAuthSession> {
+export function loadValidOAuthSession(path: string): Promise<OAuthSession> {
+  let promise = OAUTH_SESSION_LOAD_PROMISE_MAP.get(path);
+
+  if (promise === undefined) {
+    promise = loadValidOAuthSessionValue(path);
+    OAUTH_SESSION_LOAD_PROMISE_MAP.set(path, promise);
+    void promise.then(
+      () => {
+        if (OAUTH_SESSION_LOAD_PROMISE_MAP.get(path) === promise) {
+          OAUTH_SESSION_LOAD_PROMISE_MAP.delete(path);
+        }
+      },
+      () => {
+        if (OAUTH_SESSION_LOAD_PROMISE_MAP.get(path) === promise) {
+          OAUTH_SESSION_LOAD_PROMISE_MAP.delete(path);
+        }
+      },
+    );
+  }
+
+  return promise;
+}
+
+async function loadValidOAuthSessionValue(path: string): Promise<OAuthSession> {
   const session = await readOAuthSession(path);
   const expiresAt = Date.parse(session.expiresAt);
 

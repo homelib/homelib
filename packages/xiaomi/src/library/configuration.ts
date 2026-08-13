@@ -57,6 +57,7 @@ const BackendHomeValue = x.object({
   id: x.string,
   name: x.string,
   source: HomeSourceValue,
+  userId: x.string.optional(),
   rooms: x.array(BackendRoomValue),
 });
 

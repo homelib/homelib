@@ -5,9 +5,15 @@
 import {XiaomiLanClient} from '../library/miot-exp/index.js';
 
 async function main(): Promise<void> {
+  const token = process.env.MIOT_LAN_TEST_TOKEN;
+
+  if (token === undefined) {
+    throw new Error('MIOT_LAN_TEST_TOKEN is required.');
+  }
+
   const lan = new XiaomiLanClient({
     did: '358499433',
-    token: '19f9532d44f64c45e7d6953647fd493e',
+    token,
     ip: '192.168.31.115',
   });
 

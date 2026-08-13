@@ -158,22 +158,31 @@ export abstract class MiotEndpointConnection<
   }
 
   protected async executeRequest(request: MiotExecutionRequest): Promise<void> {
-    const [transport] = this.transports;
-    let result: MiotExecutionResult;
+    let lastUnavailableError:
+      MiotEndpointConnectionTransportUnavailableError | undefined;
 
-    try {
-      result = await transport.executeRequest(request);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? `MIoT transport failed: ${error.message}`
-          : 'MIoT transport failed.';
-      throw new EndpointConnectionError(message);
+    for (const transport of this.transports) {
+      let result: MiotExecutionResult;
+
+      try {
+        result = await transport.executeRequest(request);
+      } catch (error) {
+        if (error instanceof MiotEndpointConnectionTransportUnavailableError) {
+          lastUnavailableError = error;
+          continue;
+        }
+
+        throw createMiotEndpointConnectionTransportError(error);
+      }
+
+      if (!isSuccessfulMiotExecutionResult(result)) {
+        throw new CommandError(`MIoT request failed: ${result.code}.`);
+      }
+
+      return;
     }
 
-    if (!isSuccessfulMiotExecutionResult(result)) {
-      throw new CommandError(`MIoT request failed: ${result.code}.`);
-    }
+    throw createMiotEndpointConnectionTransportError(lastUnavailableError);
   }
 
   private prepareStateUpdates(
@@ -243,6 +252,20 @@ export abstract class MiotEndpointConnectionTransport {
   abstract executeRequest(
     request: MiotExecutionRequest,
   ): Promise<MiotExecutionResult>;
+}
+
+/**
+ * Signals that a transport could not route a request before publishing it.
+ *
+ * A transport must not throw this error after the request may have been sent,
+ * because endpoint connections use it as the only safe signal to try the next
+ * transport.
+ */
+export class MiotEndpointConnectionTransportUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = new.target.name;
+  }
 }
 
 export type MiotEndpointConnectionTransports = readonly [
@@ -383,6 +406,16 @@ function getMiotEndpointPropertyCount(
   return metadata.resources.reduce((count, resource) => {
     return count + Object.keys(resource.properties).length;
   }, 0);
+}
+
+function createMiotEndpointConnectionTransportError(
+  error: unknown,
+): EndpointConnectionError {
+  const message =
+    error instanceof Error
+      ? `MIoT transport failed: ${error.message}`
+      : 'MIoT transport failed.';
+  return new EndpointConnectionError(message);
 }
 
 function assertMiotPropertyValue(

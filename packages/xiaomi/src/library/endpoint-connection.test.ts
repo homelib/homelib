@@ -1,6 +1,8 @@
 import {
+  CommandError,
   DeviceEntry,
   type EndpointConnection,
+  EndpointConnectionError,
   Light,
   LightEndpoint,
   type LightEndpointCommand,
@@ -23,6 +25,7 @@ import {
   type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionResolvedResource,
   MiotEndpointConnectionTransport,
+  MiotEndpointConnectionTransportUnavailableError,
   createMiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionProperty,
   getMiotEndpointConnectionResourceKeys,
@@ -485,6 +488,93 @@ test('translates light commands to MIoT requests', async () => {
       true,
     ),
   ]);
+});
+
+test('falls back when a transport is unavailable before publishing', async () => {
+  const unavailableTransport = new TestTransport(() => {
+    throw new MiotEndpointConnectionTransportUnavailableError(
+      'Local route unavailable.',
+    );
+  });
+  const fallbackTransport = new TestTransport();
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_METADATA,
+    [unavailableTransport, fallbackTransport],
+  );
+
+  await connection.processCommand(new SetLightOnCommand(true));
+
+  expect(unavailableTransport.requests).toHaveLength(1);
+  expect(fallbackTransport.requests).toEqual(unavailableTransport.requests);
+});
+
+test('does not fall back after an unexpected transport failure', async () => {
+  const failedTransport = new TestTransport(() => {
+    throw new Error('Connection lost after publishing.');
+  });
+  const fallbackTransport = new TestTransport();
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_METADATA,
+    [failedTransport, fallbackTransport],
+  );
+
+  await expect(
+    connection.processCommand(new SetLightOnCommand(true)),
+  ).rejects.toEqual(
+    expect.objectContaining({
+      name: EndpointConnectionError.name,
+      message: 'MIoT transport failed: Connection lost after publishing.',
+    }),
+  );
+  expect(failedTransport.requests).toHaveLength(1);
+  expect(fallbackTransport.requests).toEqual([]);
+});
+
+test('treats a transport result as definitive without falling back', async () => {
+  const rejectedTransport = new TestTransport(() => ({code: -1}));
+  const fallbackTransport = new TestTransport();
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_METADATA,
+    [rejectedTransport, fallbackTransport],
+  );
+
+  await expect(
+    connection.processCommand(new SetLightOnCommand(true)),
+  ).rejects.toBeInstanceOf(CommandError);
+  expect(rejectedTransport.requests).toHaveLength(1);
+  expect(fallbackTransport.requests).toEqual([]);
+});
+
+test('reports an endpoint connection error when every transport is unavailable', async () => {
+  const firstTransport = new TestTransport(() => {
+    throw new MiotEndpointConnectionTransportUnavailableError(
+      'First route unavailable.',
+    );
+  });
+  const secondTransport = new TestTransport(() => {
+    throw new MiotEndpointConnectionTransportUnavailableError(
+      'Second route unavailable.',
+    );
+  });
+  const connection = new MiotLightEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_METADATA,
+    [firstTransport, secondTransport],
+  );
+
+  await expect(
+    connection.processCommand(new SetLightOnCommand(true)),
+  ).rejects.toEqual(
+    expect.objectContaining({
+      name: EndpointConnectionError.name,
+      message: 'MIoT transport failed: Second route unavailable.',
+    }),
+  );
+  expect(firstTransport.requests).toHaveLength(1);
+  expect(secondTransport.requests).toHaveLength(1);
 });
 
 test('normalizes brightness requests against the raw maximum', async () => {
@@ -987,11 +1077,19 @@ function createMultiResourceConnection(): TestMultiResourceEndpointConnection {
 class TestTransport extends MiotEndpointConnectionTransport {
   readonly requests: MiotExecutionRequest[] = [];
 
+  constructor(
+    private readonly executor: (
+      request: MiotExecutionRequest,
+    ) => MiotExecutionResult | Promise<MiotExecutionResult> = () => ({code: 0}),
+  ) {
+    super();
+  }
+
   override async executeRequest(
     request: MiotExecutionRequest,
   ): Promise<MiotExecutionResult> {
     this.requests.push(request);
-    return {code: 0};
+    return this.executor(request);
   }
 }
 
