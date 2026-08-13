@@ -4,6 +4,7 @@ export default {
     'packages/core',
     'packages/terminal',
     'packages/web',
+    'packages/utils',
     'packages/xiaomi',
   ],
 };

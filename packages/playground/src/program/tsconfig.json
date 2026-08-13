@@ -13,6 +13,9 @@
       "path": "../../../core/src/exports"
     },
     {
+      "path": "../../../utils/src/library"
+    },
+    {
       "path": "../../../xiaomi/src/library"
     }
   ]

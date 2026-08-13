@@ -6,6 +6,7 @@ export default defineConfig([
     'packages/core/bld/',
     'packages/terminal/bld/',
     'packages/web/bld/',
+    'packages/utils/bld/',
     'packages/xiaomi/bld/',
     'packages/playground/bld/',
   ]),
@@ -77,6 +78,22 @@ export default defineConfig([
   },
   {
     files: ['packages/web/src/library/**/*.test.{ts,tsx}'],
+    extends: [configs.dev],
+  },
+  // packages/utils/src/library
+  {
+    files: ['packages/utils/src/library/**/*.{ts,tsx}'],
+    plugins: {'@mufan': mufan},
+    extends: [configs.typescript],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
+    files: ['packages/utils/src/library/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
   },
   // packages/xiaomi/src/library
