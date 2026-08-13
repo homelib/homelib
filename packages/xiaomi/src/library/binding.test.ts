@@ -12,6 +12,7 @@ import {
   discoverMiotBindingDevices,
   resolveMiotBindingDeviceProposal,
 } from './binding.js';
+import {miotLightEndpointAdapter} from './devices/index.js';
 import {
   MiotEndpointConnectionMetadata,
   getMiotEndpointConnectionResourceKeys,
@@ -72,6 +73,58 @@ test('discovers physical devices and matches for a logical endpoint', async () =
   expect(
     discovery.devices[0]?.endpoints[0]?.matches[0]?.metadata.resources[0],
   ).not.toHaveProperty('properties');
+});
+
+test('matches devices without a model when a spec type is available', async () => {
+  const endpoint = createLogicalLightEndpoint();
+  let getInstanceCallCount = 0;
+  const provider = {
+    configuration: {
+      discoverDevices: async () => ({
+        account: {cloudServer: 'cn' as const, userId: 'user'},
+        homes: [],
+        devices: [
+          {
+            did: 'without-model',
+            name: 'model-less light',
+            specType: LIGHT_SPEC.type,
+          },
+          {
+            did: 'without-spec-type',
+            name: 'incomplete light',
+            model: 'test.light',
+          },
+        ],
+      }),
+    },
+  };
+  const discovery = await discoverMiotBindingDevices(provider, [endpoint], {
+    getInstance: async () => {
+      getInstanceCallCount++;
+      return LIGHT_SPEC;
+    },
+  });
+  const [device] = discovery.devices;
+  const metadata = device?.endpoints[0]?.matches[0]?.metadata;
+
+  expect(getInstanceCallCount).toBe(1);
+  expect(discovery.failedDeviceCount).toBe(0);
+  expect(discovery.incompleteDeviceCount).toBe(1);
+  expect(discovery.devices).toHaveLength(1);
+  expect(device?.device.did).toBe('without-model');
+  expect(metadata?.device).toMatchObject({
+    did: 'without-model',
+    urn: LIGHT_SPEC.type,
+  });
+  expect(metadata?.device.model).toBeUndefined();
+
+  if (metadata === undefined) {
+    throw new Error('Model-less device has no MIoT match.');
+  }
+
+  expect(() =>
+    miotLightEndpointAdapter.resolveMetadata(metadata),
+  ).not.toThrow();
 });
 
 test('distinguishes missing authorization from no compatible devices', async () => {

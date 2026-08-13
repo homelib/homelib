@@ -28,7 +28,7 @@ export const MiotEndpointConnectionMetadata = x
   .object({
     device: x.object({
       did: x.string,
-      model: x.string,
+      model: x.string.optional(),
       urn: x.string,
     }),
     resources: x.array(MiotEndpointConnectionResource),

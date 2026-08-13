@@ -32,7 +32,7 @@ export async function discoverMiotBindingDevices(
   const specTypeSet = new Set<string>();
 
   for (const device of discovery.devices) {
-    if (device.model !== undefined && device.specType !== undefined) {
+    if (device.specType !== undefined) {
       specTypeSet.add(device.specType);
     }
   }
@@ -47,7 +47,7 @@ export async function discoverMiotBindingDevices(
   let incompleteDeviceCount = 0;
 
   for (const device of discovery.devices) {
-    if (device.model === undefined || device.specType === undefined) {
+    if (device.specType === undefined) {
       incompleteDeviceCount++;
       continue;
     }
@@ -60,7 +60,7 @@ export async function discoverMiotBindingDevices(
     }
 
     const candidate = createBindingDeviceCandidate(
-      {...device, model: device.model, specType: device.specType},
+      {...device, specType: device.specType},
       spec,
       endpoints,
     );
@@ -380,7 +380,7 @@ export function resolveMiotBindingDeviceProposal(
 }
 
 function createBindingDeviceCandidate(
-  device: BackendDevice & {readonly model: string; readonly specType: string},
+  device: BackendDevice & {readonly specType: string},
   spec: MiotSpecInstance,
   endpoints: readonly ProviderBindingEndpoint[],
 ): MiotBindingDeviceCandidate | undefined {
@@ -401,7 +401,7 @@ function createBindingDeviceCandidate(
 }
 
 function createBindingMatchCandidates(
-  device: BackendDevice & {readonly model: string},
+  device: BackendDevice,
   spec: MiotSpecInstance,
   endpoint: ProviderBindingEndpoint,
 ): readonly MiotBindingMatchCandidate[] {

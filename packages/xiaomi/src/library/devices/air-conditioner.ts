@@ -73,48 +73,69 @@ const MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER: MiotAirConditionerEndpointMatcher =
     },
   };
 
-const MIOT_AIR_CONDITIONER_FALLBACK_ENDPOINT_MATCHER: MiotAirConditionerEndpointMatcher =
-  {
-    service: 'urn:miot-spec-v2:service:air-conditioner:0000780F',
-    properties: {
-      on: {
-        type: 'urn:miot-spec-v2:property:on:00000006',
-        format: 'bool',
-        access: ['read', 'write', 'notify'],
-      },
-    },
-  };
+const MIOT_AIR_CONDITIONER_TEMPERATURE_MATCHER = {
+  type: 'urn:miot-spec-v2:property:temperature:00000020',
+  format: 'float',
+  access: ['read', 'notify'],
+  unit: 'celsius',
+  valueRange: true,
+} as const satisfies MiotPropertyMatcher;
 
-const MIOT_AIR_CONDITIONER_ENVIRONMENT_MATCHER: MiotEnvironmentEndpointMatcher =
-  {
-    service: 'urn:miot-spec-v2:service:environment:0000780A',
-    properties: {
-      temperature: {
-        type: 'urn:miot-spec-v2:property:temperature:00000020',
-        format: 'float',
-        access: ['read', 'notify'],
-        unit: 'celsius',
-        valueRange: true,
-      },
-      humidity: {
-        type: 'urn:miot-spec-v2:property:relative-humidity:0000000C',
-        format: 'uint8',
-        access: ['read', 'notify'],
-        unit: 'percentage',
-        valueRange: true,
-      },
-    },
-  };
+const MIOT_AIR_CONDITIONER_HUMIDITY_MATCHER = {
+  type: 'urn:miot-spec-v2:property:relative-humidity:0000000C',
+  format: 'uint8',
+  access: ['read', 'notify'],
+  unit: 'percentage',
+  valueRange: true,
+} as const satisfies MiotPropertyMatcher;
+
+const MIOT_AIR_CONDITIONER_ENVIRONMENT_MATCHER = {
+  service: 'urn:miot-spec-v2:service:environment:0000780A',
+  properties: {
+    temperature: MIOT_AIR_CONDITIONER_TEMPERATURE_MATCHER,
+    humidity: MIOT_AIR_CONDITIONER_HUMIDITY_MATCHER,
+  },
+};
+
+const MIOT_AIR_CONDITIONER_TEMPERATURE_ENVIRONMENT_MATCHER = {
+  service: 'urn:miot-spec-v2:service:environment:0000780A',
+  properties: {temperature: MIOT_AIR_CONDITIONER_TEMPERATURE_MATCHER},
+  optionalProperties: {humidity: MIOT_AIR_CONDITIONER_HUMIDITY_MATCHER},
+};
+
+const MIOT_AIR_CONDITIONER_HUMIDITY_ENVIRONMENT_MATCHER = {
+  service: 'urn:miot-spec-v2:service:environment:0000780A',
+  properties: {humidity: MIOT_AIR_CONDITIONER_HUMIDITY_MATCHER},
+  optionalProperties: {temperature: MIOT_AIR_CONDITIONER_TEMPERATURE_MATCHER},
+};
 
 const MIOT_AIR_CONDITIONER_ENDPOINT_PROFILES = [
   {
-    device: 'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00:3',
     services: [
       MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER,
       MIOT_AIR_CONDITIONER_ENVIRONMENT_MATCHER,
     ],
   },
-  {services: [MIOT_AIR_CONDITIONER_FALLBACK_ENDPOINT_MATCHER]},
+  {
+    services: [
+      MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER,
+      MIOT_AIR_CONDITIONER_TEMPERATURE_ENVIRONMENT_MATCHER,
+      MIOT_AIR_CONDITIONER_HUMIDITY_ENVIRONMENT_MATCHER,
+    ],
+  },
+  {
+    services: [
+      MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER,
+      MIOT_AIR_CONDITIONER_TEMPERATURE_ENVIRONMENT_MATCHER,
+    ],
+  },
+  {
+    services: [
+      MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER,
+      MIOT_AIR_CONDITIONER_HUMIDITY_ENVIRONMENT_MATCHER,
+    ],
+  },
+  {services: [MIOT_AIR_CONDITIONER_ENDPOINT_MATCHER]},
 ] as const satisfies readonly MiotEndpointProfile[];
 
 export class MiotAirConditionerEndpointConnection
@@ -301,14 +322,6 @@ type MiotAirConditionerEndpointProperties = {
   readonly temperature?: MiotSpecProperty;
   readonly humidity?: MiotSpecProperty;
 };
-
-type MiotEnvironmentEndpointMatcher = Omit<
-  MiotEndpointMatcher<{
-    readonly temperature: MiotPropertyMatcher;
-    readonly humidity: MiotPropertyMatcher;
-  }>,
-  'device'
->;
 
 function createMiotAirConditionerRequest(
   command: AirConditionerEndpointCommand,

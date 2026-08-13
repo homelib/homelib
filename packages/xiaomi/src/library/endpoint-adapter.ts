@@ -49,7 +49,7 @@ export type MiotEndpointAdapter = {
 
 export type MiotEndpointAdapterDevice = {
   readonly did: string;
-  readonly model: string;
+  readonly model?: string;
 };
 
 export type MiotEndpointMetadataCandidate = {
@@ -64,7 +64,6 @@ export type MiotEndpointAdapterBinding = {
 };
 
 export type MiotEndpointProfile = {
-  readonly device?: string | readonly string[];
   /** Required peer services. Their order has no matching or ownership meaning. */
   readonly services: readonly [
     MiotEndpointServiceMatcher,
@@ -227,7 +226,7 @@ export function resolveMiotEndpointConnectionMetadata(
 ): MiotEndpointConnectionResolvedMetadata {
   const spec: MiotSpecInstance = {
     type: metadata.device.urn,
-    description: metadata.device.model,
+    description: metadata.device.model ?? metadata.device.urn,
     services: metadata.resources.map(resource => resource.service),
   };
   const matchedResources = resolveMiotEndpointProfileCandidates(
@@ -263,20 +262,11 @@ function resolveMiotEndpointProfileCandidates(
   spec: MiotSpecInstance,
   profiles: readonly MiotEndpointProfile[],
 ): readonly (readonly MiotEndpointConnectionResolvedResource[])[] {
-  const deviceProfiles = profiles.filter(
-    profile =>
-      profile.device !== undefined &&
-      matchesMiotType(spec.type, profile.device),
-  );
-  const applicableProfiles =
-    deviceProfiles.length === 0
-      ? profiles.filter(profile => profile.device === undefined)
-      : deviceProfiles;
   const candidates: MiotEndpointConnectionResolvedResource[][] = [];
   const claimedServiceIidSet = new Set<number>();
   const candidateKeySet = new Set<string>();
 
-  for (const profile of applicableProfiles) {
+  for (const profile of profiles) {
     const profileCandidates = resolveMiotEndpointProfile(spec, profile).filter(
       resources => {
         const key = getPhysicalResourceCombinationKey(resources);
@@ -379,17 +369,6 @@ function hasUniqueMiotEndpointAliases(
   }
 
   return true;
-}
-
-function matchesMiotType(
-  actual: string,
-  expected: string | readonly string[],
-): boolean {
-  if (typeof expected === 'string') {
-    return actual === expected || actual.startsWith(`${expected}:`);
-  }
-
-  return expected.some(type => matchesMiotType(actual, type));
 }
 
 type MiotEndpointConstructor = abstract new (

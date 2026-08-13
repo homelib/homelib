@@ -64,47 +64,69 @@ const MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER: MiotDehumidifierEndpointMatcher = {
   },
 };
 
-const MIOT_DEHUMIDIFIER_FALLBACK_ENDPOINT_MATCHER: MiotDehumidifierEndpointMatcher =
-  {
-    service: 'urn:miot-spec-v2:service:dehumidifier:00007841',
-    properties: {
-      on: {
-        type: 'urn:miot-spec-v2:property:on:00000006',
-        format: 'bool',
-        access: ['read', 'write', 'notify'],
-      },
-    },
-  };
+const MIOT_DEHUMIDIFIER_TEMPERATURE_MATCHER = {
+  type: 'urn:miot-spec-v2:property:temperature:00000020',
+  format: 'float',
+  access: ['read', 'notify'],
+  unit: 'celsius',
+  valueRange: true,
+} as const satisfies MiotPropertyMatcher;
 
-const MIOT_DEHUMIDIFIER_ENVIRONMENT_MATCHER: MiotEnvironmentEndpointMatcher = {
+const MIOT_DEHUMIDIFIER_HUMIDITY_MATCHER = {
+  type: 'urn:miot-spec-v2:property:relative-humidity:0000000C',
+  format: 'uint8',
+  access: ['read', 'notify'],
+  unit: 'percentage',
+  valueRange: true,
+} as const satisfies MiotPropertyMatcher;
+
+const MIOT_DEHUMIDIFIER_ENVIRONMENT_MATCHER = {
   service: 'urn:miot-spec-v2:service:environment:0000780A',
   properties: {
-    temperature: {
-      type: 'urn:miot-spec-v2:property:temperature:00000020',
-      format: 'float',
-      access: ['read', 'notify'],
-      unit: 'celsius',
-      valueRange: true,
-    },
-    humidity: {
-      type: 'urn:miot-spec-v2:property:relative-humidity:0000000C',
-      format: 'uint8',
-      access: ['read', 'notify'],
-      unit: 'percentage',
-      valueRange: true,
-    },
+    temperature: MIOT_DEHUMIDIFIER_TEMPERATURE_MATCHER,
+    humidity: MIOT_DEHUMIDIFIER_HUMIDITY_MATCHER,
   },
+};
+
+const MIOT_DEHUMIDIFIER_TEMPERATURE_ENVIRONMENT_MATCHER = {
+  service: 'urn:miot-spec-v2:service:environment:0000780A',
+  properties: {temperature: MIOT_DEHUMIDIFIER_TEMPERATURE_MATCHER},
+  optionalProperties: {humidity: MIOT_DEHUMIDIFIER_HUMIDITY_MATCHER},
+};
+
+const MIOT_DEHUMIDIFIER_HUMIDITY_ENVIRONMENT_MATCHER = {
+  service: 'urn:miot-spec-v2:service:environment:0000780A',
+  properties: {humidity: MIOT_DEHUMIDIFIER_HUMIDITY_MATCHER},
+  optionalProperties: {temperature: MIOT_DEHUMIDIFIER_TEMPERATURE_MATCHER},
 };
 
 const MIOT_DEHUMIDIFIER_ENDPOINT_PROFILES = [
   {
-    device: 'urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:1',
     services: [
       MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER,
       MIOT_DEHUMIDIFIER_ENVIRONMENT_MATCHER,
     ],
   },
-  {services: [MIOT_DEHUMIDIFIER_FALLBACK_ENDPOINT_MATCHER]},
+  {
+    services: [
+      MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER,
+      MIOT_DEHUMIDIFIER_TEMPERATURE_ENVIRONMENT_MATCHER,
+      MIOT_DEHUMIDIFIER_HUMIDITY_ENVIRONMENT_MATCHER,
+    ],
+  },
+  {
+    services: [
+      MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER,
+      MIOT_DEHUMIDIFIER_TEMPERATURE_ENVIRONMENT_MATCHER,
+    ],
+  },
+  {
+    services: [
+      MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER,
+      MIOT_DEHUMIDIFIER_HUMIDITY_ENVIRONMENT_MATCHER,
+    ],
+  },
+  {services: [MIOT_DEHUMIDIFIER_ENDPOINT_MATCHER]},
 ] as const satisfies readonly MiotEndpointProfile[];
 
 export class MiotDehumidifierEndpointConnection
@@ -265,14 +287,6 @@ type MiotDehumidifierEndpointProperties = {
   readonly temperature?: MiotSpecProperty;
   readonly humidity?: MiotSpecProperty;
 };
-
-type MiotEnvironmentEndpointMatcher = Omit<
-  MiotEndpointMatcher<{
-    readonly temperature: MiotPropertyMatcher;
-    readonly humidity: MiotPropertyMatcher;
-  }>,
-  'device'
->;
 
 function createMiotDehumidifierRequest(
   command: DehumidifierEndpointCommand,

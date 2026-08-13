@@ -72,7 +72,6 @@ const ENVIRONMENT_MATCHER = {
 
 const TEST_PROFILES = [
   {
-    device: DEVICE_TYPE,
     services: [RICH_LIGHT_MATCHER, ENVIRONMENT_MATCHER],
   },
   {services: [ON_MATCHER]},
@@ -204,21 +203,27 @@ test('compares value-list descriptions and value-range tuple positions', () => {
   ).toBe(false);
 });
 
-test('keeps known device profiles fail-closed when a service is missing', () => {
+test('falls back when a richer feature profile is incomplete', () => {
   const adapter = createProfileAdapter();
   const spec = createSpec();
   spec.services = spec.services.filter(service => service.iid !== 4);
 
-  expect(adapter.findMetadataCandidates(TEST_DEVICE, spec)).toEqual([]);
+  expect(
+    adapter
+      .findMetadataCandidates(TEST_DEVICE, spec)
+      .map(({metadata}) => metadata.resources.map(({service}) => service.iid)),
+  ).toEqual([[2]]);
 });
 
-test('uses generic fallback only when no device-specific profile applies', () => {
+test('matches richer features independently of the device type', () => {
   const adapter = createProfileAdapter();
   const spec = createSpec(UNKNOWN_DEVICE_TYPE);
-  spec.services = spec.services.filter(service => service.iid !== 4);
   const [candidate] = adapter.findMetadataCandidates(TEST_DEVICE, spec);
 
-  expect(candidate?.metadata.resources).toMatchObject([{service: {iid: 2}}]);
+  expect(candidate?.metadata.resources).toMatchObject([
+    {service: {iid: 2}},
+    {service: {iid: 4}},
+  ]);
 });
 
 test('higher-priority combinations suppress every overlapping fallback', () => {
@@ -271,15 +276,17 @@ test('preserves overlapping combinations from the same profile as ambiguity', ()
 test('rejects metadata whose resources are not fully reproduced by the resolver', () => {
   const adapter = createProfileAdapter();
   const metadata = requireCandidate(adapter, createSpec()).metadata;
-  const [lightResource] = metadata.resources;
+  const environmentResource = metadata.resources.find(
+    resource => resource.service.iid === 4,
+  );
 
-  if (lightResource === undefined) {
+  if (environmentResource === undefined) {
     throw new Error('Test metadata is incomplete.');
   }
 
   const staleMetadata = MiotEndpointConnectionMetadata.satisfies({
     ...metadata,
-    resources: [lightResource],
+    resources: [environmentResource],
   });
 
   expect(() => adapter.resolveMetadata(staleMetadata)).toThrow(

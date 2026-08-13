@@ -65,23 +65,8 @@ const MIOT_FAN_ENDPOINT_MATCHER: MiotFanEndpointMatcher = {
   },
 };
 
-const MIOT_FAN_FALLBACK_ENDPOINT_MATCHER: MiotFanEndpointMatcher = {
-  service: 'urn:miot-spec-v2:service:fan:00007808',
-  properties: {
-    on: {
-      type: 'urn:miot-spec-v2:property:on:00000006',
-      format: 'bool',
-      access: ['read', 'write', 'notify'],
-    },
-  },
-};
-
 const MIOT_FAN_ENDPOINT_PROFILES = [
-  {
-    device: 'urn:miot-spec-v2:device:fan:0000A005:dmaker-p5c:1',
-    services: [MIOT_FAN_ENDPOINT_MATCHER],
-  },
-  {services: [MIOT_FAN_FALLBACK_ENDPOINT_MATCHER]},
+  {services: [MIOT_FAN_ENDPOINT_MATCHER]},
 ] as const satisfies readonly MiotEndpointProfile[];
 
 export class MiotFanEndpointConnection
