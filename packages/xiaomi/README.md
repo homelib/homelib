@@ -1,33 +1,19 @@
+[![MIT License](https://img.shields.io/badge/license-MIT-999999?style=flat-square)](../../LICENSE)
+
 # @homelib/xiaomi
 
-Xiaomi MIoT 智能家居 provider。将包纳入 homelib 后，在终端中添加并授权 MIoT provider；OAuth 会话、设备发现和家庭筛选均由 provider 管理。
+Homelib 的 Xiaomi MIoT provider，提供米家账号授权、设备发现、绑定、状态同步与控制。
 
-## 控制方式
+## 支持的设备
 
-### 云端控制
+| 设备   | 已知 profile      | 支持能力                                           |
+| ------ | ----------------- | -------------------------------------------------- |
+| 灯     | 通用 MIoT `light` | 开关；可选亮度、色温                               |
+| 空调   | `xiaomi-rr6r00:3` | 开关；可选运行模式、目标温度、目标湿度；室温、湿度 |
+| 除湿机 | `xiaomi-13l:1`    | 开关；可选运行模式、目标湿度；温度、湿度           |
+| 风扇   | `dmaker-p5c:1`    | 开关；可选风感、四档风速、水平摇头                 |
 
-provider 通过 Xiaomi 云端服务发现设备、读取状态和执行控制。授权完成后，无需在应用中直接管理 OAuth client、access token 或 HTTP client。
-
-### 中枢网关本地控制（mTLS MQTT）
-
-中国大陆账号的 MIoT provider 会自动启用本地 MQTT：复用已缓存的完整设备列表，通过 mDNS 与局域网探测发现中枢，自动签发并轮换 mTLS 证书，再按设备能力动态选择本地或云端路由。属性快照、属性通知和事件通知优先使用可用的本地链路；本地控制请求在发布前不可路由时才安全回退到云端。
-
-支持独立网关、路由器内置网关和中枢控制器。证书按 provider 隔离保存在 homelib 私有目录中，无需脚本管理。
-
-当前本地路径仅支持中枢网关的 mTLS MQTT。
-
-## 关键技术要点
-
-- **OAuth2 client_id** 超过 `Number.MAX_SAFE_INTEGER`，需作为字符串处理。
-- **路由器内置网关** MQTT 端口为 **18883**（非 8883），通过证书 CN 以 `mips.` 开头识别。
-- **网关自动发现**：mDNS 优先，WSL/Docker 下回退到 OT probe 子网扫描。
-- **用户证书**：Ed25519 密钥，CN = `mips.{uid}.{sha1(did)}.2`，有效期约 14 天。
-- **设备 spec** 查询：`https://miot-spec.org/miot-spec-v2/instance?type={urn}`
-
-## 参考
-
-- [ha_xiaomi_home 官方集成](https://github.com/XiaoMi/ha_xiaomi_home)
-- [中枢网关设备型号列表](https://github.com/XiaoMi/ha_xiaomi_home/wiki/Central-hub-gateway-device-models)
+可选能力仅在设备公开的 MIoT 属性与当前 profile 匹配时启用。其他符合相应 MIoT service 的空调、除湿机和风扇目前仅提供开关兼容；灯使用通用 service profile。
 
 ## License
 
