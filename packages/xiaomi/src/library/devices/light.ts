@@ -16,10 +16,7 @@ import {
   type MiotPropertySchemaProperties,
 } from '../miot/index.js';
 
-import {
-  MiotCommandEffect,
-  type MiotCommandEffectValues,
-} from './command-effect.js';
+import {MiotCommandEffect} from './command-effect.js';
 
 export class MiotLightEndpointConnection
   extends MiotEndpointConnection<
@@ -118,16 +115,5 @@ type MiotLightEndpointProperties = MiotPropertySchemaProperties<
 >;
 
 class MiotLightCommandEffect extends MiotCommandEffect<
-  LightEndpoint,
   keyof MiotLightEndpointProperties
-> {
-  protected getValues(
-    endpoint: LightEndpoint,
-  ): MiotCommandEffectValues<keyof MiotLightEndpointProperties> {
-    return {
-      on: endpoint.on,
-      brightness: endpoint.brightness,
-      'color-temperature': endpoint.colorTemperature,
-    };
-  }
-}
+> {}

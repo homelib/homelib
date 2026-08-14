@@ -129,6 +129,11 @@ export abstract class MiotEndpointConnection<
     return revision;
   }
 
+  /** @internal Returns the latest raw MIoT state for a resolved alias. */
+  getCommandEffectState(name: string): unknown {
+    return this.stateMap.get(name);
+  }
+
   constructor(
     readonly provider: MiotProvider,
     readonly metadata: MiotEndpointConnectionResolvedMetadata,
@@ -184,10 +189,6 @@ export abstract class MiotEndpointConnection<
 
   abstract prepareCommand(command: TCommand): CommandExecution;
 
-  private getState(name: string): unknown {
-    return this.stateMap.get(name);
-  }
-
   protected getBooleanPropertyState<
     const TName extends Extract<
       keyof MiotEndpointConnectionSchemaProperties<TSchema>,
@@ -216,7 +217,7 @@ export abstract class MiotEndpointConnection<
       return undefined;
     }
 
-    const value = this.getState(name);
+    const value = this.getCommandEffectState(name);
 
     if (value === undefined) {
       return initial;
@@ -257,7 +258,7 @@ export abstract class MiotEndpointConnection<
       return undefined;
     }
 
-    const value = this.getState(name);
+    const value = this.getCommandEffectState(name);
 
     if (value === undefined) {
       return initial;
@@ -276,43 +277,48 @@ export abstract class MiotEndpointConnection<
     >,
   >(
     name: TName,
+  ):
+    | MiotPropertyEnumName<
+        MiotEndpointConnectionSchemaProperties<TSchema>[TName]
+      >
+    | undefined;
+  protected getEnumPropertyState<
+    const TName extends MiotEndpointConnectionEnumPropertyName<
+      MiotEndpointConnectionSchemaProperties<TSchema>
+    >,
+  >(
+    name: TName,
     initial: MiotPropertyEnumInitial<
       MiotEndpointConnectionSchemaProperties<TSchema>[TName]
     >,
   ): MiotEndpointConnectionPropertyState<
     MiotEndpointConnectionSchemaProperties<TSchema>[TName],
     MiotPropertyEnumName<MiotEndpointConnectionSchemaProperties<TSchema>[TName]>
-  > {
+  >;
+  protected getEnumPropertyState(
+    name: string,
+    initial?: string,
+  ): string | undefined {
     const property = this.getProperty(name);
 
     if (property === undefined) {
-      return undefined as MiotEndpointConnectionPropertyState<
-        MiotEndpointConnectionSchemaProperties<TSchema>[TName],
-        MiotPropertyEnumName<
-          MiotEndpointConnectionSchemaProperties<TSchema>[TName]
-        >
-      >;
+      return undefined;
     }
 
     if (property.enum === undefined) {
       throw new TypeError(`Missing MIoT property enum: ${name}.`);
     }
 
-    const value = this.getState(name);
+    const value = this.getCommandEffectState(name);
 
     if (value === undefined) {
-      if (!Object.hasOwn(property.enum, initial)) {
+      if (initial !== undefined && !Object.hasOwn(property.enum, initial)) {
         throw new TypeError(
           `Unsupported MIoT property enum initial value: ${name}=${initial}.`,
         );
       }
 
-      return initial as MiotEndpointConnectionPropertyState<
-        MiotEndpointConnectionSchemaProperties<TSchema>[TName],
-        MiotPropertyEnumName<
-          MiotEndpointConnectionSchemaProperties<TSchema>[TName]
-        >
-      >;
+      return initial;
     }
 
     if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -321,11 +327,7 @@ export abstract class MiotEndpointConnection<
 
     const enumName = Object.entries(property.enum).find(
       ([, enumValue]) => enumValue === value,
-    )?.[0] as
-      | MiotPropertyEnumName<
-          MiotEndpointConnectionSchemaProperties<TSchema>[TName]
-        >
-      | undefined;
+    )?.[0];
 
     if (enumName === undefined) {
       throw new TypeError(
@@ -333,12 +335,7 @@ export abstract class MiotEndpointConnection<
       );
     }
 
-    return enumName as MiotEndpointConnectionPropertyState<
-      MiotEndpointConnectionSchemaProperties<TSchema>[TName],
-      MiotPropertyEnumName<
-        MiotEndpointConnectionSchemaProperties<TSchema>[TName]
-      >
-    >;
+    return enumName;
   }
 
   protected getTemperaturePropertyState<
@@ -362,7 +359,7 @@ export abstract class MiotEndpointConnection<
       >;
     }
 
-    const value = this.getState(name);
+    const value = this.getCommandEffectState(name);
 
     if (value === undefined) {
       return initial as MiotEndpointConnectionPropertyState<

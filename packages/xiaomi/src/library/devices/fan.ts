@@ -18,10 +18,7 @@ import {
   type MiotPropertySchemaProperties,
 } from '../miot/index.js';
 
-import {
-  MiotCommandEffect,
-  type MiotCommandEffectValues,
-} from './command-effect.js';
+import {MiotCommandEffect} from './command-effect.js';
 
 export class MiotFanEndpointConnection
   extends MiotEndpointConnection<
@@ -66,7 +63,7 @@ export class MiotFanEndpointConnection
 
   @computed
   get mode(): FanMode | undefined {
-    return this.getEnumPropertyState('mode', 'normal');
+    return this.getEnumPropertyState('mode');
   }
 
   @computed
@@ -139,17 +136,5 @@ type MiotFanEndpointProperties = MiotPropertySchemaProperties<
 >;
 
 class MiotFanCommandEffect extends MiotCommandEffect<
-  FanEndpoint,
   keyof MiotFanEndpointProperties
-> {
-  protected getValues(
-    endpoint: FanEndpoint,
-  ): MiotCommandEffectValues<keyof MiotFanEndpointProperties> {
-    return {
-      on: endpoint.on,
-      mode: endpoint.mode,
-      'fan-level': endpoint.speed,
-      'horizontal-swing': endpoint.horizontalSwing,
-    };
-  }
-}
+> {}

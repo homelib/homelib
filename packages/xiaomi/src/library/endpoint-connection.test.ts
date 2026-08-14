@@ -350,12 +350,15 @@ test('provides typed property state helpers across resolved resources', () => {
   const requiredBoolean: boolean = connection.on;
   const optionalNumber: number | undefined = connection.missingSpeed;
   const exactEnum: 'off' | 'onn' | 'standby' | undefined = connection.mode;
+  const exactEnumWithoutInitial: 'off' | 'onn' | 'standby' | undefined =
+    connection.modeWithoutInitial;
   // @ts-expect-error -- A schema typo cannot masquerade as a domain enum name.
   const domainEnum: 'off' | 'on' | undefined = connection.mode;
 
   void requiredBoolean;
   void optionalNumber;
   void exactEnum;
+  void exactEnumWithoutInitial;
   void domainEnum;
 
   expect(connection.on).toBe(false);
@@ -364,6 +367,7 @@ test('provides typed property state helpers across resolved resources', () => {
   expect(connection.missingSpeed).toBeUndefined();
   expect(connection.missingSpeedWithInitial).toBeUndefined();
   expect(connection.mode).toBe('off');
+  expect(connection.modeWithoutInitial).toBeUndefined();
   expect(() => connection.modeWithUnavailableInitial).toThrow(
     'Unsupported MIoT property enum initial value: mode=standby.',
   );
@@ -406,6 +410,7 @@ test('provides typed property state helpers across resolved resources', () => {
 
   expect(connection.on).toBe(true);
   expect(connection.mode).toBe('onn');
+  expect(connection.modeWithoutInitial).toBe('onn');
   expect(connection.projectedMode).toBe(0.5);
   expect(connection.projectionCount).toBe(1);
   expect(connection.getTemperatureCelsius(initialTemperature).celsius).toBe(20);
@@ -1785,6 +1790,10 @@ class TestPropertyHelperEndpointConnection extends MiotEndpointConnection<
 
   get mode(): 'off' | 'onn' | 'standby' | undefined {
     return this.getEnumPropertyState('mode', 'off');
+  }
+
+  get modeWithoutInitial(): 'off' | 'onn' | 'standby' | undefined {
+    return this.getEnumPropertyState('mode');
   }
 
   get incorrectlyNarrowMode(): 'off' | 'onn' | undefined {

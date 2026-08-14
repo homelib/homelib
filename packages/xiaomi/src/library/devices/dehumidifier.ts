@@ -18,10 +18,7 @@ import {
   type MiotPropertySchemaProperties,
 } from '../miot/index.js';
 
-import {
-  MiotCommandEffect,
-  type MiotCommandEffectValues,
-} from './command-effect.js';
+import {MiotCommandEffect} from './command-effect.js';
 
 export class MiotDehumidifierEndpointConnection
   extends MiotEndpointConnection<
@@ -63,7 +60,7 @@ export class MiotDehumidifierEndpointConnection
 
   @computed
   get mode(): DehumidifierMode | undefined {
-    return this.getEnumPropertyState('mode', 'auto');
+    return this.getEnumPropertyState('mode');
   }
 
   @computed
@@ -130,16 +127,5 @@ type MiotDehumidifierEndpointProperties = MiotPropertySchemaProperties<
 >;
 
 class MiotDehumidifierCommandEffect extends MiotCommandEffect<
-  DehumidifierEndpoint,
   keyof MiotDehumidifierEndpointProperties
-> {
-  protected getValues(
-    endpoint: DehumidifierEndpoint,
-  ): MiotCommandEffectValues<keyof MiotDehumidifierEndpointProperties> {
-    return {
-      on: endpoint.on,
-      mode: endpoint.mode,
-      'target-humidity': endpoint.targetRelativeHumidity,
-    };
-  }
-}
+> {}

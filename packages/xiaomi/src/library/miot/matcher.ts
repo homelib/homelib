@@ -358,7 +358,7 @@ function findPropertyCandidates(
 
     return (
       isValidMiotSpecValueList(valueList) &&
-      Object.values(enumMapping).every(value =>
+      Object.values(enumMapping).some(value =>
         valueList.some(entry => entry.value === value),
       )
     );

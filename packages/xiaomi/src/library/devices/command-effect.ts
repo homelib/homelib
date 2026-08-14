@@ -45,6 +45,7 @@ export type MiotCommandEffectValues<TName extends string = string> = Readonly<
 
 export type MiotCommandEffectConnection = {
   readonly metadata: MiotEndpointConnectionResolvedMetadata;
+  getCommandEffectState(name: string): unknown;
   getObservationRevision(names: Iterable<string>): number;
 };
 
@@ -53,8 +54,7 @@ export type MiotCommandEffectConnection = {
  * metadata. Property addresses and numeric conventions come from the matched
  * MIoT spec rather than a second effect-specific schema.
  */
-export abstract class MiotCommandEffect<
-  TEndpoint extends EndpointReference,
+export class MiotCommandEffect<
   TPropertyName extends string,
 > implements CommandEffect {
   private readonly properties: readonly MiotCommandEffectProperty[];
@@ -161,15 +161,17 @@ export abstract class MiotCommandEffect<
     return miotCommandEffectPropertiesEqual(this.properties, effect.properties);
   }
 
-  matches(endpoint: EndpointReference): boolean {
-    const values = this.getValues(endpoint as TEndpoint);
-
+  matches(_endpoint: EndpointReference): boolean {
     for (const target of this.properties) {
-      const value = values[target.name as TPropertyName];
+      const value = this.connection.getCommandEffectState(target.name);
 
       if (
         value === undefined ||
-        canonicalizeMiotEffectValue(target.property, value) !== target.value
+        canonicalizeMiotObservedEffectValue(
+          target.name,
+          target.property,
+          value,
+        ) !== target.value
       ) {
         return false;
       }
@@ -177,12 +179,6 @@ export abstract class MiotCommandEffect<
 
     return true;
   }
-
-  /** Returns current domain values indexed by the same resolved aliases. */
-  protected abstract getValues(
-    endpoint: TEndpoint,
-  ): MiotCommandEffectValues<TPropertyName>;
-
   private getPropertyObservationRevisions(): readonly number[] {
     return this.properties.map(property =>
       this.connection.getObservationRevision([property.name]),
@@ -206,25 +202,60 @@ function canonicalizeMiotEffectValue(
   value: unknown,
 ): boolean | number | string {
   const miotValue = getMiotEffectValue(property, value);
+  const valueList = property['value-list'];
+
+  if (
+    valueList !== undefined &&
+    isValidMiotSpecValueList(valueList) &&
+    !valueList.some(entry => entry.value === miotValue)
+  ) {
+    throw new CommandError(`Unsupported MIoT property value: ${miotValue}.`);
+  }
+
+  return canonicalizeMiotObservedValue(property, miotValue);
+}
+
+function canonicalizeMiotObservedEffectValue(
+  name: string,
+  property: MiotResolvedSpecProperty,
+  value: unknown,
+): boolean | number | string {
+  const canonicalValue = canonicalizeMiotObservedValue(property, value);
+
+  if (
+    property.enum !== undefined &&
+    (typeof canonicalValue !== 'number' ||
+      !Object.values(property.enum).includes(canonicalValue))
+  ) {
+    throw new TypeError(`Unknown MIoT enum property state: ${name}=${value}.`);
+  }
+
+  return canonicalValue;
+}
+
+function canonicalizeMiotObservedValue(
+  property: MiotResolvedSpecProperty,
+  value: unknown,
+): boolean | number | string {
   const {format} = property;
 
   if (format === 'bool') {
-    if (typeof miotValue !== 'boolean') {
+    if (typeof value !== 'boolean') {
       throw new TypeError('Invalid MIoT boolean command effect value.');
     }
 
-    return miotValue;
+    return value;
   }
 
   if (format === 'string') {
-    if (typeof miotValue !== 'string') {
+    if (typeof value !== 'string') {
       throw new TypeError('Invalid MIoT string command effect value.');
     }
 
-    return miotValue;
+    return value;
   }
 
-  if (typeof miotValue !== 'number' || !Number.isFinite(miotValue)) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new TypeError('Invalid MIoT numeric command effect value.');
   }
 
@@ -237,7 +268,7 @@ function canonicalizeMiotEffectValue(
   if (valueList !== undefined) {
     if (
       !isValidMiotSpecValueList(valueList) ||
-      !valueList.some(entry => entry.value === miotValue)
+      !valueList.some(entry => entry.value === value)
     ) {
       throw new TypeError('Invalid MIoT value-list command effect value.');
     }
@@ -246,9 +277,9 @@ function canonicalizeMiotEffectValue(
   const valueRange = property['value-range'];
   const canonicalValue =
     valueRange === undefined
-      ? miotValue
+      ? value
       : isValidMiotSpecValueRange(valueRange, format)
-        ? clampAndQuantizeValue(miotValue, valueRange)
+        ? clampAndQuantizeValue(value, valueRange)
         : undefined;
 
   if (canonicalValue === undefined) {

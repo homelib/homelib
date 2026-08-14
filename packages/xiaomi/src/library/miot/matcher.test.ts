@@ -379,7 +379,6 @@ test.each([
       {value: 0, description: 'Second'},
     ],
   ],
-  ['a missing declared enum value', createValueList([0, 2])],
 ] as const)('omits an optional enum property with %s', (_name, valueList) => {
   const service = createLightService({
     properties: [
@@ -396,7 +395,25 @@ test.each([
   expect(resource?.properties.mode).toBeUndefined();
 });
 
-test('rejects a required enum property missing a declared value', () => {
+test('accepts a device-supported subset of a declared enum mapping', () => {
+  const service = createLightService({
+    properties: [
+      createProperty(1, ON_PROPERTY_TYPE),
+      createProperty(2, MODE_PROPERTY_TYPE, {
+        format: 'uint8',
+        'value-list': createValueList([0, 2]),
+      }),
+    ],
+  });
+  const [resource] = resolveTestSchema([service], FAN_SCHEMA) ?? [];
+
+  expect(resource?.properties.mode).toMatchObject({
+    enum: FAN_MODE_ENUM['*'],
+    'value-list': createValueList([0, 2]),
+  });
+});
+
+test('rejects a required enum property without a known value', () => {
   const schema = {
     [LIGHT_SERVICE_TYPE]: {
       [MODE_PROPERTY_TYPE]: {name: 'mode', enum: FAN_MODE_ENUM},
@@ -406,7 +423,7 @@ test('rejects a required enum property missing a declared value', () => {
     properties: [
       createProperty(2, MODE_PROPERTY_TYPE, {
         format: 'uint8',
-        'value-list': createValueList([0, 2]),
+        'value-list': createValueList([2]),
       }),
     ],
   });
@@ -584,7 +601,7 @@ test('does not fall back when the selected enum mapping fails metadata validatio
         name: 'mode',
         enum: {
           '*': {normal: 0, natural: 1},
-          [ZHIMI_FAN_DEVICE_PATTERN]: {normal: 0, natural: 1, sleep: 2},
+          [ZHIMI_FAN_DEVICE_PATTERN]: {sleep: 2},
         },
         optional: true,
       },

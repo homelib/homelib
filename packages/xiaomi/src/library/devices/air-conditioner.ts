@@ -19,10 +19,15 @@ import {
   type MiotPropertySchemaProperties,
 } from '../miot/index.js';
 
-import {
-  MiotCommandEffect,
-  type MiotCommandEffectValues,
-} from './command-effect.js';
+import {MiotCommandEffect} from './command-effect.js';
+
+const AIR_CONDITIONER_MODES: ReadonlySet<string> = new Set([
+  'auto',
+  'cool',
+  'dry',
+  'fan',
+  'heat',
+]);
 
 export class MiotAirConditionerEndpointConnection
   extends MiotEndpointConnection<
@@ -37,7 +42,7 @@ export class MiotAirConditionerEndpointConnection
       'urn:miot-spec-v2:property:on:00000006': 'on',
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {'*': {cool: 2, dry: 3, fan: 4, heat: 5}},
+        enum: {'*': {cool: 2, dry: 3, fan: 4, heat: 5, off: 6}},
         optional: true,
       },
       'urn:miot-spec-v2:property:target-temperature:00000021': {
@@ -68,7 +73,8 @@ export class MiotAirConditionerEndpointConnection
 
   @computed
   get mode(): AirConditionerMode | undefined {
-    return this.getEnumPropertyState('mode', 'cool');
+    const mode = this.getEnumPropertyState('mode');
+    return mode === 'off' ? undefined : mode;
   }
 
   @computed
@@ -113,6 +119,12 @@ export class MiotAirConditionerEndpointConnection
         throw new CommandError('MIoT air conditioner does not support mode.');
       }
 
+      if (!AIR_CONDITIONER_MODES.has(command.value)) {
+        throw new CommandError(
+          `Unsupported air conditioner mode: ${String(command.value)}.`,
+        );
+      }
+
       effect = new MiotAirConditionerCommandEffect(this, {
         mode: command.value,
       });
@@ -155,17 +167,5 @@ type MiotAirConditionerEndpointProperties = MiotPropertySchemaProperties<
 >;
 
 class MiotAirConditionerCommandEffect extends MiotCommandEffect<
-  AirConditionerEndpoint,
   keyof MiotAirConditionerEndpointProperties
-> {
-  protected getValues(
-    endpoint: AirConditionerEndpoint,
-  ): MiotCommandEffectValues<keyof MiotAirConditionerEndpointProperties> {
-    return {
-      on: endpoint.on,
-      mode: endpoint.mode,
-      'target-temperature': endpoint.targetTemperature,
-      'target-humidity': endpoint.targetRelativeHumidity,
-    };
-  }
-}
+> {}

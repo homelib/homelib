@@ -13,6 +13,13 @@ import {
   type MiotCommandEffectValues,
 } from './command-effect.js';
 
+const ON_PROPERTY = {
+  iid: 1,
+  type: 'urn:miot-spec-v2:property:on:00000006:test:1',
+  description: 'On',
+  format: 'bool',
+  access: ['read', 'write', 'notify'],
+} as const satisfies MiotSpecProperty;
 const BRIGHTNESS_PROPERTY = {
   iid: 2,
   type: 'urn:miot-spec-v2:property:brightness:0000000D:test:1',
@@ -52,7 +59,7 @@ const MODE_SPEC_PROPERTY = {
 } as const satisfies MiotSpecProperty;
 const MODE_PROPERTY = {
   ...MODE_SPEC_PROPERTY,
-  enum: {cool: 2, heat: 5},
+  enum: {cool: 2, dry: 3, heat: 5},
 } as const satisfies MiotResolvedSpecProperty;
 const UNSUPPORTED_PROPERTY = {
   iid: 6,
@@ -81,6 +88,7 @@ const METADATA = {
         type: 'urn:miot-spec-v2:service:light:00007802:test:1',
         description: 'Light',
         properties: [
+          ON_PROPERTY,
           BRIGHTNESS_PROPERTY,
           TARGET_TEMPERATURE_PROPERTY,
           LEVEL_PROPERTY,
@@ -90,6 +98,7 @@ const METADATA = {
         ],
       },
       properties: {
+        on: ON_PROPERTY,
         brightness: BRIGHTNESS_PROPERTY,
         targetTemperature: TARGET_TEMPERATURE_PROPERTY,
         level: LEVEL_PROPERTY,
@@ -128,21 +137,36 @@ test('compares canonical multi-property values without depending on map order', 
 });
 
 test('matches every targeted value against the same spec conventions', () => {
-  const effect = new TestEffect({
-    brightness: 0.23,
-    targetTemperature: Temperature.fromCelsius(23.24),
+  const connection = new TestConnection({
+    brightness: 24,
+    targetTemperature: 23.2,
   });
+  const effect = new TestEffect(
+    {
+      brightness: 0.23,
+      targetTemperature: Temperature.fromCelsius(23.24),
+    },
+    connection,
+  );
   const endpoint = new TestEndpoint();
-  endpoint.brightness = 0.249;
-  endpoint.targetTemperature = Temperature.fromCelsius(23.2);
 
   expect(effect.matches(endpoint)).toBe(true);
 
-  endpoint.targetTemperature = Temperature.fromCelsius(23.26);
+  connection.setState('targetTemperature', 23.26);
   expect(effect.matches(endpoint)).toBe(false);
 
-  endpoint.brightness = undefined;
-  expect(new TestEffect({brightness: 0.23}).matches(endpoint)).toBe(false);
+  connection.setState('brightness', undefined);
+  expect(new TestEffect({brightness: 0.23}, connection).matches(endpoint)).toBe(
+    false,
+  );
+});
+
+test('reads only the observed alias targeted by an on effect', () => {
+  const connection = new TestConnection({on: true, mode: 6});
+  const effect = new TestEffect({on: true}, connection);
+
+  expect(effect.matches(new ThrowingModeEndpoint())).toBe(true);
+  expect(connection.readNames).toEqual(['on']);
 });
 
 test('rejects empty, undefined, and unknown effect values', () => {
@@ -177,7 +201,8 @@ test('reports a non-writable resolved property as an unsupported command', () =>
 });
 
 test('uses one enum mapping for requests, equality, and state matching', () => {
-  const effect = new TestEffect({mode: 'cool'});
+  const connection = new TestConnection({mode: 2});
+  const effect = new TestEffect({mode: 'cool'}, connection);
   const endpoint = new TestEndpoint();
 
   expect(effect.request).toEqual(
@@ -186,10 +211,14 @@ test('uses one enum mapping for requests, equality, and state matching', () => {
   expect(effect.equals(new TestEffect({mode: 'cool'}))).toBe(true);
   expect(effect.equals(new TestEffect({mode: 'heat'}))).toBe(false);
 
-  endpoint.mode = 'cool';
   expect(effect.matches(endpoint)).toBe(true);
-  endpoint.mode = 'heat';
+  connection.setState('mode', 5);
   expect(effect.matches(endpoint)).toBe(false);
+  connection.setState('mode', 0);
+  expect(() => effect.matches(endpoint)).toThrow(
+    'Unknown MIoT enum property state: mode=0.',
+  );
+  expect(() => new TestEffect({mode: 'dry'})).toThrow(CommandError);
   expect(() => new TestEffect({mode: 'auto'})).toThrow(CommandError);
 });
 
@@ -236,6 +265,7 @@ test('tracks observations only for the targeted aliases', () => {
 });
 
 type TestEffectPropertyName =
+  | 'on'
   | 'brightness'
   | 'targetTemperature'
   | 'level'
@@ -247,51 +277,46 @@ class TestEndpoint implements EndpointReference {
   readonly name = 'test';
 
   readonly ready = true;
-
-  brightness: number | undefined;
-
-  targetTemperature: Temperature | undefined;
-
-  level: number | undefined;
-
-  mode: string | undefined;
-
-  readOnly: number | undefined;
-
-  unsupported: number | undefined;
 }
 
-class TestEffect extends MiotCommandEffect<
-  TestEndpoint,
-  TestEffectPropertyName
-> {
+class ThrowingModeEndpoint extends TestEndpoint {
+  get mode(): never {
+    throw new Error('Unrelated mode state was read.');
+  }
+}
+
+class TestEffect extends MiotCommandEffect<TestEffectPropertyName> {
   constructor(
     values: MiotCommandEffectValues<TestEffectPropertyName>,
     connection: MiotCommandEffectConnection = new TestConnection(),
   ) {
     super(connection, values);
   }
-
-  protected getValues(
-    endpoint: TestEndpoint,
-  ): MiotCommandEffectValues<TestEffectPropertyName> {
-    return {
-      brightness: endpoint.brightness,
-      targetTemperature: endpoint.targetTemperature,
-      level: endpoint.level,
-      mode: endpoint.mode,
-      readOnly: endpoint.readOnly,
-      unsupported: endpoint.unsupported,
-    };
-  }
 }
 
 class TestConnection implements MiotCommandEffectConnection {
   readonly metadata = METADATA;
 
+  readonly readNames: string[] = [];
+
   private revision = 0;
 
   private readonly revisionMap = new Map<string, number>();
+
+  private readonly stateMap = new Map<string, unknown>();
+
+  constructor(states: MiotCommandEffectValues<TestEffectPropertyName> = {}) {
+    for (const [name, value] of Object.entries(states)) {
+      if (value !== undefined) {
+        this.stateMap.set(name, value);
+      }
+    }
+  }
+
+  getCommandEffectState(name: string): unknown {
+    this.readNames.push(name);
+    return this.stateMap.get(name);
+  }
 
   getObservationRevision(names: Iterable<string>): number {
     let revision = 0;
@@ -306,5 +331,13 @@ class TestConnection implements MiotCommandEffectConnection {
   observe(name: TestEffectPropertyName): void {
     this.revision++;
     this.revisionMap.set(name, this.revision);
+  }
+
+  setState(name: TestEffectPropertyName, value: unknown): void {
+    if (value === undefined) {
+      this.stateMap.delete(name);
+    } else {
+      this.stateMap.set(name, value);
+    }
   }
 }
