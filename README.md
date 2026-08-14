@@ -33,24 +33,31 @@ Use `--run` to run directly with existing bindings.
 
 ## Try it out
 
-HomeLib is currently under development. To try it out:
+HomeLib is still under active development. The playground is the easiest way to
+try it out with the current examples and project setup:
 
-1. Clone the repository.
-2. Install dependencies & build the project:
+1. Clone the repository and install dependencies:
 
    ```sh
+   git clone https://github.com/homelib/homelib.git
+   cd homelib
    npm install
-   npm run build
    ```
 
-3. Write your automation in `packages/playground/src/program/home.ts`
-4. Bootstrap the automation:
+2. Write your automation in `packages/playground/src/program/home.ts`.
+3. Build and start the playground, then follow the terminal UI to configure
+   providers and bindings:
 
    ```sh
+   npm run build
    node packages/playground/bld/program/home.js
    ```
 
-Ask some AI agent to implement more devices so it will be actually useful.
+4. After setup, run it directly with the saved bindings:
+
+   ```sh
+   node packages/playground/bld/program/home.js --run
+   ```
 
 ## License
 
