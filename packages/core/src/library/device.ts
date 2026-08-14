@@ -38,6 +38,10 @@ export class DeviceEntry {
     return this.instanceMap.values();
   }
 
+  get constructors(): IterableIterator<DeviceConstructor<Device>> {
+    return this.instanceMap.keys();
+  }
+
   getEndpoint(name = ''): EndpointReference | undefined {
     return this.endpointMap.get(name);
   }

@@ -3,6 +3,7 @@ import {
   completeBootstrap,
   failBootstrap,
 } from '../@lifecycle.js';
+import type {Device, DeviceConstructor} from '../device.js';
 import type {EndpointReference} from '../endpoint.js';
 import {setEndpointLogTarget} from '../log.js';
 import type {EndpointConnectionBindingPlan} from '../provider.js';
@@ -101,9 +102,9 @@ async function bootstrapInternal(): Promise<void> {
 
 function collectBindingTopology(rootScopes: readonly Scope[]): {
   readonly scopes: readonly BootstrapBindingScope[];
-  readonly endpointMap: ReadonlyMap<string, EndpointReference>;
+  readonly endpointMap: ReadonlyMap<string, BindingTopologyEndpoint>;
 } {
-  const endpointMap = new Map<string, EndpointReference>();
+  const endpointMap = new Map<string, BindingTopologyEndpoint>();
   const scopePathSet = new Set<string>();
   const scopes = rootScopes.map(scope =>
     collectBindingScope(scope, endpointMap, scopePathSet),
@@ -114,7 +115,7 @@ function collectBindingTopology(rootScopes: readonly Scope[]): {
 
 function collectBindingScope(
   scope: Scope,
-  endpointMap: Map<string, EndpointReference>,
+  endpointMap: Map<string, BindingTopologyEndpoint>,
   scopePathSet: Set<string>,
 ): BootstrapBindingScope {
   const scopePathKey = getScopePathKey(scope);
@@ -125,21 +126,26 @@ function collectBindingScope(
 
   scopePathSet.add(scopePathKey);
 
-  const devices = Array.from(scope.devices, deviceEntry => ({
-    name: deviceEntry.name,
-    endpoints: Array.from(deviceEntry.endpoints, endpoint => {
-      const path = getEndpointPath(scope, deviceEntry, endpoint);
-      const pathKey = getEndpointPathKey(path);
+  const devices = Array.from(scope.devices, deviceEntry => {
+    const deviceConstructors = Array.from(deviceEntry.constructors);
 
-      if (endpointMap.has(pathKey)) {
-        throw new Error(`Duplicate logical endpoint path: ${pathKey}.`);
-      }
+    return {
+      name: deviceEntry.name,
+      deviceConstructors,
+      endpoints: Array.from(deviceEntry.endpoints, endpoint => {
+        const path = getEndpointPath(scope, deviceEntry, endpoint);
+        const pathKey = getEndpointPathKey(path);
 
-      endpointMap.set(pathKey, endpoint);
+        if (endpointMap.has(pathKey)) {
+          throw new Error(`Duplicate logical endpoint path: ${pathKey}.`);
+        }
 
-      return {path, endpoint};
-    }),
-  }));
+        endpointMap.set(pathKey, {endpoint, deviceConstructors});
+
+        return {path, endpoint};
+      }),
+    };
+  });
 
   return {
     path: scope.path,
@@ -152,7 +158,7 @@ function collectBindingScope(
 
 function createConnectionBindingPlans(
   bindingFile: BindingFile,
-  endpointMap: ReadonlyMap<string, EndpointReference>,
+  endpointMap: ReadonlyMap<string, BindingTopologyEndpoint>,
 ): readonly EndpointConnectionBindingPlanEntry[] {
   const bindingPathSet = new Set<string>();
   const providerResourceKeySet = new Set<string>();
@@ -160,12 +166,12 @@ function createConnectionBindingPlans(
 
   for (const binding of bindingFile.bindings) {
     const pathKey = getEndpointPathKey(binding.endpoint);
-    const endpoint = endpointMap.get(pathKey);
+    const target = endpointMap.get(pathKey);
 
     // Keep stale bindings available to bootstrap frontends for inspection and
     // cleanup, but do not let declarations removed from the current script
     // prevent the remaining endpoints from starting.
-    if (endpoint === undefined) {
+    if (target === undefined) {
       continue;
     }
 
@@ -187,7 +193,8 @@ function createConnectionBindingPlans(
     }
 
     const plan = provider.createEndpointConnectionBindingPlan(
-      endpoint,
+      target.endpoint,
+      target.deviceConstructors,
       binding.metadata,
     );
 
@@ -207,7 +214,7 @@ function createConnectionBindingPlans(
       providerResourceKeySet.add(providerResourceKey);
     }
 
-    plans.push({path: binding.endpoint, endpoint, plan});
+    plans.push({path: binding.endpoint, endpoint: target.endpoint, plan});
   }
 
   return plans;
@@ -217,6 +224,11 @@ type EndpointConnectionBindingPlanEntry = {
   readonly path: EndpointPath;
   readonly endpoint: EndpointReference;
   readonly plan: EndpointConnectionBindingPlan;
+};
+
+type BindingTopologyEndpoint = {
+  readonly endpoint: EndpointReference;
+  readonly deviceConstructors: readonly DeviceConstructor<Device>[];
 };
 
 function getScopePathKey(scope: Scope): string {

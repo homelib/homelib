@@ -1,7 +1,11 @@
-import {type EndpointReference, Temperature} from '@homelib/core';
+import {CommandError, type EndpointReference, Temperature} from '@homelib/core';
 
 import type {MiotEndpointConnectionResolvedMetadata} from '../endpoint-connection.js';
-import {MiotSetPropertyRequest, type MiotSpecProperty} from '../miot/index.js';
+import {
+  type MiotResolvedSpecProperty,
+  MiotSetPropertyRequest,
+  type MiotSpecProperty,
+} from '../miot/index.js';
 
 import {
   MiotCommandEffect,
@@ -34,12 +38,35 @@ const LEVEL_PROPERTY = {
   format: 'uint8',
   access: ['read', 'write', 'notify'],
 } as const satisfies MiotSpecProperty;
-const UNSUPPORTED_PROPERTY = {
+const MODE_SPEC_PROPERTY = {
   iid: 5,
+  type: 'urn:miot-spec-v2:property:mode:00000008:test:1',
+  description: 'Mode',
+  format: 'uint8',
+  access: ['read', 'write', 'notify'],
+  'value-list': [
+    {value: 0, description: 'Other'},
+    {value: 2, description: 'Cool'},
+    {value: 5, description: 'Heat'},
+  ],
+} as const satisfies MiotSpecProperty;
+const MODE_PROPERTY = {
+  ...MODE_SPEC_PROPERTY,
+  enum: {cool: 2, heat: 5},
+} as const satisfies MiotResolvedSpecProperty;
+const UNSUPPORTED_PROPERTY = {
+  iid: 6,
   type: 'urn:miot-spec-v2:property:custom:0000FFFF:test:1',
   description: 'Unsupported',
   format: 'custom',
   access: ['read', 'write', 'notify'],
+} as const satisfies MiotSpecProperty;
+const READ_ONLY_PROPERTY = {
+  iid: 7,
+  type: 'urn:miot-spec-v2:property:custom-read-only:0000FFFE:test:1',
+  description: 'Read Only',
+  format: 'uint8',
+  access: ['read', 'notify'],
 } as const satisfies MiotSpecProperty;
 const METADATA = {
   device: {
@@ -57,14 +84,18 @@ const METADATA = {
           BRIGHTNESS_PROPERTY,
           TARGET_TEMPERATURE_PROPERTY,
           LEVEL_PROPERTY,
+          MODE_SPEC_PROPERTY,
           UNSUPPORTED_PROPERTY,
+          READ_ONLY_PROPERTY,
         ],
       },
       properties: {
         brightness: BRIGHTNESS_PROPERTY,
         targetTemperature: TARGET_TEMPERATURE_PROPERTY,
         level: LEVEL_PROPERTY,
+        mode: MODE_PROPERTY,
         unsupported: UNSUPPORTED_PROPERTY,
+        readOnly: READ_ONLY_PROPERTY,
       },
     },
   ],
@@ -141,6 +172,27 @@ test('validates actual MIoT formats rather than accepting arbitrary numbers', ()
   );
 });
 
+test('reports a non-writable resolved property as an unsupported command', () => {
+  expect(() => new TestEffect({readOnly: 1}).request).toThrow(CommandError);
+});
+
+test('uses one enum mapping for requests, equality, and state matching', () => {
+  const effect = new TestEffect({mode: 'cool'});
+  const endpoint = new TestEndpoint();
+
+  expect(effect.request).toEqual(
+    new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 5}, 2),
+  );
+  expect(effect.equals(new TestEffect({mode: 'cool'}))).toBe(true);
+  expect(effect.equals(new TestEffect({mode: 'heat'}))).toBe(false);
+
+  endpoint.mode = 'cool';
+  expect(effect.matches(endpoint)).toBe(true);
+  endpoint.mode = 'heat';
+  expect(effect.matches(endpoint)).toBe(false);
+  expect(() => new TestEffect({mode: 'auto'})).toThrow(CommandError);
+});
+
 test('tracks observations only for the targeted aliases', () => {
   const connection = new TestConnection();
   const brightnessEffect = new TestEffect({brightness: 0.5}, connection);
@@ -172,7 +224,12 @@ test('tracks observations only for the targeted aliases', () => {
 });
 
 type TestEffectPropertyName =
-  'brightness' | 'targetTemperature' | 'level' | 'unsupported';
+  | 'brightness'
+  | 'targetTemperature'
+  | 'level'
+  | 'mode'
+  | 'readOnly'
+  | 'unsupported';
 
 class TestEndpoint implements EndpointReference {
   readonly name = 'test';
@@ -184,6 +241,10 @@ class TestEndpoint implements EndpointReference {
   targetTemperature: Temperature | undefined;
 
   level: number | undefined;
+
+  mode: string | undefined;
+
+  readOnly: number | undefined;
 
   unsupported: number | undefined;
 }
@@ -206,6 +267,8 @@ class TestEffect extends MiotCommandEffect<
       brightness: endpoint.brightness,
       targetTemperature: endpoint.targetTemperature,
       level: endpoint.level,
+      mode: endpoint.mode,
+      readOnly: endpoint.readOnly,
       unsupported: endpoint.unsupported,
     };
   }

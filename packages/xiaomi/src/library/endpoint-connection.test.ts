@@ -11,6 +11,7 @@ import {
   SetLightBrightnessCommand,
   SetLightColorTemperatureCommand,
   SetLightOnCommand,
+  Temperature,
 } from '@homelib/core';
 import {autorun} from 'mobx';
 
@@ -37,8 +38,11 @@ import {
 import {
   type MiotExecutionRequest,
   type MiotExecutionResult,
+  type MiotPropertySchema,
   MiotSetPropertyRequest,
   type MiotSpecProperty,
+  type MiotSpecValueList,
+  type MiotSpecValueRange,
 } from './miot/index.js';
 import {MiotProvider} from './provider.js';
 
@@ -220,6 +224,229 @@ const TEST_MULTI_RESOURCE_METADATA = createTestResolvedMetadata({
   resources: [TEST_PRIMARY_RESOURCE, TEST_ENVIRONMENT_RESOURCE],
 });
 
+const _TEST_MULTI_RESOURCE_PROPERTIES = {
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:property:on:00000006': 'on',
+  },
+  'urn:miot-spec-v2:service:environment:0000780A': {
+    'urn:miot-spec-v2:property:temperature:00000020': 'temperature',
+    'urn:miot-spec-v2:property:relative-humidity:0000000C': 'relativeHumidity',
+  },
+} as const satisfies MiotPropertySchema;
+
+const TEST_HELPER_PROPERTIES = {
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:property:on:00000006': 'on',
+  },
+  'urn:miot-spec-v2:service:fan:00007808': {
+    'urn:miot-spec-v2:property:mode:00000008': {
+      name: 'mode',
+      enum: {off: 0, onn: 1},
+      optional: true,
+    },
+    'urn:miot-spec-v2:property:fan-level:00000016': {
+      name: 'missingSpeed',
+      optional: true,
+    },
+  },
+  'urn:miot-spec-v2:service:environment:0000780A': {
+    'urn:miot-spec-v2:property:temperature:00000020': 'temperatureCelsius',
+    'urn:miot-spec-v2:property:indoor-temperature:00000021':
+      'temperatureFahrenheit',
+    'urn:miot-spec-v2:property:outdoor-temperature:00000022':
+      'temperatureKelvin',
+    'urn:miot-spec-v2:property:relative-humidity:0000000C': 'relativeHumidity',
+  },
+} as const satisfies MiotPropertySchema;
+
+const TEST_HELPER_MODE_PROPERTY = {
+  iid: 3,
+  type: 'urn:miot-spec-v2:property:mode:00000008:test-fan:1',
+  description: 'Mode',
+  format: 'uint8',
+  access: ['read', 'write', 'notify'],
+  'value-list': [
+    {value: 0, description: 'Off'},
+    {value: 1, description: 'On'},
+    {value: 2, description: 'Vendor Extra'},
+  ],
+} satisfies MiotSpecProperty;
+
+const TEST_HELPER_TEMPERATURE_PROPERTIES = [
+  {
+    ...TEST_ENVIRONMENT_TEMPERATURE_PROPERTY,
+    type: 'urn:miot-spec-v2:property:temperature:00000020',
+    unit: 'celsius',
+  },
+  {
+    ...TEST_ENVIRONMENT_TEMPERATURE_PROPERTY,
+    iid: 3,
+    type: 'urn:miot-spec-v2:property:indoor-temperature:00000021',
+    unit: 'fahrenheit',
+  },
+  {
+    ...TEST_ENVIRONMENT_TEMPERATURE_PROPERTY,
+    iid: 4,
+    type: 'urn:miot-spec-v2:property:outdoor-temperature:00000022',
+    unit: 'kelvin',
+    'value-range': [0, 500, 0.1],
+  },
+] as const satisfies readonly MiotSpecProperty[];
+
+const TEST_HELPER_METADATA = createTestResolvedMetadata({
+  ...TEST_METADATA,
+  resources: [
+    TEST_PRIMARY_RESOURCE,
+    {
+      service: {
+        iid: 4,
+        type: 'urn:miot-spec-v2:service:fan:00007808:test-fan:1',
+        description: 'Fan',
+        properties: [TEST_HELPER_MODE_PROPERTY],
+      },
+      properties: {
+        mode: {
+          ...TEST_HELPER_MODE_PROPERTY,
+          enum: TEST_HELPER_PROPERTIES['urn:miot-spec-v2:service:fan:00007808'][
+            'urn:miot-spec-v2:property:mode:00000008'
+          ].enum,
+        },
+      },
+    },
+    {
+      service: {
+        ...TEST_ENVIRONMENT_RESOURCE.service,
+        properties: [
+          ...TEST_HELPER_TEMPERATURE_PROPERTIES,
+          TEST_ENVIRONMENT_RELATIVE_HUMIDITY_PROPERTY,
+        ],
+      },
+      properties: {
+        temperatureCelsius: TEST_HELPER_TEMPERATURE_PROPERTIES[0],
+        temperatureFahrenheit: TEST_HELPER_TEMPERATURE_PROPERTIES[1],
+        temperatureKelvin: TEST_HELPER_TEMPERATURE_PROPERTIES[2],
+        relativeHumidity: TEST_ENVIRONMENT_RELATIVE_HUMIDITY_PROPERTY,
+      },
+    },
+  ],
+});
+
+test('provides typed property state helpers across resolved resources', () => {
+  const connection = createHelperConnection();
+  const initialTemperature = Temperature.fromKelvin(10);
+
+  expect(connection.propertyNames).toEqual({
+    on: 'on',
+    mode: 'mode',
+    temperatureCelsius: 'temperatureCelsius',
+  });
+
+  const requiredBoolean: boolean = connection.on;
+  const optionalNumber: number | undefined = connection.missingSpeed;
+  const exactEnum: 'off' | 'onn' | undefined = connection.mode;
+  // @ts-expect-error -- A schema typo cannot masquerade as a domain enum name.
+  const domainEnum: 'off' | 'on' | undefined = connection.mode;
+
+  void requiredBoolean;
+  void optionalNumber;
+  void exactEnum;
+  void domainEnum;
+
+  expect(connection.on).toBe(false);
+  expect(connection.rawOn).toBeUndefined();
+  expect(connection.relativeHumidity).toBe(50);
+  expect(connection.missingSpeed).toBeUndefined();
+  expect(connection.missingSpeedWithInitial).toBeUndefined();
+  expect(connection.mode).toBe('off');
+  expect(connection.projectedMode).toBe(0);
+  expect(connection.projectionCount).toBe(0);
+  expect(connection.getTemperatureCelsius(initialTemperature)).toBe(
+    initialTemperature,
+  );
+
+  connection.handlePropertyUpdate({
+    did: TEST_METADATA.device.did,
+    siid: 2,
+    piid: 1,
+    value: true,
+  });
+  connection.handlePropertyUpdate({
+    did: TEST_METADATA.device.did,
+    siid: 4,
+    piid: 3,
+    value: 1,
+  });
+  connection.handlePropertyUpdate({
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 1,
+    value: 20,
+  });
+  connection.handlePropertyUpdate({
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 3,
+    value: 68,
+  });
+  connection.handlePropertyUpdate({
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 4,
+    value: 293.15,
+  });
+
+  expect(connection.on).toBe(true);
+  expect(connection.mode).toBe('onn');
+  expect(connection.projectedMode).toBe(0.5);
+  expect(connection.projectionCount).toBe(1);
+  expect(connection.getTemperatureCelsius(initialTemperature).celsius).toBe(20);
+  expect(connection.temperatureFahrenheit.celsius).toBeCloseTo(20);
+  expect(connection.temperatureKelvin.celsius).toBeCloseTo(20);
+
+  const previousStateRevision = connection.stateRevision;
+  const previousModeObservationRevision = connection.getObservationRevision([
+    'mode',
+  ]);
+
+  connection.handlePropertyUpdate({
+    did: TEST_METADATA.device.did,
+    siid: 4,
+    piid: 3,
+    value: 2,
+  });
+
+  expect(connection.stateRevision).toBe(previousStateRevision + 1);
+  expect(connection.getObservationRevision(['mode'])).toBeGreaterThan(
+    previousModeObservationRevision,
+  );
+  expect(() => connection.mode).toThrow(
+    'Unknown MIoT enum property state: mode=2.',
+  );
+  expect(connection.projectedMode).toBe(1);
+  expect(connection.projectionCount).toBe(2);
+
+  connection.handlePropertyUpdate({
+    did: TEST_METADATA.device.did,
+    siid: 4,
+    piid: 3,
+    value: 1,
+  });
+  expect(connection.mode).toBe('onn');
+});
+
+test('validates range, value-list, and temperature metadata in helpers', () => {
+  const connection = createHelperConnection();
+
+  expect(connection.relativeHumidityRange).toEqual([0, 100, 1]);
+  expect(connection.modeValueList.map(entry => entry.value)).toEqual([0, 1, 2]);
+  expect(() => connection.invalidRange).toThrow(
+    'Invalid MIoT property value range: on.',
+  );
+  expect(() => connection.invalidValueList).toThrow(
+    'Invalid MIoT property value list: on.',
+  );
+});
+
 test('normalizes persisted metadata and strips legacy property aliases', () => {
   const serialized = JSON.stringify(TEST_MULTI_RESOURCE_METADATA);
   const metadata = normalizeMiotEndpointConnectionMetadata(
@@ -232,7 +459,8 @@ test('normalizes persisted metadata and strips legacy property aliases', () => {
   ]);
   expect(
     metadata.resources.every(
-      resource => !Object.hasOwn(resource, 'properties'),
+      resource =>
+        (resource as {readonly properties?: unknown}).properties === undefined,
     ),
   ).toBe(true);
   expect(getMiotEndpointConnectionResourceKeys(metadata)).toEqual([
@@ -244,7 +472,9 @@ test('normalizes persisted metadata and strips legacy property aliases', () => {
 test('resource keys are canonical regardless of metadata order', () => {
   const metadata = MiotEndpointConnectionMetadata.satisfies({
     ...TEST_MULTI_RESOURCE_METADATA,
-    resources: [...TEST_MULTI_RESOURCE_METADATA.resources].reverse(),
+    resources: TEST_MULTI_RESOURCE_METADATA.resources
+      .toReversed()
+      .map(resource => ({service: resource.service})),
   });
 
   expect(getMiotEndpointConnectionResourceKeys(metadata)).toEqual([
@@ -343,9 +573,8 @@ test('rejects duplicate physical services and derived state aliases', () => {
     MiotEndpointConnectionMetadata.satisfies({
       ...TEST_MULTI_RESOURCE_METADATA,
       resources: [
-        TEST_PRIMARY_RESOURCE,
+        {service: TEST_PRIMARY_RESOURCE.service},
         {
-          ...TEST_ENVIRONMENT_RESOURCE,
           service: {...TEST_ENVIRONMENT_RESOURCE.service, iid: 2},
         },
       ],
@@ -1464,6 +1693,14 @@ function createMultiResourceConnection(): TestMultiResourceEndpointConnection {
   );
 }
 
+function createHelperConnection(): TestPropertyHelperEndpointConnection {
+  return new TestPropertyHelperEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_HELPER_METADATA,
+    [new TestTransport()],
+  );
+}
+
 class TestTransport extends MiotEndpointConnectionTransport {
   readonly requests: MiotExecutionRequest[] = [];
 
@@ -1489,17 +1726,129 @@ class TestValueListEndpointConnection extends MiotEndpointConnection<never> {
   }
 }
 
-class TestMultiResourceEndpointConnection extends MiotEndpointConnection<never> {
-  get on(): boolean {
-    return (this.getState('on') as boolean | undefined) ?? false;
+class TestPropertyHelperEndpointConnection extends MiotEndpointConnection<
+  never,
+  typeof TEST_HELPER_PROPERTIES
+> {
+  projectionCount = 0;
+
+  get propertyNames(): Readonly<Record<string, string | undefined>> {
+    return {
+      on: this.properties.on.name,
+      mode: this.properties.mode?.name,
+      temperatureCelsius: this.properties.temperatureCelsius.name,
+    };
   }
 
-  get temperature(): number {
-    return (this.getState('temperature') as number | undefined) ?? 0;
+  get on(): boolean {
+    return this.getBooleanPropertyState('on', false);
+  }
+
+  get rawOn(): boolean | undefined {
+    return this.getBooleanPropertyState('on');
+  }
+
+  get incorrectlyRequiredRawOn(): boolean {
+    // @ts-expect-error -- A required property can still be unobserved.
+    return this.getBooleanPropertyState('on');
   }
 
   get relativeHumidity(): number {
-    return (this.getState('relativeHumidity') as number | undefined) ?? 0;
+    return this.getNumberPropertyState('relativeHumidity', 50);
+  }
+
+  get missingSpeed(): number | undefined {
+    return this.getNumberPropertyState('missingSpeed');
+  }
+
+  get missingSpeedWithInitial(): number | undefined {
+    return this.getNumberPropertyState('missingSpeed', 3);
+  }
+
+  get incorrectlyRequiredMissingSpeed(): number {
+    // @ts-expect-error -- An unmatched optional alias remains undefined.
+    return this.getNumberPropertyState('missingSpeed', 3);
+  }
+
+  get mode(): 'off' | 'onn' | undefined {
+    return this.getEnumPropertyState('mode', 'off');
+  }
+
+  get invalidAlias(): boolean {
+    // @ts-expect-error -- Property state aliases are schema-constrained.
+    return this.getBooleanPropertyState('onn', false);
+  }
+
+  get projectedMode(): number {
+    const value = this.getNumberPropertyState('mode');
+
+    if (value === undefined) {
+      return 0;
+    }
+
+    this.projectionCount++;
+    return value / 2;
+  }
+
+  getTemperatureCelsius(initial: Temperature): Temperature {
+    return this.getTemperaturePropertyState('temperatureCelsius', initial);
+  }
+
+  get temperatureFahrenheit(): Temperature {
+    return this.getTemperaturePropertyState(
+      'temperatureFahrenheit',
+      Temperature.fromKelvin(0),
+    );
+  }
+
+  get temperatureKelvin(): Temperature {
+    return this.getTemperaturePropertyState(
+      'temperatureKelvin',
+      Temperature.fromKelvin(0),
+    );
+  }
+
+  get relativeHumidityRange(): MiotSpecValueRange {
+    return this.getPropertyValueRange(this.properties.relativeHumidity);
+  }
+
+  get modeValueList(): MiotSpecValueList {
+    const {mode} = this.properties;
+
+    if (mode === undefined) {
+      throw new Error('Missing test mode property.');
+    }
+
+    return this.getPropertyValueList(mode);
+  }
+
+  get invalidRange(): MiotSpecValueRange {
+    return this.getPropertyValueRange(this.properties.on);
+  }
+
+  get invalidValueList(): MiotSpecValueList {
+    return this.getPropertyValueList(this.properties.on);
+  }
+
+  override prepareCommand(_command: never): CommandExecution {
+    return {execute: () => Promise.resolve()};
+  }
+}
+
+class TestMultiResourceEndpointConnection extends MiotEndpointConnection<
+  never,
+  typeof _TEST_MULTI_RESOURCE_PROPERTIES
+> {
+  get on(): boolean {
+    return this.getBooleanPropertyState('on', false);
+  }
+
+  get temperature(): number {
+    return this.getNumberPropertyState('temperature', 0);
+  }
+
+  get relativeHumidity(): number {
+    return this.getNumberPropertyState('relativeHumidity', 0);
   }
 
   override prepareCommand(_command: never): CommandExecution {

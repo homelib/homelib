@@ -11,11 +11,11 @@ import {
   getTemperatureByApparentTemperatureAndRelativeHumidity,
 } from '@homelib/utils';
 
-const IDEAL_APPARENT_TEMPERATURE_UPPER_LIMIT = 26;
+const IDEAL_APPARENT_TEMPERATURE_UPPER_LIMIT = 27;
 const IDEAL_APPARENT_TEMPERATURE_LOWER_LIMIT = 20;
 
 // 很多垃圾空调到了指定温度后还会继续制冷，所以需要一个后退值。
-const TEMPERATURE_BACKOFF = 2;
+const TEMPERATURE_BACKOFF = 4;
 
 const IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT = 0.5;
 const IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT = 0.45;

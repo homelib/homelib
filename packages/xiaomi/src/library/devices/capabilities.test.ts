@@ -17,14 +17,18 @@ import {
 } from '@homelib/core';
 import {autorun} from 'mobx';
 
-import type {MiotEndpointAdapter} from '../endpoint-adapter.js';
+import {
+  type MiotEndpointConnectionConstructor,
+  createMiotEndpointConnectionMetadata,
+  resolveMiotEndpointConnectionMetadata,
+  resolveMiotEndpointConnectionResources,
+} from '../device.js';
 import {
   type MiotEndpointConnection,
   type MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionResolvedMetadata,
   MiotEndpointConnectionTransport,
   getMiotEndpointConnectionProperty,
-  normalizeMiotEndpointConnectionMetadata,
 } from '../endpoint-connection.js';
 import {
   type MiotExecutionRequest,
@@ -35,22 +39,16 @@ import {
 } from '../miot/index.js';
 import {MiotProvider} from '../provider.js';
 
-import {
-  MiotAirConditionerEndpointConnection,
-  miotAirConditionerEndpointAdapter,
-} from './air-conditioner.js';
-import {
-  MiotDehumidifierEndpointConnection,
-  miotDehumidifierEndpointAdapter,
-} from './dehumidifier.js';
-import {MiotFanEndpointConnection, miotFanEndpointAdapter} from './fan.js';
+import {MiotAirConditionerEndpointConnection} from './air-conditioner.js';
+import {MiotDehumidifierEndpointConnection} from './dehumidifier.js';
+import {MiotFanEndpointConnection} from './fan.js';
 
 const READ_WRITE_NOTIFY = ['read', 'write', 'notify'] as const;
 
 describe('MIoT air conditioner capabilities', () => {
   test('matches and projects optional mode, target temperature, and target humidity', () => {
     const persistedMetadata = findPersistedMetadata(
-      miotAirConditionerEndpointAdapter,
+      MiotAirConditionerEndpointConnection,
       createAirConditionerSpec(),
     );
     const controlService = persistedMetadata.resources.find(
@@ -63,21 +61,13 @@ describe('MIoT air conditioner capabilities', () => {
         type: expect.stringContaining('property:target-humidity:'),
       }),
     );
-    expect(
-      persistedMetadata.resources.every(
-        resource => !Object.hasOwn(resource, 'properties'),
-      ),
-    ).toBe(true);
+    expect(persistedMetadata.resources).not.toContainEqual(
+      expect.objectContaining({properties: expect.anything()}),
+    );
 
-    const normalizedLegacyMetadata = normalizeMiotEndpointConnectionMetadata({
-      ...persistedMetadata,
-      resources: persistedMetadata.resources.map(resource => ({
-        ...resource,
-        properties: {on: {iid: 1}},
-      })),
-    });
-    const metadata = miotAirConditionerEndpointAdapter.resolveMetadata(
-      normalizedLegacyMetadata,
+    const metadata = resolveMiotEndpointConnectionMetadata(
+      MiotAirConditionerEndpointConnection,
+      persistedMetadata,
     );
     const connection = new MiotAirConditionerEndpointConnection(
       new MiotProvider('provider'),
@@ -128,7 +118,7 @@ describe('MIoT air conditioner capabilities', () => {
 
   test('maps modes and clamps and quantizes target temperature and humidity writes', async () => {
     const metadata = findMetadata(
-      miotAirConditionerEndpointAdapter,
+      MiotAirConditionerEndpointConnection,
       createAirConditionerSpec(),
     );
     const transport = new TestTransport();
@@ -203,7 +193,7 @@ describe('MIoT air conditioner capabilities', () => {
 
   test('returns effects using canonical MIoT modes, temperature steps, and humidity steps', async () => {
     const metadata = findMetadata(
-      miotAirConditionerEndpointAdapter,
+      MiotAirConditionerEndpointConnection,
       createAirConditionerSpec(),
     );
     const connection = new MiotAirConditionerEndpointConnection(
@@ -282,7 +272,7 @@ describe('MIoT air conditioner capabilities', () => {
     expect(humidityEffect.matches(endpoint)).toBe(false);
   });
 
-  test('routes writes by property alias when the control service is not first', async () => {
+  test('routes writes by property alias independently of service order', async () => {
     const spec = createAirConditionerSpec();
     const environmentService = spec.services.find(service => service.iid === 4);
 
@@ -291,7 +281,7 @@ describe('MIoT air conditioner capabilities', () => {
     }
 
     environmentService.iid = 1;
-    const metadata = findMetadata(miotAirConditionerEndpointAdapter, spec);
+    const metadata = findMetadata(MiotAirConditionerEndpointConnection, spec);
     const transport = new TestTransport();
     const connection = new MiotAirConditionerEndpointConnection(
       new MiotProvider('provider'),
@@ -299,9 +289,9 @@ describe('MIoT air conditioner capabilities', () => {
       [transport],
     );
 
-    expect(metadata.resources.map(resource => resource.service.iid)).toEqual([
-      1, 2,
-    ]);
+    expect(
+      metadata.resources.map(resource => resource.service.iid).toSorted(),
+    ).toEqual([1, 2]);
 
     await executeCommand(connection, new SetAirConditionerModeCommand('heat'));
 
@@ -313,11 +303,11 @@ describe('MIoT air conditioner capabilities', () => {
     ]);
   });
 
-  test('omits non-exact mode lists and rejects missing optional commands', async () => {
+  test('supports known modes when the device exposes additional values', async () => {
     const spec = createAirConditionerSpec();
     const modeProperty = requireSpecProperty(spec, 2);
     modeProperty['value-list'] = createValueList([0, 2, 3, 4, 5]);
-    const metadata = findMetadata(miotAirConditionerEndpointAdapter, spec);
+    const metadata = findMetadata(MiotAirConditionerEndpointConnection, spec);
     const transport = new TestTransport();
     const connection = new MiotAirConditionerEndpointConnection(
       new MiotProvider('provider'),
@@ -328,21 +318,29 @@ describe('MIoT air conditioner capabilities', () => {
     expect(getMetadataPropertyNames(metadata)).toEqual(
       [
         'on',
+        'mode',
         'targetTemperature',
         'targetRelativeHumidity',
         'temperature',
         'relativeHumidity',
       ].toSorted(),
     );
-    await expect(
-      executeCommand(connection, new SetAirConditionerModeCommand('cool')),
-    ).rejects.toBeInstanceOf(CommandError);
-    expect(transport.requests).toEqual([]);
+    updateProperty(connection, metadata, 'mode', 0);
+    expect(() => connection.mode).toThrow(
+      'Unknown MIoT enum property state: mode=0.',
+    );
+    await executeCommand(connection, new SetAirConditionerModeCommand('cool'));
+    expect(transport.requests).toEqual([
+      new MiotSetPropertyRequest(
+        {did: metadata.device.did, siid: 2, piid: 2},
+        2,
+      ),
+    ]);
   });
 
   test('rejects optional commands without matched properties', async () => {
     const metadata = findMetadata(
-      miotAirConditionerEndpointAdapter,
+      MiotAirConditionerEndpointConnection,
       createOnOnlySpec(
         'urn:miot-spec-v2:device:air-conditioner:0000A004:test:1',
         'urn:miot-spec-v2:service:air-conditioner:0000780F:test:1',
@@ -355,6 +353,9 @@ describe('MIoT air conditioner capabilities', () => {
       [transport],
     );
 
+    expect(connection.mode).toBeUndefined();
+    expect(connection.targetTemperature).toBeUndefined();
+    expect(connection.targetRelativeHumidity).toBeUndefined();
     await expect(
       executeCommand(connection, new SetAirConditionerModeCommand('cool')),
     ).rejects.toBeInstanceOf(CommandError);
@@ -381,16 +382,7 @@ describe('MIoT air conditioner capabilities', () => {
     spec.type = 'urn:miot-spec-v2:device:other:0000FFFF:test:1';
 
     spec.services = spec.services.filter(service => service.iid !== 4);
-    const candidates = miotAirConditionerEndpointAdapter.findMetadataCandidates(
-      {did: 'device-1', model: 'test.device'},
-      spec,
-    );
-
-    expect(candidates).toHaveLength(1);
-
-    const metadata = miotAirConditionerEndpointAdapter.resolveMetadata(
-      requireMetadataCandidate(candidates),
-    );
+    const metadata = findMetadata(MiotAirConditionerEndpointConnection, spec);
 
     expect(metadata.resources.map(resource => resource.service.iid)).toEqual([
       2,
@@ -406,16 +398,7 @@ describe('MIoT air conditioner capabilities', () => {
   ])('matches the remaining environment feature without $name', entry => {
     const spec = createAirConditionerSpec();
     removeSpecProperty(spec, 4, entry.iid);
-    const candidates = miotAirConditionerEndpointAdapter.findMetadataCandidates(
-      {did: 'device-1'},
-      spec,
-    );
-
-    expect(candidates).toHaveLength(1);
-
-    const metadata = miotAirConditionerEndpointAdapter.resolveMetadata(
-      requireMetadataCandidate(candidates),
-    );
+    const metadata = findMetadata(MiotAirConditionerEndpointConnection, spec);
 
     expect(getMetadataPropertyNames(metadata)).toEqual(
       [
@@ -428,7 +411,7 @@ describe('MIoT air conditioner capabilities', () => {
     );
   });
 
-  test('combines environment features exposed by separate services', () => {
+  test('fails closed when environment features use separate relevant services', () => {
     const spec = createAirConditionerSpec();
     const environment = requireSpecService(spec, 4);
     const temperatureEnvironment = {
@@ -450,25 +433,15 @@ describe('MIoT air conditioner capabilities', () => {
       temperatureEnvironment,
       relativeHumidityEnvironment,
     ];
-    const candidates = miotAirConditionerEndpointAdapter.findMetadataCandidates(
-      {did: 'device-1'},
-      spec,
-    );
-
-    expect(candidates).toHaveLength(1);
-
-    const metadata = miotAirConditionerEndpointAdapter.resolveMetadata(
-      requireMetadataCandidate(candidates),
-    );
-
     expect(
-      metadata.resources.map(resource => resource.service.iid).toSorted(),
-    ).toEqual([2, 4, 5]);
-    expect(getMetadataPropertyNames(metadata)).toContain('temperature');
-    expect(getMetadataPropertyNames(metadata)).toContain('relativeHumidity');
+      resolveMiotEndpointConnectionResources(
+        MiotAirConditionerEndpointConnection,
+        spec.services,
+      ),
+    ).toBeUndefined();
   });
 
-  test('prefers one complete environment service over split alternatives', () => {
+  test('fails closed with multiple complete or partial environment services', () => {
     const spec = createAirConditionerSpec();
     const environment = requireSpecService(spec, 4);
     spec.services.push(
@@ -487,11 +460,12 @@ describe('MIoT air conditioner capabilities', () => {
         ),
       },
     );
-    const metadata = findMetadata(miotAirConditionerEndpointAdapter, spec);
-
     expect(
-      metadata.resources.map(resource => resource.service.iid).toSorted(),
-    ).toEqual([2, 4]);
+      resolveMiotEndpointConnectionResources(
+        MiotAirConditionerEndpointConnection,
+        spec.services,
+      ),
+    ).toBeUndefined();
   });
 
   test.each([
@@ -499,16 +473,7 @@ describe('MIoT air conditioner capabilities', () => {
     'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00:4',
   ])('matches complete features independently of device type (%s)', type => {
     const spec = {...createAirConditionerSpec(), type};
-    const candidates = miotAirConditionerEndpointAdapter.findMetadataCandidates(
-      {did: 'device-1', model: 'test.device'},
-      spec,
-    );
-
-    expect(candidates).toHaveLength(1);
-
-    const metadata = miotAirConditionerEndpointAdapter.resolveMetadata(
-      requireMetadataCandidate(candidates),
-    );
+    const metadata = findMetadata(MiotAirConditionerEndpointConnection, spec);
 
     expect(
       metadata.resources.map(resource => resource.service.iid).toSorted(),
@@ -527,7 +492,7 @@ describe('MIoT air conditioner capabilities', () => {
 
   test('commits control and environment state atomically', () => {
     const metadata = findMetadata(
-      miotAirConditionerEndpointAdapter,
+      MiotAirConditionerEndpointConnection,
       createAirConditionerSpec(),
     );
     const connection = new MiotAirConditionerEndpointConnection(
@@ -580,7 +545,7 @@ describe('MIoT air conditioner capabilities', () => {
 describe('MIoT dehumidifier capabilities', () => {
   test('matches and projects optional mode and normalized target humidity', () => {
     const metadata = findMetadata(
-      miotDehumidifierEndpointAdapter,
+      MiotDehumidifierEndpointConnection,
       createDehumidifierSpec(),
     );
     const connection = new MiotDehumidifierEndpointConnection(
@@ -626,7 +591,7 @@ describe('MIoT dehumidifier capabilities', () => {
 
   test('maps modes and clamps and quantizes normalized target humidity writes', async () => {
     const metadata = findMetadata(
-      miotDehumidifierEndpointAdapter,
+      MiotDehumidifierEndpointConnection,
       createDehumidifierSpec(),
     );
     const transport = new TestTransport();
@@ -673,7 +638,7 @@ describe('MIoT dehumidifier capabilities', () => {
 
   test('returns independent canonical mode and target humidity effects', async () => {
     const metadata = findMetadata(
-      miotDehumidifierEndpointAdapter,
+      MiotDehumidifierEndpointConnection,
       createDehumidifierSpec(),
     );
     const connection = new MiotDehumidifierEndpointConnection(
@@ -725,7 +690,7 @@ describe('MIoT dehumidifier capabilities', () => {
 
   test('rejects optional commands without matched properties', async () => {
     const metadata = findMetadata(
-      miotDehumidifierEndpointAdapter,
+      MiotDehumidifierEndpointConnection,
       createOnOnlySpec(
         'urn:miot-spec-v2:device:dehumidifier:0000A02D:test:1',
         'urn:miot-spec-v2:service:dehumidifier:00007841:test:1',
@@ -749,19 +714,29 @@ describe('MIoT dehumidifier capabilities', () => {
     expect(transport.requests).toEqual([]);
   });
 
-  test('omits one incompatible optional feature without hiding the others', () => {
+  test('supports known modes when the device exposes additional values', () => {
     const spec = createDehumidifierSpec();
     const modeProperty = requireSpecProperty(spec, 2);
     modeProperty['value-list'] = createValueList([0, 1, 2, 3]);
-    const metadata = findMetadata(miotDehumidifierEndpointAdapter, spec);
+    const metadata = findMetadata(MiotDehumidifierEndpointConnection, spec);
+    const connection = new MiotDehumidifierEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
 
     expect(getMetadataPropertyNames(metadata)).toEqual(
       [
         'on',
+        'mode',
         'targetRelativeHumidity',
         'temperature',
         'relativeHumidity',
       ].toSorted(),
+    );
+    updateProperty(connection, metadata, 'mode', 3);
+    expect(() => connection.mode).toThrow(
+      'Unknown MIoT enum property state: mode=3.',
     );
   });
 
@@ -770,16 +745,7 @@ describe('MIoT dehumidifier capabilities', () => {
     spec.type = 'urn:miot-spec-v2:device:other:0000FFFF:test:1';
 
     spec.services = spec.services.filter(service => service.iid !== 3);
-    const candidates = miotDehumidifierEndpointAdapter.findMetadataCandidates(
-      {did: 'device-1', model: 'test.device'},
-      spec,
-    );
-
-    expect(candidates).toHaveLength(1);
-
-    const metadata = miotDehumidifierEndpointAdapter.resolveMetadata(
-      requireMetadataCandidate(candidates),
-    );
+    const metadata = findMetadata(MiotDehumidifierEndpointConnection, spec);
 
     expect(metadata.resources.map(resource => resource.service.iid)).toEqual([
       2,
@@ -795,23 +761,14 @@ describe('MIoT dehumidifier capabilities', () => {
   ])('matches the remaining environment feature without $name', entry => {
     const spec = createDehumidifierSpec();
     removeSpecProperty(spec, 3, entry.iid);
-    const candidates = miotDehumidifierEndpointAdapter.findMetadataCandidates(
-      {did: 'device-1'},
-      spec,
-    );
-
-    expect(candidates).toHaveLength(1);
-
-    const metadata = miotDehumidifierEndpointAdapter.resolveMetadata(
-      requireMetadataCandidate(candidates),
-    );
+    const metadata = findMetadata(MiotDehumidifierEndpointConnection, spec);
 
     expect(getMetadataPropertyNames(metadata)).toEqual(
       ['on', 'mode', 'targetRelativeHumidity', entry.remaining].toSorted(),
     );
   });
 
-  test('combines environment features exposed by separate services', () => {
+  test('fails closed when environment features use separate relevant services', () => {
     const spec = createDehumidifierSpec();
     const environment = requireSpecService(spec, 3);
     const temperatureEnvironment = {
@@ -833,25 +790,15 @@ describe('MIoT dehumidifier capabilities', () => {
       temperatureEnvironment,
       relativeHumidityEnvironment,
     ];
-    const candidates = miotDehumidifierEndpointAdapter.findMetadataCandidates(
-      {did: 'device-1'},
-      spec,
-    );
-
-    expect(candidates).toHaveLength(1);
-
-    const metadata = miotDehumidifierEndpointAdapter.resolveMetadata(
-      requireMetadataCandidate(candidates),
-    );
-
     expect(
-      metadata.resources.map(resource => resource.service.iid).toSorted(),
-    ).toEqual([2, 3, 4]);
-    expect(getMetadataPropertyNames(metadata)).toContain('temperature');
-    expect(getMetadataPropertyNames(metadata)).toContain('relativeHumidity');
+      resolveMiotEndpointConnectionResources(
+        MiotDehumidifierEndpointConnection,
+        spec.services,
+      ),
+    ).toBeUndefined();
   });
 
-  test('prefers one complete environment service over split alternatives', () => {
+  test('fails closed with multiple complete or partial environment services', () => {
     const spec = createDehumidifierSpec();
     const environment = requireSpecService(spec, 3);
     spec.services.push(
@@ -870,11 +817,12 @@ describe('MIoT dehumidifier capabilities', () => {
         ),
       },
     );
-    const metadata = findMetadata(miotDehumidifierEndpointAdapter, spec);
-
     expect(
-      metadata.resources.map(resource => resource.service.iid).toSorted(),
-    ).toEqual([2, 3]);
+      resolveMiotEndpointConnectionResources(
+        MiotDehumidifierEndpointConnection,
+        spec.services,
+      ),
+    ).toBeUndefined();
   });
 
   test.each([
@@ -882,16 +830,7 @@ describe('MIoT dehumidifier capabilities', () => {
     'urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:2',
   ])('matches complete features independently of device type (%s)', type => {
     const spec = {...createDehumidifierSpec(), type};
-    const candidates = miotDehumidifierEndpointAdapter.findMetadataCandidates(
-      {did: 'device-1', model: 'test.device'},
-      spec,
-    );
-
-    expect(candidates).toHaveLength(1);
-
-    const metadata = miotDehumidifierEndpointAdapter.resolveMetadata(
-      requireMetadataCandidate(candidates),
-    );
+    const metadata = findMetadata(MiotDehumidifierEndpointConnection, spec);
 
     expect(
       metadata.resources.map(resource => resource.service.iid).toSorted(),
@@ -910,7 +849,7 @@ describe('MIoT dehumidifier capabilities', () => {
 
 describe('MIoT fan capabilities', () => {
   test('matches and projects wind mode, normalized speed, and swing', () => {
-    const metadata = findMetadata(miotFanEndpointAdapter, createFanSpec());
+    const metadata = findMetadata(MiotFanEndpointConnection, createFanSpec());
     const connection = new MiotFanEndpointConnection(
       new MiotProvider('provider'),
       metadata,
@@ -940,7 +879,7 @@ describe('MIoT fan capabilities', () => {
   });
 
   test('maps wind mode, quantizes speed, and writes horizontal swing', async () => {
-    const metadata = findMetadata(miotFanEndpointAdapter, createFanSpec());
+    const metadata = findMetadata(MiotFanEndpointConnection, createFanSpec());
     const transport = new TestTransport();
     const connection = new MiotFanEndpointConnection(
       new MiotProvider('provider'),
@@ -966,7 +905,7 @@ describe('MIoT fan capabilities', () => {
   });
 
   test('returns independent canonical mode, speed, and swing effects', async () => {
-    const metadata = findMetadata(miotFanEndpointAdapter, createFanSpec());
+    const metadata = findMetadata(MiotFanEndpointConnection, createFanSpec());
     const connection = new MiotFanEndpointConnection(
       new MiotProvider('provider'),
       metadata,
@@ -1014,7 +953,7 @@ describe('MIoT fan capabilities', () => {
 
   test('rejects optional commands without matched properties', async () => {
     const metadata = findMetadata(
-      miotFanEndpointAdapter,
+      MiotFanEndpointConnection,
       createOnOnlySpec(
         'urn:miot-spec-v2:device:fan:0000A005:test:1',
         'urn:miot-spec-v2:service:fan:00007808:test:1',
@@ -1027,6 +966,9 @@ describe('MIoT fan capabilities', () => {
       [transport],
     );
 
+    expect(connection.windMode).toBeUndefined();
+    expect(connection.speed).toBeUndefined();
+    expect(connection.horizontalSwing).toBeUndefined();
     await expect(
       executeCommand(connection, new SetFanWindModeCommand('normal')),
     ).rejects.toBeInstanceOf(CommandError);
@@ -1039,15 +981,22 @@ describe('MIoT fan capabilities', () => {
     expect(transport.requests).toEqual([]);
   });
 
-  test('omits one incompatible optional feature without hiding the others', () => {
+  test('derives fan levels from the device value list', () => {
     const spec = createFanSpec();
     const speedProperty = requireSpecProperty(spec, 3);
     speedProperty['value-list'] = createValueList([1, 2, 3]);
-    const metadata = findMetadata(miotFanEndpointAdapter, spec);
+    const metadata = findMetadata(MiotFanEndpointConnection, spec);
+    const connection = new MiotFanEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
 
     expect(getMetadataPropertyNames(metadata)).toEqual(
-      ['on', 'windMode', 'horizontalSwing'].toSorted(),
+      ['on', 'windMode', 'speed', 'horizontalSwing'].toSorted(),
     );
+    updateProperty(connection, metadata, 'speed', 2);
+    expect(connection.speed).toBeCloseTo(2 / 3);
   });
 
   test.each([
@@ -1055,16 +1004,7 @@ describe('MIoT fan capabilities', () => {
     'urn:miot-spec-v2:device:fan:0000A005:dmaker-p5c:2',
   ])('matches complete features independently of device type (%s)', type => {
     const spec = {...createFanSpec(), type};
-    const candidates = miotFanEndpointAdapter.findMetadataCandidates(
-      {did: 'device-1', model: 'test.device'},
-      spec,
-    );
-
-    expect(candidates).toHaveLength(1);
-
-    const metadata = miotFanEndpointAdapter.resolveMetadata(
-      requireMetadataCandidate(candidates),
-    );
+    const metadata = findMetadata(MiotFanEndpointConnection, spec);
 
     expect(metadata.resources.map(resource => resource.service.iid)).toEqual([
       2,
@@ -1274,40 +1214,33 @@ function createRangeProperty(
 }
 
 function findMetadata(
-  adapter: MiotEndpointAdapter,
+  Connection: MiotEndpointConnectionConstructor,
   spec: MiotSpecInstance,
 ): MiotEndpointConnectionResolvedMetadata {
-  return adapter.resolveMetadata(findPersistedMetadata(adapter, spec));
+  return resolveMiotEndpointConnectionMetadata(
+    Connection,
+    findPersistedMetadata(Connection, spec),
+  );
 }
 
 function findPersistedMetadata(
-  adapter: MiotEndpointAdapter,
+  Connection: MiotEndpointConnectionConstructor,
   spec: MiotSpecInstance,
 ): MiotEndpointConnectionMetadata {
-  const [candidate] = adapter.findMetadataCandidates(
-    {did: 'device-1', model: 'test.device'},
-    spec,
+  const resources = resolveMiotEndpointConnectionResources(
+    Connection,
+    spec.services,
   );
 
-  if (candidate === undefined) {
-    throw new Error('Test adapter returned no metadata candidate.');
+  if (resources === undefined) {
+    throw new Error('Test connection did not resolve endpoint resources.');
   }
 
-  return candidate.metadata;
-}
-
-function requireMetadataCandidate(
-  candidates: readonly {
-    readonly metadata: MiotEndpointConnectionMetadata;
-  }[],
-): MiotEndpointConnectionMetadata {
-  const [candidate] = candidates;
-
-  if (candidate === undefined) {
-    throw new Error('Test adapter returned no metadata candidate.');
-  }
-
-  return candidate.metadata;
+  return createMiotEndpointConnectionMetadata(
+    {did: 'device-1', model: 'test.device'},
+    spec.type,
+    resources,
+  );
 }
 
 function requireSpecProperty(

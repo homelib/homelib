@@ -9,26 +9,12 @@ import {
   SetLightOnCommand,
 } from '@homelib/core';
 import {computed} from 'mobx';
-import * as x from 'x-value';
 
+import {MiotEndpointConnection} from '../endpoint-connection.js';
 import {
-  type MiotEndpointProfile,
-  defineMiotEndpointAdapter,
-  getMiotEndpointConnectionProperties,
-} from '../endpoint-adapter.js';
-import {
-  MiotEndpointConnection,
-  type MiotEndpointConnectionResolvedMetadata,
-  type MiotEndpointConnectionTransports,
-} from '../endpoint-connection.js';
-import {
-  type MiotEndpointMatcher,
-  type MiotPropertyMatcher,
-  type MiotSpecProperty,
-  type MiotSpecValueRange,
-  isValidMiotSpecValueRange,
+  type MiotPropertySchema,
+  type MiotPropertySchemaProperties,
 } from '../miot/index.js';
-import type {MiotProvider} from '../provider.js';
 
 import {
   MiotCommandEffect,
@@ -36,54 +22,31 @@ import {
   type MiotCommandEffectValues,
 } from './command-effect.js';
 
-const MiotLightOn = x.boolean;
-
-const MIOT_LIGHT_ENDPOINT_MATCHER: MiotLightEndpointMatcher = {
-  service: 'urn:miot-spec-v2:service:light:00007802',
-  properties: {
-    on: {
-      type: 'urn:miot-spec-v2:property:on:00000006',
-      format: 'bool',
-      access: ['read', 'write', 'notify'],
-    },
-  },
-  optionalProperties: {
-    brightness: {
-      type: 'urn:miot-spec-v2:property:brightness:0000000D',
-      format: ['uint8', 'uint16'],
-      access: ['read', 'write', 'notify'],
-      unit: 'percentage',
-      valueRange: true,
-    },
-    colorTemperature: {
-      type: 'urn:miot-spec-v2:property:color-temperature:0000000F',
-      format: 'uint32',
-      access: ['read', 'write', 'notify'],
-      unit: 'kelvin',
-      valueRange: true,
-    },
-  },
-};
-
-const MIOT_LIGHT_ENDPOINT_PROFILES = [
-  {services: [MIOT_LIGHT_ENDPOINT_MATCHER]},
-] as const satisfies readonly MiotEndpointProfile[];
-
 export class MiotLightEndpointConnection
-  extends MiotEndpointConnection<LightEndpointCommand>
+  extends MiotEndpointConnection<
+    LightEndpointCommand,
+    typeof MiotLightEndpointConnection.properties
+  >
   implements LightEndpointConnection
 {
   static readonly Endpoint = LightEndpoint;
-
-  static readonly endpointProfiles = MIOT_LIGHT_ENDPOINT_PROFILES;
-
-  private readonly properties: MiotLightEndpointProperties;
+  static readonly properties = {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:on:00000006': 'on',
+      'urn:miot-spec-v2:property:brightness:0000000D': {
+        name: 'brightness',
+        optional: true,
+      },
+      'urn:miot-spec-v2:property:color-temperature:0000000F': {
+        name: 'colorTemperature',
+        optional: true,
+      },
+    },
+  } as const satisfies MiotPropertySchema;
 
   @computed
   get on(): boolean {
-    const value = this.getState('on');
-
-    return value === undefined ? false : MiotLightOn.satisfies(value);
+    return this.getBooleanPropertyState('on', false);
   }
 
   @computed
@@ -94,17 +57,11 @@ export class MiotLightEndpointConnection
       return undefined;
     }
 
-    const valueRange = getPropertyValueRange(brightness);
+    const valueRange = this.getPropertyValueRange(brightness);
     const [, maximum] = valueRange;
-    const value = getOptionalNumberState(this.getState('brightness'));
+    const value = this.getNumberPropertyState('brightness', 0);
 
-    if (value === undefined) {
-      return 0;
-    }
-
-    assertValueInRange('brightness', value, valueRange);
-
-    return value / maximum;
+    return value === undefined ? undefined : value / maximum;
   }
 
   @computed
@@ -115,29 +72,9 @@ export class MiotLightEndpointConnection
       return undefined;
     }
 
-    const valueRange = getPropertyValueRange(colorTemperature);
+    const valueRange = this.getPropertyValueRange(colorTemperature);
     const [minimum] = valueRange;
-    const value = getOptionalNumberState(this.getState('colorTemperature'));
-
-    if (value === undefined) {
-      return minimum;
-    }
-
-    assertValueInRange('color temperature', value, valueRange);
-
-    return value;
-  }
-
-  constructor(
-    provider: MiotProvider,
-    metadata: MiotEndpointConnectionResolvedMetadata,
-    transports: MiotEndpointConnectionTransports,
-  ) {
-    super(provider, metadata, transports);
-    this.properties =
-      getMiotEndpointConnectionProperties<MiotLightEndpointProperties>(
-        metadata,
-      );
+    return this.getNumberPropertyState('colorTemperature', minimum);
   }
 
   override prepareCommand(command: LightEndpointCommand): CommandExecution {
@@ -148,34 +85,9 @@ export class MiotLightEndpointConnection
   }
 }
 
-export const miotLightEndpointAdapter = defineMiotEndpointAdapter<
-  LightEndpointCommand,
-  LightEndpointConnection
->({
-  type: 'light',
-  Endpoint: MiotLightEndpointConnection.Endpoint,
-  Connection: MiotLightEndpointConnection,
-  endpointProfiles: MiotLightEndpointConnection.endpointProfiles,
-});
-
-type MiotLightEndpointMatcher = Omit<
-  MiotEndpointMatcher<
-    {
-      readonly on: MiotPropertyMatcher;
-    },
-    {
-      readonly brightness: MiotPropertyMatcher;
-      readonly colorTemperature: MiotPropertyMatcher;
-    }
-  >,
-  'device'
+type MiotLightEndpointProperties = MiotPropertySchemaProperties<
+  typeof MiotLightEndpointConnection.properties
 >;
-
-type MiotLightEndpointProperties = {
-  readonly on: MiotSpecProperty;
-  readonly brightness?: MiotSpecProperty;
-  readonly colorTemperature?: MiotSpecProperty;
-};
 
 function createMiotLightEffect(
   command: LightEndpointCommand,
@@ -217,39 +129,5 @@ class MiotLightCommandEffect extends MiotCommandEffect<
       brightness: endpoint.brightness,
       colorTemperature: endpoint.colorTemperature,
     };
-  }
-}
-
-function getOptionalNumberState(value: unknown): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError('Invalid MIoT light numeric state.');
-  }
-
-  return value;
-}
-
-function getPropertyValueRange(property: MiotSpecProperty): MiotSpecValueRange {
-  const valueRange = property['value-range'];
-
-  if (!isValidMiotSpecValueRange(valueRange, property.format)) {
-    throw new TypeError('Invalid MIoT light property value range.');
-  }
-
-  return valueRange;
-}
-
-function assertValueInRange(
-  name: string,
-  value: number,
-  valueRange: MiotSpecValueRange,
-): void {
-  const [minimum, maximum] = valueRange;
-
-  if (value < minimum || value > maximum) {
-    throw new TypeError(`Invalid MIoT light ${name} state.`);
   }
 }

@@ -1,5 +1,6 @@
 import {
   type CommandEffect,
+  CommandError,
   type EndpointReference,
   Temperature,
 } from '@homelib/core';
@@ -9,8 +10,8 @@ import {
   getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
 import {
+  type MiotResolvedSpecProperty,
   MiotSetPropertyRequest,
-  type MiotSpecProperty,
   isValidMiotSpecValueList,
   isValidMiotSpecValueRange,
 } from '../miot/index.js';
@@ -47,9 +48,9 @@ export type MiotCommandEffectConnection = {
 };
 
 /**
- * A desired MIoT state expressed through aliases resolved by an endpoint
- * profile. Actual property addresses and numeric conventions come from the
- * matched MIoT spec rather than a second effect-specific schema.
+ * A desired MIoT state expressed through aliases in resolved connection
+ * metadata. Property addresses and numeric conventions come from the matched
+ * MIoT spec rather than a second effect-specific schema.
  */
 export abstract class MiotCommandEffect<
   TEndpoint extends EndpointReference,
@@ -136,7 +137,7 @@ export abstract class MiotCommandEffect<
     }
 
     if (!property.property.access.includes('write')) {
-      throw new TypeError(
+      throw new CommandError(
         `MIoT command effect property is not writable: ${property.name}.`,
       );
     }
@@ -183,7 +184,7 @@ export abstract class MiotCommandEffect<
 
 type MiotCommandEffectProperty = {
   readonly name: string;
-  readonly property: MiotSpecProperty;
+  readonly property: MiotResolvedSpecProperty;
   readonly address: {
     readonly did: string;
     readonly siid: number;
@@ -193,7 +194,7 @@ type MiotCommandEffectProperty = {
 };
 
 function canonicalizeMiotEffectValue(
-  property: MiotSpecProperty,
+  property: MiotResolvedSpecProperty,
   value: unknown,
 ): boolean | number | string {
   const miotValue = getMiotEffectValue(property, value);
@@ -266,9 +267,23 @@ function canonicalizeMiotEffectValue(
 }
 
 function getMiotEffectValue(
-  property: MiotSpecProperty,
+  property: MiotResolvedSpecProperty,
   value: unknown,
 ): unknown {
+  if (property.enum !== undefined) {
+    if (typeof value !== 'string') {
+      throw new TypeError('Invalid MIoT enum command effect value.');
+    }
+
+    if (!Object.hasOwn(property.enum, value)) {
+      throw new CommandError(`Unsupported MIoT enum value: ${value}.`);
+    }
+
+    const enumValue = property.enum[value];
+
+    return enumValue;
+  }
+
   if (value instanceof Temperature) {
     switch (property.unit) {
       case 'celsius':
@@ -327,7 +342,7 @@ function getMiotEffectValue(
 }
 
 function matchesMiotPropertyType(
-  property: MiotSpecProperty,
+  property: MiotResolvedSpecProperty,
   type: string,
 ): boolean {
   return property.type === type || property.type.startsWith(`${type}:`);

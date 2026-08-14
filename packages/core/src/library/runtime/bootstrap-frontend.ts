@@ -1,4 +1,5 @@
 import {assertDeclaring} from '../@lifecycle.js';
+import type {Device, DeviceConstructor} from '../device.js';
 import type {EndpointReference} from '../endpoint.js';
 import type {RuntimeProvider} from '../provider.js';
 
@@ -38,6 +39,7 @@ export type BootstrapBindingScope = {
 
 export type BootstrapBindingDevice = {
   readonly name: string;
+  readonly deviceConstructors: readonly DeviceConstructor<Device>[];
   readonly endpoints: readonly BootstrapBindingEndpoint[];
 };
 
@@ -52,6 +54,7 @@ export type ProviderBindingEndpoint = BootstrapBindingEndpoint & {
 
 export type ProviderBindingDevice = {
   readonly name: string;
+  readonly deviceConstructors: readonly DeviceConstructor<Device>[];
   readonly endpoints: readonly ProviderBindingEndpoint[];
 };
 
@@ -158,16 +161,17 @@ function assertProviderResourceBindingsUnique(
       continue;
     }
 
-    const endpoint = findBootstrapBindingEndpoint(scopes, binding.endpoint);
+    const target = findBootstrapBindingEndpoint(scopes, binding.endpoint);
 
-    if (endpoint === undefined) {
+    if (target === undefined) {
       throw new Error(
         `Binding references an unknown endpoint: ${getEndpointPathKey(binding.endpoint)}.`,
       );
     }
 
     const plan = provider.createEndpointConnectionBindingPlan(
-      endpoint.endpoint,
+      target.endpoint.endpoint,
+      target.deviceConstructors,
       binding.metadata,
     );
 
@@ -206,7 +210,7 @@ function findEndpointBinding(
 function findBootstrapBindingEndpoint(
   scopes: readonly BootstrapBindingScope[],
   path: EndpointPath,
-): BootstrapBindingEndpoint | undefined {
+): BootstrapBindingEndpointTarget | undefined {
   const pathKey = getEndpointPathKey(path);
 
   for (const scope of scopes) {
@@ -216,7 +220,10 @@ function findBootstrapBindingEndpoint(
       );
 
       if (endpoint !== undefined) {
-        return endpoint;
+        return {
+          endpoint,
+          deviceConstructors: device.deviceConstructors,
+        };
       }
     }
 
@@ -229,3 +236,8 @@ function findBootstrapBindingEndpoint(
 
   return undefined;
 }
+
+type BootstrapBindingEndpointTarget = {
+  readonly endpoint: BootstrapBindingEndpoint;
+  readonly deviceConstructors: readonly DeviceConstructor<Device>[];
+};

@@ -146,6 +146,32 @@ test('skips a stateful command already satisfied by observed state', async () =>
   expect(connection.processedValues).toEqual([]);
 });
 
+test('executes a stateful command when checking its prepared effect throws', async () => {
+  const endpoint = new TestEndpoint();
+  const connection = new TestEndpointConnection();
+  const matchError = new Error('Effect match failed.');
+  const logEvents: LogEvent[] = [];
+  const removeLogListener = addLogListener(event => logEvents.push(event));
+  connection.effectForCommand = command =>
+    new TestCommandEffect(command.value, () => {
+      throw matchError;
+    });
+  connection.setReady(true);
+  endpoint.bindConnection(connection);
+
+  try {
+    endpoint.send(1);
+    await flushMicrotasks();
+
+    expect(connection.processedValues).toEqual([1]);
+    expect(logEvents.filter(event => event.type === 'error')).toEqual([
+      {type: 'error', timestamp: expect.any(Number), error: matchError},
+    ]);
+  } finally {
+    removeLogListener();
+  }
+});
+
 test('executes a stateless command even when its prepared effect matches', async () => {
   const endpoint = new StatelessTestEndpoint();
   const connection = new StatelessTestEndpointConnection();
@@ -340,6 +366,35 @@ test('reconciles effects on every relevant observation revision', async () => {
   expect(connection.processedValues).toEqual([1]);
 
   connection.setObservedValue(2);
+  endpoint.send(1);
+  await flushMicrotasks();
+
+  expect(connection.processedValues).toEqual([1, 1]);
+});
+
+test('removes an acknowledged effect when reconciling it throws', async () => {
+  const endpoint = new TestEndpoint();
+  const connection = new TestEndpointConnection();
+  let throwOnMatch = false;
+  connection.effectForCommand = command =>
+    new TestCommandEffect(
+      command.value,
+      () => {
+        if (throwOnMatch) {
+          throw new Error('Effect match failed.');
+        }
+      },
+      undefined,
+      () => connection.observedValueRevision,
+    );
+  connection.setReady(true);
+  endpoint.bindConnection(connection);
+
+  endpoint.send(1);
+  await flushMicrotasks();
+
+  throwOnMatch = true;
+  connection.setObservedValue(1);
   endpoint.send(1);
   await flushMicrotasks();
 

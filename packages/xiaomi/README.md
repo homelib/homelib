@@ -15,6 +15,8 @@ HomeLib 的 Xiaomi MIoT provider，提供米家账号授权、设备发现、绑
 
 适配不限制设备型号或 MIoT spec revision。每项能力仅在设备公开的 service、属性类型、取值和访问方式均匹配时启用。
 
+MIoT 标准属性的默认 access 并不保证每个设备实例一致，因此匹配始终以设备实际公开的 instance spec 为准。当前状态属性必须同时支持 `read` 和 `notify`；是否支持写入则在执行命令时检查 `write`。这是偏保守的行为：暂不通过轮询适配只有 `read` 的属性，后续可在引入轮询或更细的能力模型后重新评估。
+
 ## License
 
 MIT License.

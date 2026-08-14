@@ -262,7 +262,7 @@ export abstract class Endpoint<
       return false;
     }
 
-    return preparedEffect.matches(this);
+    return this.commandEffectMatches(preparedEffect);
   }
 
   private acknowledgeCommand(
@@ -283,7 +283,7 @@ export abstract class Endpoint<
     const currentObservationRevision = effect.observationRevision;
 
     if (currentObservationRevision !== observationRevision) {
-      if (effect.matches(this)) {
+      if (this.commandEffectMatches(effect)) {
         this.acknowledgedCommands.push({
           command,
           effect,
@@ -348,7 +348,7 @@ export abstract class Endpoint<
     const currentObservationRevision = effect.observationRevision;
 
     if (currentObservationRevision !== observationRevision) {
-      if (effect.matches(this)) {
+      if (this.commandEffectMatches(effect)) {
         this.acknowledgedCommands.push({
           command,
           effect,
@@ -393,7 +393,7 @@ export abstract class Endpoint<
         continue;
       }
 
-      if (acknowledgedCommand.effect.matches(this)) {
+      if (this.commandEffectMatches(acknowledgedCommand.effect)) {
         acknowledgedCommand.observationRevision = observationRevision;
       } else {
         this.removeAcknowledgedCommand(acknowledgedCommand);
@@ -416,7 +416,7 @@ export abstract class Endpoint<
 
       this.removeUncertainCommandEffect(uncertainEffect);
 
-      if (uncertainEffect.effect.matches(this)) {
+      if (this.commandEffectMatches(uncertainEffect.effect)) {
         this.acknowledgedCommands.push({
           command: uncertainEffect.command,
           effect: uncertainEffect.effect,
@@ -433,6 +433,15 @@ export abstract class Endpoint<
 
     if (index !== -1) {
       this.commandsWithUncertainEffects.splice(index, 1);
+    }
+  }
+
+  private commandEffectMatches(effect: CommandEffect): boolean {
+    try {
+      return effect.matches(this);
+    } catch (error) {
+      logEndpointError(error);
+      return false;
     }
   }
 

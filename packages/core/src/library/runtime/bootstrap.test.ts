@@ -6,7 +6,7 @@ import {action, observable} from 'mobx';
 import * as x from 'x-value';
 
 import {Command} from '../command.js';
-import {Device, type DeviceEntry} from '../device.js';
+import {Device, type DeviceConstructor, type DeviceEntry} from '../device.js';
 import {
   type CommandExecution,
   Endpoint,
@@ -38,19 +38,24 @@ test('validates metadata before creating an endpoint connection', async () => {
   const endpoint = new TestEndpoint();
 
   expect(() =>
-    provider.createEndpointConnectionBindingPlan(endpoint, {value: 1}),
+    provider.createEndpointConnectionBindingPlan(endpoint, [TestDevice], {
+      value: 1,
+    }),
   ).toThrow('Value does not satisfy the type');
   expect(provider.endpointConnections).toHaveLength(0);
 
-  const plan = provider.createEndpointConnectionBindingPlan(endpoint, {
-    value: 'metadata',
-  });
+  const plan = provider.createEndpointConnectionBindingPlan(
+    endpoint,
+    [TestDevice],
+    {value: 'metadata'},
+  );
 
   expect(provider.endpointConnections).toHaveLength(0);
 
   await plan.create();
 
   expect(provider.endpointConnections).toHaveLength(1);
+  expect(provider.receivedDeviceConstructors).toEqual([TestDevice]);
 });
 
 test('binds configured endpoints before resolving', async () => {
@@ -117,6 +122,15 @@ test('binds configured endpoints before resolving', async () => {
       bootstrapContext = context;
       expect(context.providers).toEqual([{namespace: 'test', provider}]);
       expect(context.bindingScopes[0]?.path).toEqual(['home']);
+      expect(
+        context.bindingScopes[0]?.scopes[0]?.devices.map(bindingDevice => ({
+          name: bindingDevice.name,
+          deviceConstructors: bindingDevice.deviceConstructors,
+        })),
+      ).toEqual([
+        {name: 'device', deviceConstructors: [TestDevice]},
+        {name: 'unbound-device', deviceConstructors: [TestDevice]},
+      ]);
       expect(context.initialBindingFile.bindings).toHaveLength(3);
 
       await context.updateBindingFile(bindingFile => ({
@@ -147,6 +161,7 @@ test('binds configured endpoints before resolving', async () => {
 
     expect(provider.processedValues).toEqual([1, 2]);
     expect(provider.receivedMetadata).toEqual({value: 'updated metadata'});
+    expect(provider.receivedDeviceConstructors).toEqual([TestDevice]);
 
     if (bootstrapContext === undefined) {
       throw new Error('Bootstrap frontend was not presented.');
@@ -200,6 +215,8 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
 
   receivedMetadata: TestEndpointConnectionMetadata | undefined;
 
+  receivedDeviceConstructors: readonly DeviceConstructor<Device>[] | undefined;
+
   private readonly connectionValues: TestEndpointConnection[] = [];
 
   override get endpointConnections(): readonly TestEndpointConnection[] {
@@ -214,6 +231,7 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
 
   protected override createEndpointConnectionBindingPlanFromMetadata(
     endpoint: EndpointReference,
+    deviceConstructors: readonly DeviceConstructor<Device>[],
     metadata: TestEndpointConnectionMetadata,
   ): EndpointConnectionBindingPlan {
     if (!(endpoint instanceof TestEndpoint)) {
@@ -221,6 +239,7 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
     }
 
     this.receivedMetadata = metadata;
+    this.receivedDeviceConstructors = deviceConstructors;
 
     return {
       resourceKeys: [],

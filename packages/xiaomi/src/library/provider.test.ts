@@ -2,15 +2,30 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
-import {DehumidifierEndpoint, LightEndpoint} from '@homelib/core';
+import {
+  Dehumidifier,
+  DehumidifierEndpoint,
+  Device,
+  Light,
+  LightEndpoint,
+} from '@homelib/core';
 
 import {
-  miotDehumidifierEndpointAdapter,
-  miotLightEndpointAdapter,
+  createMiotEndpointConnectionMetadata,
+  resolveMiotEndpointConnectionMetadata,
+  resolveMiotEndpointConnectionResources,
+} from './device.js';
+import {
+  MiotDehumidifierEndpointConnection,
+  MiotLightEndpointConnection,
 } from './devices/index.js';
-import {getMiotEndpointConnectionResourceKeys} from './endpoint-connection.js';
+import {
+  type MiotEndpointConnectionResolvedMetadata,
+  getMiotEndpointConnectionResourceKeys,
+} from './endpoint-connection.js';
 import type {MiotSpecInstance} from './miot/index.js';
 import {$xiaomi, MiotProvider} from './provider.js';
+import './index.js';
 
 const LIGHT_SPEC: MiotSpecInstance = {
   type: 'urn:miot-spec-v2:device:light:0000A001:test-light:1',
@@ -85,61 +100,77 @@ test('rejects duplicate provider declarations', () => {
   expect(() => $xiaomi('home')).toThrow('Duplicate provider: home.');
 });
 
-test('routes endpoint binding plans through the exact endpoint adapter', () => {
+test('routes endpoint binding plans through the exact endpoint connection', () => {
   class SpecializedLightEndpoint extends LightEndpoint {}
 
-  const [candidate] = miotLightEndpointAdapter.findMetadataCandidates(
-    {did: 'device', model: 'test.light'},
-    LIGHT_SPEC,
+  const resources = resolveMiotEndpointConnectionResources(
+    MiotLightEndpointConnection,
+    LIGHT_SPEC.services,
   );
 
-  if (candidate === undefined) {
-    throw new Error('Test light has no MIoT metadata candidate.');
+  if (resources === undefined) {
+    throw new Error('Test light has no resolved MIoT resources.');
   }
 
-  const provider = new MiotProvider('provider');
-  const resolveMetadata = import.meta.jest.spyOn(
-    miotLightEndpointAdapter,
-    'resolveMetadata',
+  const metadata = createMiotEndpointConnectionMetadata(
+    {did: 'device', model: 'test.light'},
+    LIGHT_SPEC.type,
+    resources,
   );
+
+  const provider = new MiotProvider('provider');
   const legacyMetadata = {
-    ...candidate.metadata,
-    resources: candidate.metadata.resources.map(resource => ({
-      ...resource,
-      properties: {staleAlias: resource.service.properties?.[0]},
+    ...metadata,
+    resources: metadata.resources.map(resource => ({
+      service: resource.service,
     })),
   };
   const plan = provider.createEndpointConnectionBindingPlan(
     new LightEndpoint(),
+    [Light],
     legacyMetadata,
   );
 
-  expect(resolveMetadata).toHaveBeenCalledWith(candidate.metadata);
   expect(plan.resourceKeys).toEqual(
-    getMiotEndpointConnectionResourceKeys(candidate.metadata),
+    getMiotEndpointConnectionResourceKeys(metadata),
   );
   expect(() =>
     provider.createEndpointConnectionBindingPlan(
       new SpecializedLightEndpoint(),
-      candidate.metadata,
+      [Light],
+      metadata,
+    ),
+  ).toThrow('Unsupported MIoT endpoint.');
+  expect(() =>
+    provider.createEndpointConnectionBindingPlan(
+      new LightEndpoint(),
+      [class UnregisteredDevice extends Device {}],
+      metadata,
     ),
   ).toThrow('Unsupported MIoT endpoint.');
 });
 
 test('claims every service used by a multi-service endpoint', () => {
-  const [candidate] = miotDehumidifierEndpointAdapter.findMetadataCandidates(
-    {did: 'dehumidifier', model: 'xiaomi.derh.13l'},
-    DEHUMIDIFIER_SPEC,
+  const resources = resolveMiotEndpointConnectionResources(
+    MiotDehumidifierEndpointConnection,
+    DEHUMIDIFIER_SPEC.services,
   );
 
-  if (candidate === undefined) {
-    throw new Error('Test dehumidifier has no MIoT metadata candidate.');
+  if (resources === undefined) {
+    throw new Error('Test dehumidifier has no resolved MIoT resources.');
   }
+
+  const metadata = createMiotEndpointConnectionMetadata(
+    {did: 'dehumidifier', model: 'xiaomi.derh.13l'},
+    DEHUMIDIFIER_SPEC.type,
+    resources,
+  );
 
   const provider = new MiotProvider('provider');
   const plan = provider.createEndpointConnectionBindingPlan(
     new DehumidifierEndpoint(),
-    candidate.metadata,
+    [Dehumidifier],
+    metadata,
   );
 
   expect(plan.resourceKeys).toEqual([
@@ -314,15 +345,20 @@ test('releases an acquired cloud when binding creation fails', async () => {
   internals.cloudPromise = Promise.resolve(cloud);
   internals.getCloud = () => Promise.resolve(cloud);
 
+  class FailingLightConnection extends MiotLightEndpointConnection {
+    constructor(
+      ..._arguments: ConstructorParameters<typeof MiotLightEndpointConnection>
+    ) {
+      super(..._arguments);
+      throw creationError;
+    }
+  }
+
   await expect(
     internals.createEndpointConnectionBinding(
-      {
-        createBinding() {
-          throw creationError;
-        },
-      },
-      {},
-      {},
+      FailingLightConnection,
+      new LightEndpoint(),
+      createTestLightResolvedMetadata(),
     ),
   ).rejects.toBe(creationError);
 
@@ -355,9 +391,9 @@ type ProviderCleanupInternals = {
   sessionManager: {reset(): Promise<void>};
   getCloud(): Promise<TestCloud>;
   createEndpointConnectionBinding(
-    adapter: {createBinding(...arguments_: unknown[]): never},
-    endpoint: object,
-    metadata: object,
+    Connection: typeof MiotLightEndpointConnection,
+    endpoint: LightEndpoint,
+    metadata: ReturnType<typeof createTestLightResolvedMetadata>,
   ): Promise<unknown>;
   disposeEndpointConnection(connection: object): Promise<void>;
   disposeCloudIfUnused(expectedCloud?: TestCloud): Promise<void>;
@@ -367,6 +403,26 @@ function getProviderCleanupInternals(
   provider: MiotProvider,
 ): ProviderCleanupInternals {
   return provider as unknown as ProviderCleanupInternals;
+}
+
+function createTestLightResolvedMetadata(): MiotEndpointConnectionResolvedMetadata {
+  const resources = resolveMiotEndpointConnectionResources(
+    MiotLightEndpointConnection,
+    LIGHT_SPEC.services,
+  );
+
+  if (resources === undefined) {
+    throw new Error('Test light has no resolved MIoT resources.');
+  }
+
+  return resolveMiotEndpointConnectionMetadata(
+    MiotLightEndpointConnection,
+    createMiotEndpointConnectionMetadata(
+      {did: 'device', model: 'test.light'},
+      LIGHT_SPEC.type,
+      resources,
+    ),
+  );
 }
 
 function createTestCloud(disconnect: () => Promise<void>): TestCloud {

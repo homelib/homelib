@@ -1,5 +1,6 @@
 import * as x from 'x-value';
 
+import type {Device, DeviceConstructor} from './device.js';
 import type {
   EndpointConnection,
   EndpointConnectionBinding,
@@ -29,6 +30,7 @@ export abstract class Provider<
 
   createEndpointConnectionBindingPlan(
     endpoint: EndpointReference,
+    deviceConstructors: readonly DeviceConstructor<Device>[],
     metadata: unknown,
   ): EndpointConnectionBindingPlan {
     const validatedMetadata =
@@ -36,12 +38,14 @@ export abstract class Provider<
 
     return this.createEndpointConnectionBindingPlanFromMetadata(
       endpoint,
+      deviceConstructors,
       validatedMetadata,
     );
   }
 
   protected abstract createEndpointConnectionBindingPlanFromMetadata(
     endpoint: EndpointReference,
+    deviceConstructors: readonly DeviceConstructor<Device>[],
     metadata: TMetadata,
   ): EndpointConnectionBindingPlan;
 }
@@ -56,6 +60,7 @@ export type RuntimeProvider = {
   readonly endpointConnections: readonly EndpointConnection<never>[];
   createEndpointConnectionBindingPlan(
     endpoint: EndpointReference,
+    deviceConstructors: readonly DeviceConstructor<Device>[],
     metadata: unknown,
   ): EndpointConnectionBindingPlan;
 };

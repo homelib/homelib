@@ -466,7 +466,8 @@ function createStaleBindingItems(
   );
 }
 
-function createProviderBindingDevice(
+/** @internal */
+export function createProviderBindingDevice(
   device: BootstrapBindingDevice,
   bindingFile: BindingFile,
 ): ProviderBindingDevice {
@@ -479,6 +480,7 @@ function createProviderBindingDevice(
 
   return {
     name: device.name,
+    deviceConstructors: device.deviceConstructors,
     endpoints: device.endpoints.map(endpoint => ({
       path: endpoint.path,
       endpoint: endpoint.endpoint,

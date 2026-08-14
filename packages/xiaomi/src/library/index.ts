@@ -1,16 +1,33 @@
-import {register} from '@homelib/core';
+import {
+  AirConditioner,
+  Dehumidifier,
+  Fan,
+  Light,
+  register,
+} from '@homelib/core';
 import {
   registerProviderBindingComponent,
   registerProviderDetailsComponent,
 } from '@homelib/terminal';
 
-import {MiotPlaceholderDevice} from './devices/index.js';
+import {registerMiotDevice} from './device.js';
+import {
+  MiotAirConditionerEndpointConnection,
+  MiotDehumidifierEndpointConnection,
+  MiotFanEndpointConnection,
+  MiotLightEndpointConnection,
+  MiotPlaceholderDevice,
+} from './devices/index.js';
 import {MIOT_NAMESPACE, MiotProvider} from './provider.js';
 import {MiotProviderBindings, MiotProviderDetails} from './terminal/index.js';
 
 register(MIOT_NAMESPACE, {
   placeholder: MiotPlaceholderDevice,
 });
+registerMiotDevice(AirConditioner, MiotAirConditionerEndpointConnection);
+registerMiotDevice(Dehumidifier, MiotDehumidifierEndpointConnection);
+registerMiotDevice(Fan, MiotFanEndpointConnection);
+registerMiotDevice(Light, MiotLightEndpointConnection);
 registerProviderBindingComponent(MiotProvider, MiotProviderBindings);
 registerProviderDetailsComponent(MiotProvider, MiotProviderDetails);
 
@@ -33,8 +50,8 @@ export * from './binding.js';
 export * from './cloud/index.js';
 export * from './command.js';
 export * from './configuration.js';
+export * from './device.js';
 export * from './devices/index.js';
-export * from './endpoint-adapter.js';
 export * from './endpoint-connection.js';
 export * from './local/index.js';
 export * from './miot/index.js';

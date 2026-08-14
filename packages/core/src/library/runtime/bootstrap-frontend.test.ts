@@ -1,3 +1,4 @@
+import {Device} from '../device.js';
 import type {EndpointReference} from '../endpoint.js';
 import type {RuntimeProvider} from '../provider.js';
 
@@ -28,8 +29,13 @@ const MAIN_PATH = createEndpointPath('main');
 const AMBIENT_PATH = createEndpointPath('ambient');
 const MAIN_ENDPOINT: EndpointReference = {name: 'main', ready: false};
 const AMBIENT_ENDPOINT: EndpointReference = {name: 'ambient', ready: false};
+class SelectedDevice extends Device {}
+class OwningDevice extends Device {}
+const SELECTED_DEVICE_CONSTRUCTORS = [SelectedDevice] as const;
+const OWNING_DEVICE_CONSTRUCTORS = [OwningDevice] as const;
 const DEVICE: ProviderBindingDevice = {
   name: 'light',
+  deviceConstructors: SELECTED_DEVICE_CONSTRUCTORS,
   endpoints: [
     {path: MAIN_PATH, endpoint: MAIN_ENDPOINT, binding: undefined},
     {path: AMBIENT_PATH, endpoint: AMBIENT_ENDPOINT, binding: undefined},
@@ -42,6 +48,7 @@ const SCOPES: readonly BootstrapBindingScope[] = [
     devices: [
       {
         name: 'light',
+        deviceConstructors: OWNING_DEVICE_CONSTRUCTORS,
         endpoints: [
           {path: MAIN_PATH, endpoint: MAIN_ENDPOINT},
           {path: AMBIENT_PATH, endpoint: AMBIENT_ENDPOINT},
@@ -53,7 +60,11 @@ const SCOPES: readonly BootstrapBindingScope[] = [
 const PROVIDER: RuntimeProvider = {
   name: PROVIDER_REFERENCE.name,
   endpointConnections: [],
-  createEndpointConnectionBindingPlan(_endpoint, metadata) {
+  createEndpointConnectionBindingPlan(_endpoint, deviceConstructors, metadata) {
+    if (deviceConstructors !== OWNING_DEVICE_CONSTRUCTORS) {
+      throw new TypeError('Incorrect test device owner.');
+    }
+
     if (
       typeof metadata !== 'object' ||
       metadata === null ||

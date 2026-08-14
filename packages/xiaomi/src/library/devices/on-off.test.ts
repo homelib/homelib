@@ -12,9 +12,15 @@ import {
 } from '@homelib/core';
 import {autorun} from 'mobx';
 
-import type {MiotEndpointAdapter} from '../endpoint-adapter.js';
 import {
-  MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionConstructor,
+  createMiotDeviceEndpointConnectionBinding,
+  createMiotEndpointConnectionMetadata,
+  resolveMiotEndpointConnectionMetadata,
+  resolveMiotEndpointConnectionResources,
+} from '../device.js';
+import {
+  type MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionResolvedMetadata,
   MiotEndpointConnectionTransport,
   type MiotPropertyUpdate,
@@ -28,15 +34,9 @@ import {
 } from '../miot/index.js';
 import {MiotProvider} from '../provider.js';
 
-import {
-  MiotAirConditionerEndpointConnection,
-  miotAirConditionerEndpointAdapter,
-} from './air-conditioner.js';
-import {
-  MiotDehumidifierEndpointConnection,
-  miotDehumidifierEndpointAdapter,
-} from './dehumidifier.js';
-import {MiotFanEndpointConnection, miotFanEndpointAdapter} from './fan.js';
+import {MiotAirConditionerEndpointConnection} from './air-conditioner.js';
+import {MiotDehumidifierEndpointConnection} from './dehumidifier.js';
+import {MiotFanEndpointConnection} from './fan.js';
 
 defineOnOffEndpointTests<MiotAirConditionerEndpointConnection>({
   name: 'air conditioner',
@@ -44,7 +44,6 @@ defineOnOffEndpointTests<MiotAirConditionerEndpointConnection>({
   serviceType: 'urn:miot-spec-v2:service:air-conditioner:0000780F',
   Endpoint: AirConditionerEndpoint,
   Connection: MiotAirConditionerEndpointConnection,
-  adapter: miotAirConditionerEndpointAdapter,
   createEndpoint: () => new AirConditionerEndpoint(),
   createConnection: (metadata, transport) =>
     new MiotAirConditionerEndpointConnection(
@@ -65,7 +64,6 @@ defineOnOffEndpointTests<MiotDehumidifierEndpointConnection>({
   serviceType: 'urn:miot-spec-v2:service:dehumidifier:00007841',
   Endpoint: DehumidifierEndpoint,
   Connection: MiotDehumidifierEndpointConnection,
-  adapter: miotDehumidifierEndpointAdapter,
   createEndpoint: () => new DehumidifierEndpoint(),
   createConnection: (metadata, transport) =>
     new MiotDehumidifierEndpointConnection(
@@ -86,7 +84,6 @@ defineOnOffEndpointTests<MiotFanEndpointConnection>({
   serviceType: 'urn:miot-spec-v2:service:fan:00007808',
   Endpoint: FanEndpoint,
   Connection: MiotFanEndpointConnection,
-  adapter: miotFanEndpointAdapter,
   createEndpoint: () => new FanEndpoint(),
   createConnection: (metadata, transport) =>
     new MiotFanEndpointConnection(new MiotProvider('provider'), metadata, [
@@ -120,8 +117,7 @@ type OnOffEndpointTestOptions<TConnection extends OnOffConnection> = {
   readonly deviceType: string;
   readonly serviceType: string;
   readonly Endpoint: unknown;
-  readonly Connection: Function;
-  readonly adapter: MiotEndpointAdapter;
+  readonly Connection: MiotEndpointConnectionConstructor;
   readonly createEndpoint: () => OnOffEndpoint<TConnection>;
   readonly createConnection: (
     metadata: MiotEndpointConnectionResolvedMetadata,
@@ -137,30 +133,26 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
   options: OnOffEndpointTestOptions<TConnection>,
 ): void {
   describe(`MIoT ${options.name} endpoint`, () => {
-    test('matches the concrete device service and exposes its adapter', () => {
+    test('matches the concrete device service and exposes its connection', () => {
       const spec = createSpec(options);
-      const candidates = options.adapter.findMetadataCandidates(
-        {did: 'device-1', model: `test.${options.name}`},
+      const metadata = findPersistedMetadata(
+        options.Connection,
         spec,
+        options.name,
       );
 
-      expect(options.adapter.Endpoint).toBe(options.Endpoint);
-      expect(candidates).toHaveLength(1);
-      expect(candidates[0]).toMatchObject({
-        label: options.name,
-        metadata: {
-          device: {did: 'device-1', urn: spec.type},
-          resources: [{service: {iid: 2}}],
-        },
+      expect(options.Connection.Endpoint).toBe(options.Endpoint);
+      expect(metadata).toMatchObject({
+        device: {did: 'device-1', urn: spec.type},
+        resources: [{service: {iid: 2}}],
       });
-
-      expect(candidates[0]?.metadata.resources[0]).not.toHaveProperty(
-        'properties',
+      expect(metadata.resources[0]).not.toHaveProperty('properties');
+      const resolvedMetadata = resolveMiotEndpointConnectionMetadata(
+        options.Connection,
+        metadata,
       );
-
-      const metadata = requireCandidateMetadata(candidates);
-      const resolvedMetadata = options.adapter.resolveMetadata(metadata);
-      const binding = options.adapter.createBinding(
+      const binding = createMiotDeviceEndpointConnectionBinding(
+        options.Connection,
         new MiotProvider('provider'),
         options.createEndpoint(),
         resolvedMetadata,
@@ -176,65 +168,29 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
         type: 'urn:miot-spec-v2:device:other:0000FFFF:test:1',
       };
 
-      const candidates = options.adapter.findMetadataCandidates(
-        {did: 'device-1', model: `test.${options.name}`},
+      const metadata = findPersistedMetadata(
+        options.Connection,
         spec,
+        options.name,
       );
 
-      expect(candidates).toHaveLength(1);
-      expect(candidates[0]?.metadata.device.urn).toBe(spec.type);
+      expect(metadata.device.urn).toBe(spec.type);
     });
 
-    test('derives aliases from the full physical service snapshot', () => {
-      const metadata = requireCandidateMetadata(
-        options.adapter.findMetadataCandidates(
-          {did: 'device-1', model: `test.${options.name}`},
-          createSpec(options),
-        ),
+    test('persists and resolves the deterministic property mapping', () => {
+      const metadata = findPersistedMetadata(
+        options.Connection,
+        createSpec(options),
+        options.name,
       );
-      const [resource] = metadata.resources;
-
-      if (resource === undefined) {
-        throw new Error('Test metadata has no resource.');
-      }
-      const aliasProperty = {
-        iid: 2,
-        type: 'urn:miot-spec-v2:property:mode:00000008:test:1',
-        description: 'Mode',
-        format: 'uint8',
-        access: ['read', 'write', 'notify'],
-        'value-list': [{value: 0, description: 'Default'}],
-      };
-
-      const metadataWithStaleAlias = MiotEndpointConnectionMetadata.satisfies({
-        ...metadata,
-        resources: [
-          {
-            ...resource,
-            service: {
-              ...resource.service,
-              properties: [
-                ...(resource.service.properties ?? []),
-                aliasProperty,
-              ],
-            },
-            properties: {
-              alias: aliasProperty,
-            },
-          },
-        ],
-      });
-
-      const resolvedMetadata = options.adapter.resolveMetadata(
-        metadataWithStaleAlias,
+      const resolvedMetadata = resolveMiotEndpointConnectionMetadata(
+        options.Connection,
+        metadata,
       );
 
       expect(resolvedMetadata.resources[0]?.properties).toEqual({
         on: expect.objectContaining({iid: 1}),
       });
-      expect(resolvedMetadata.resources[0]?.properties).not.toHaveProperty(
-        'alias',
-      );
       const connection = options.createConnection(
         resolvedMetadata,
         new TestTransport(),
@@ -243,6 +199,24 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
       expect(connection.stateProperties).toEqual([
         {did: metadata.device.did, siid: 2, piid: 1},
       ]);
+    });
+
+    test('fails closed with multiple relevant services', () => {
+      const spec = createSpec(options);
+      const service = spec.services.at(0);
+
+      if (service === undefined) {
+        throw new Error('Test spec has no service.');
+      }
+
+      spec.services.push({...service, iid: 3});
+
+      expect(
+        resolveMiotEndpointConnectionResources(
+          options.Connection,
+          spec.services,
+        ),
+      ).toBeUndefined();
     });
 
     test('translates on commands to MIoT property requests', async () => {
@@ -339,31 +313,37 @@ async function executeCommand<TCommand extends Command>(
 function createMetadata(
   options: Pick<
     OnOffEndpointTestOptions<OnOffConnection>,
-    'adapter' | 'deviceType' | 'name' | 'serviceType'
+    'Connection' | 'deviceType' | 'name' | 'serviceType'
   >,
 ): MiotEndpointConnectionResolvedMetadata {
-  const metadata = requireCandidateMetadata(
-    options.adapter.findMetadataCandidates(
-      {did: 'device-1', model: `test.${options.name}`},
-      createSpec(options),
-    ),
+  const metadata = findPersistedMetadata(
+    options.Connection,
+    createSpec(options),
+    options.name,
   );
 
-  return options.adapter.resolveMetadata(metadata);
+  return resolveMiotEndpointConnectionMetadata(options.Connection, metadata);
 }
 
-function requireCandidateMetadata(
-  candidates: readonly {
-    readonly metadata: MiotEndpointConnectionMetadata;
-  }[],
+function findPersistedMetadata(
+  Connection: MiotEndpointConnectionConstructor,
+  spec: MiotSpecInstance,
+  name: string,
 ): MiotEndpointConnectionMetadata {
-  const [candidate] = candidates;
+  const resources = resolveMiotEndpointConnectionResources(
+    Connection,
+    spec.services,
+  );
 
-  if (candidate === undefined) {
-    throw new Error('Test adapter returned no metadata candidate.');
+  if (resources === undefined) {
+    throw new Error('Test connection did not resolve endpoint resources.');
   }
 
-  return candidate.metadata;
+  return createMiotEndpointConnectionMetadata(
+    {did: 'device-1', model: `test.${name}`},
+    spec.type,
+    resources,
+  );
 }
 
 function createSpec(

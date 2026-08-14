@@ -3,6 +3,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 
 import {
   EndpointPath,
+  Light,
   LightEndpoint,
   type ProviderBindingDevice,
   type ProviderBindingRequest,
@@ -11,6 +12,7 @@ import {render} from 'ink';
 import {createElement} from 'react';
 
 import type {MiotProviderFilteredDiscovery} from '../configuration.js';
+import '../index.js';
 import type {MiotSpecInstance} from '../miot/index.js';
 import {MiotProvider} from '../provider.js';
 
@@ -57,7 +59,7 @@ test('confirms the default device match as one batch and returns after saving', 
     expect(summary).toContain('main');
     expect(summary).toContain('matched automatically');
     expect(summary).toContain('Main Light');
-    expect(summary).toContain('› bind device · 1 feature');
+    expect(summary).toContain('› bind device · 1 endpoint');
     expectInternalDetailsToBeHidden(summary);
     expect(bindingBatches).toHaveLength(0);
 
@@ -80,9 +82,6 @@ test('confirms the default device match as one batch and returns after saving', 
         ],
       },
     });
-    expect(bindingBatches[0]?.[0]?.metadata).not.toHaveProperty(
-      'resources.0.properties',
-    );
     expect(terminal.frame()).toContain('saving device match…');
     expect(backCallCount).toBe(0);
     expect(completeCallCount).toBe(0);
@@ -99,7 +98,7 @@ test('confirms the default device match as one batch and returns after saving', 
   }
 }, 10_000);
 
-test('opens optional endpoint matching without exposing MIoT identifiers', async () => {
+test('does not offer ambiguous service combinations for manual matching', async () => {
   const spec = createLightSpec('optional-endpoint-match', [
     'Main Light',
     'Ambient Light',
@@ -121,26 +120,10 @@ test('opens optional endpoint matching without exposing MIoT identifiers', async
     await terminal.flushUntil(frame =>
       frame.includes('choose a mi home device'),
     );
-    await terminal.input('\r');
-
-    expect(terminal.frame()).toContain('2 possible matches');
-    expect(terminal.frame()).toContain('e endpoint matching');
+    expect(terminal.frame()).toContain('no matching devices found.');
+    expect(terminal.frame()).not.toContain('endpoint matching');
+    expect(terminal.frame()).not.toContain('possible matches');
     expectInternalDetailsToBeHidden(terminal.frame());
-
-    await terminal.input('e');
-    expect(terminal.frame()).toContain('endpoint matching (optional)');
-    expect(terminal.frame()).toContain('main');
-
-    await terminal.input('\r');
-    expect(terminal.frame()).toContain('choose a matching feature');
-    expect(terminal.frame()).toContain('Main Light');
-    expect(terminal.frame()).toContain('Ambient Light');
-    expectInternalDetailsToBeHidden(terminal.frame());
-
-    await terminal.input('\r');
-    expect(terminal.frame()).toContain('selected · Main Light');
-    await terminal.input('\u001B');
-    expect(terminal.frame()).toContain('selected · Main Light');
   } finally {
     await terminal.close();
     restoreFetch();
@@ -221,6 +204,7 @@ function createLogicalDevice(): ProviderBindingDevice {
 
   return {
     name: path.deviceName,
+    deviceConstructors: [Light],
     endpoints: [
       {
         path,

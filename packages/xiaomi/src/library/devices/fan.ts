@@ -11,24 +11,12 @@ import {
   SetFanWindModeCommand,
 } from '@homelib/core';
 import {computed} from 'mobx';
-import * as x from 'x-value';
 
+import {MiotEndpointConnection} from '../endpoint-connection.js';
 import {
-  type MiotEndpointProfile,
-  defineMiotEndpointAdapter,
-  getMiotEndpointConnectionProperties,
-} from '../endpoint-adapter.js';
-import {
-  MiotEndpointConnection,
-  type MiotEndpointConnectionResolvedMetadata,
-  type MiotEndpointConnectionTransports,
-} from '../endpoint-connection.js';
-import {
-  type MiotEndpointMatcher,
-  type MiotPropertyMatcher,
-  type MiotSpecProperty,
+  type MiotPropertySchema,
+  type MiotPropertySchemaProperties,
 } from '../miot/index.js';
-import type {MiotProvider} from '../provider.js';
 
 import {
   MiotCommandEffect,
@@ -36,80 +24,44 @@ import {
   type MiotCommandEffectValues,
 } from './command-effect.js';
 
-const MiotFanOn = x.boolean;
-const MiotFanHorizontalSwing = x.boolean;
-
-const MIOT_FAN_ENDPOINT_MATCHER: MiotFanEndpointMatcher = {
-  service: 'urn:miot-spec-v2:service:fan:00007808',
-  properties: {
-    on: {
-      type: 'urn:miot-spec-v2:property:on:00000006',
-      format: 'bool',
-      access: ['read', 'write', 'notify'],
-    },
-  },
-  optionalProperties: {
-    windMode: {
-      type: 'urn:miot-spec-v2:property:mode:00000008',
-      format: 'uint8',
-      access: ['read', 'write', 'notify'],
-      valueList: [0, 1],
-    },
-    speed: {
-      type: 'urn:miot-spec-v2:property:fan-level:00000016',
-      format: 'uint8',
-      access: ['read', 'write', 'notify'],
-      valueList: [1, 2, 3, 4],
-    },
-    horizontalSwing: {
-      type: 'urn:miot-spec-v2:property:horizontal-swing:00000017',
-      format: 'bool',
-      access: ['read', 'write', 'notify'],
-    },
-  },
-};
-
-const MIOT_FAN_ENDPOINT_PROFILES = [
-  {services: [MIOT_FAN_ENDPOINT_MATCHER]},
-] as const satisfies readonly MiotEndpointProfile[];
-
 export class MiotFanEndpointConnection
-  extends MiotEndpointConnection<FanEndpointCommand>
+  extends MiotEndpointConnection<
+    FanEndpointCommand,
+    typeof MiotFanEndpointConnection.properties
+  >
   implements FanEndpointConnection
 {
   static readonly Endpoint = FanEndpoint;
-
-  static readonly endpointProfiles = MIOT_FAN_ENDPOINT_PROFILES;
-
-  private readonly properties: MiotFanEndpointProperties;
+  static readonly properties = {
+    'urn:miot-spec-v2:service:fan:00007808': {
+      'urn:miot-spec-v2:property:on:00000006': 'on',
+      'urn:miot-spec-v2:property:mode:00000008': {
+        name: 'windMode',
+        enum: {
+          normal: 0,
+          natural: 1,
+        },
+        optional: true,
+      },
+      'urn:miot-spec-v2:property:fan-level:00000016': {
+        name: 'speed',
+        optional: true,
+      },
+      'urn:miot-spec-v2:property:horizontal-swing:00000017': {
+        name: 'horizontalSwing',
+        optional: true,
+      },
+    },
+  } as const satisfies MiotPropertySchema;
 
   @computed
   get on(): boolean {
-    const value = this.getState('on');
-
-    return value === undefined ? false : MiotFanOn.satisfies(value);
+    return this.getBooleanPropertyState('on', false);
   }
 
   @computed
   get windMode(): FanWindMode | undefined {
-    if (this.properties.windMode === undefined) {
-      return undefined;
-    }
-
-    const value = getOptionalNumberState(this.getState('windMode'));
-
-    if (value === undefined) {
-      return 'normal';
-    }
-
-    switch (value) {
-      case 0:
-        return 'normal';
-      case 1:
-        return 'natural';
-      default:
-        throw new TypeError('Invalid MIoT fan wind mode state.');
-    }
+    return this.getEnumPropertyState('windMode', 'normal');
   }
 
   @computed
@@ -118,40 +70,28 @@ export class MiotFanEndpointConnection
       return undefined;
     }
 
-    const value = getOptionalNumberState(this.getState('speed'));
+    const valueList = this.getPropertyValueList(this.properties.speed);
+    const levels = valueList
+      .map(entry => entry.value)
+      .toSorted((left, right) => left - right);
+    const value = this.getNumberPropertyState('speed');
 
     if (value === undefined) {
       return 0;
     }
 
-    if (!Number.isInteger(value) || value < 1 || value > 4) {
+    const index = levels.indexOf(value);
+
+    if (index === -1) {
       throw new TypeError('Invalid MIoT fan speed state.');
     }
 
-    return value / 4;
+    return (index + 1) / levels.length;
   }
 
   @computed
   get horizontalSwing(): boolean | undefined {
-    if (this.properties.horizontalSwing === undefined) {
-      return undefined;
-    }
-
-    const value = this.getState('horizontalSwing');
-
-    return value === undefined
-      ? false
-      : MiotFanHorizontalSwing.satisfies(value);
-  }
-
-  constructor(
-    provider: MiotProvider,
-    metadata: MiotEndpointConnectionResolvedMetadata,
-    transports: MiotEndpointConnectionTransports,
-  ) {
-    super(provider, metadata, transports);
-    this.properties =
-      getMiotEndpointConnectionProperties<MiotFanEndpointProperties>(metadata);
+    return this.getBooleanPropertyState('horizontalSwing', false);
   }
 
   override prepareCommand(command: FanEndpointCommand): CommandExecution {
@@ -162,36 +102,9 @@ export class MiotFanEndpointConnection
   }
 }
 
-export const miotFanEndpointAdapter = defineMiotEndpointAdapter<
-  FanEndpointCommand,
-  FanEndpointConnection
->({
-  type: 'fan',
-  Endpoint: MiotFanEndpointConnection.Endpoint,
-  Connection: MiotFanEndpointConnection,
-  endpointProfiles: MiotFanEndpointConnection.endpointProfiles,
-});
-
-type MiotFanEndpointMatcher = Omit<
-  MiotEndpointMatcher<
-    {
-      readonly on: MiotPropertyMatcher;
-    },
-    {
-      readonly windMode: MiotPropertyMatcher;
-      readonly speed: MiotPropertyMatcher;
-      readonly horizontalSwing: MiotPropertyMatcher;
-    }
-  >,
-  'device'
+type MiotFanEndpointProperties = MiotPropertySchemaProperties<
+  typeof MiotFanEndpointConnection.properties
 >;
-
-type MiotFanEndpointProperties = {
-  readonly on: MiotSpecProperty;
-  readonly windMode?: MiotSpecProperty;
-  readonly speed?: MiotSpecProperty;
-  readonly horizontalSwing?: MiotSpecProperty;
-};
 
 function createMiotFanEffect(
   command: FanEndpointCommand,
@@ -206,7 +119,7 @@ function createMiotFanEffect(
     }
 
     return new MiotFanCommandEffect(connection, {
-      windMode: getMiotFanWindMode(command.value),
+      windMode: command.value,
     });
   } else if (command instanceof SetFanSpeedCommand) {
     if (properties.speed === undefined) {
@@ -236,28 +149,9 @@ class MiotFanCommandEffect extends MiotCommandEffect<
   ): MiotCommandEffectValues<keyof MiotFanEndpointProperties> {
     return {
       on: endpoint.on,
-      windMode:
-        endpoint.windMode === undefined
-          ? undefined
-          : getMiotFanWindMode(endpoint.windMode),
+      windMode: endpoint.windMode,
       speed: endpoint.speed,
       horizontalSwing: endpoint.horizontalSwing,
     };
   }
-}
-
-function getMiotFanWindMode(mode: FanWindMode): number {
-  return mode === 'normal' ? 0 : 1;
-}
-
-function getOptionalNumberState(value: unknown): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError('Invalid MIoT fan numeric state.');
-  }
-
-  return value;
 }

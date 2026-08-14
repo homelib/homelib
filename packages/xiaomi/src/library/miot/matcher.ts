@@ -1,5 +1,4 @@
 import type {
-  MiotSpecInstance,
   MiotSpecProperty,
   MiotSpecService,
   MiotSpecValueList,
@@ -17,169 +16,170 @@ const MIOT_INTEGER_FORMAT_RANGES: Readonly<
   uint32: [0, 4_294_967_295],
 };
 
-export function findMiotEndpointMatches<
-  TProperties extends Record<string, MiotPropertyMatcher>,
-  TOptionalProperties extends Record<string, MiotPropertyMatcher> = {},
->(
-  spec: MiotSpecInstance,
-  matcher: MiotEndpointMatcher<TProperties, TOptionalProperties>,
-): Array<MiotEndpointMatch<TProperties, TOptionalProperties>> {
-  if (matcher.device !== undefined && !matchesType(spec.type, matcher.device)) {
-    return [];
+export type MiotEnumMapping = Readonly<Record<string, number>>;
+
+export type MiotPropertyMapping =
+  | string
+  | {
+      readonly name: string;
+      readonly enum?: MiotEnumMapping;
+      readonly optional?: true;
+    };
+
+export type MiotPropertySchema = Readonly<
+  Record<string, Readonly<Record<string, MiotPropertyMapping>>>
+>;
+
+export type MiotResolvedSpecProperty = MiotSpecProperty & {
+  readonly enum?: MiotEnumMapping;
+};
+
+export type MiotPropertySchemaResource = {
+  readonly service: MiotSpecService;
+  readonly properties: Readonly<Record<string, MiotResolvedSpecProperty>>;
+};
+
+type MiotPropertySchemaMapping<TSchema extends MiotPropertySchema> = {
+  readonly [TService in keyof TSchema]: TSchema[TService] extends Readonly<
+    Record<string, MiotPropertyMapping>
+  >
+    ? TSchema[TService][keyof TSchema[TService]]
+    : never;
+}[keyof TSchema];
+
+type MiotPropertyMappingName<TMapping> = TMapping extends string
+  ? TMapping
+  : TMapping extends {readonly name: infer TName extends string}
+    ? TName
+    : never;
+
+type MiotRequiredPropertyName<TMapping> = TMapping extends {
+  readonly optional: true;
+}
+  ? never
+  : MiotPropertyMappingName<TMapping>;
+
+type MiotOptionalPropertyName<TMapping> = TMapping extends {
+  readonly optional: true;
+}
+  ? MiotPropertyMappingName<TMapping>
+  : never;
+
+type MiotPropertyMappingForName<TMapping, TName> =
+  TMapping extends MiotPropertyMapping
+    ? MiotPropertyMappingName<TMapping> extends TName
+      ? TMapping
+      : never
+    : never;
+
+type MiotResolvedPropertyForName<
+  TSchema extends MiotPropertySchema,
+  TName,
+> = Omit<MiotResolvedSpecProperty, 'enum'> & {
+  readonly name: Extract<TName, string>;
+} & (MiotPropertyMappingForName<
+    MiotPropertySchemaMapping<TSchema>,
+    TName
+  > extends infer TMapping
+    ? TMapping extends {readonly enum: infer TEnum extends MiotEnumMapping}
+      ? {readonly enum: TEnum}
+      : {readonly enum?: undefined}
+    : never);
+
+export type MiotPropertySchemaProperties<TSchema extends MiotPropertySchema> =
+  Readonly<
+    {
+      readonly [
+        TName in MiotRequiredPropertyName<MiotPropertySchemaMapping<TSchema>>
+      ]: MiotResolvedPropertyForName<TSchema, TName>;
+    } & {
+      readonly [
+        TName in MiotOptionalPropertyName<MiotPropertySchemaMapping<TSchema>>
+      ]?: MiotResolvedPropertyForName<TSchema, TName>;
+    }
+  >;
+
+export function assertMiotPropertySchema(schema: MiotPropertySchema): void {
+  const services = Object.entries(schema);
+
+  if (services.length === 0) {
+    throw new TypeError('A MIoT property schema requires a service.');
   }
 
-  const matches: Array<MiotEndpointMatch<TProperties, TOptionalProperties>> =
-    [];
+  const nameSet = new Set<string>();
 
-  for (const service of spec.services) {
-    if (!matchesType(service.type, matcher.service)) {
-      continue;
+  for (const [serviceType, properties] of services) {
+    if (serviceType.length === 0 || Object.keys(properties).length === 0) {
+      throw new TypeError('Invalid MIoT property schema service.');
     }
 
-    const properties = findProperties(
-      service,
-      matcher.properties,
-      matcher.optionalProperties,
-    );
+    for (const [propertyType, mapping] of Object.entries(properties)) {
+      if (propertyType.length === 0) {
+        throw new TypeError('Invalid MIoT property schema property.');
+      }
 
-    if (properties !== undefined) {
-      matches.push({service, properties});
+      const {name, enum: enumMapping} = getPropertyMapping(mapping);
+
+      if (name.length === 0 || name === '__proto__' || nameSet.has(name)) {
+        throw new TypeError('Invalid MIoT property schema name.');
+      }
+
+      nameSet.add(name);
+
+      if (enumMapping !== undefined && !isValidEnumMapping(enumMapping)) {
+        throw new TypeError('Invalid MIoT property schema enum.');
+      }
     }
   }
-
-  return matches;
 }
 
-export type MiotEndpointMatcher<
-  TProperties extends Record<string, MiotPropertyMatcher> = Record<
-    string,
-    MiotPropertyMatcher
-  >,
-  TOptionalProperties extends Record<string, MiotPropertyMatcher> = {},
-> = {
-  readonly device?: string | readonly string[];
-  readonly service: string;
-  readonly properties: TProperties;
-  readonly optionalProperties?: TOptionalProperties;
-};
+export function resolveMiotPropertySchema(
+  services: readonly MiotSpecService[],
+  schema: MiotPropertySchema,
+  options: {readonly allowMultipleOptionalServices?: boolean} = {},
+): readonly MiotPropertySchemaResource[] | undefined {
+  assertMiotPropertySchema(schema);
 
-export type MiotEndpointMatch<
-  TProperties extends Record<string, MiotPropertyMatcher>,
-  TOptionalProperties extends Record<string, MiotPropertyMatcher> = {},
-> = {
-  readonly service: MiotSpecService;
-  readonly properties: {
-    readonly [TName in keyof TProperties]: MiotSpecProperty;
-  } & {
-    readonly [
-      TName in Exclude<keyof TOptionalProperties, keyof TProperties>
-    ]?: MiotSpecProperty;
-  };
-};
+  const resources: MiotPropertySchemaResource[] = [];
+  const serviceIidSet = new Set<number>();
 
-export type MiotPropertyMatcher = {
-  readonly type: string;
-  readonly format: string | readonly string[];
-  readonly access: readonly MiotPropertyAccess[];
-  readonly unit?: string;
-  readonly valueRange?: true;
-  readonly valueList?: true | readonly number[];
-};
+  for (const [serviceType, propertySchema] of Object.entries(schema)) {
+    const required = Object.values(propertySchema).some(
+      mapping => !getPropertyMapping(mapping).optional,
+    );
+    const matches = services.flatMap(service => {
+      if (!matchesType(service.type, serviceType)) {
+        return [];
+      }
 
-export type MiotPropertyAccess = 'read' | 'write' | 'notify';
+      const properties = resolveServiceProperties(service, propertySchema);
 
-function findProperties<
-  TProperties extends Record<string, MiotPropertyMatcher>,
-  TOptionalProperties extends Record<string, MiotPropertyMatcher>,
->(
-  service: MiotSpecService,
-  matchers: TProperties,
-  optionalMatchers: TOptionalProperties | undefined,
-):
-  | MiotEndpointMatch<TProperties, TOptionalProperties>['properties']
-  | undefined {
-  const properties: Record<string, MiotSpecProperty> = {};
-  const usedPropertyIids = new Set<number>();
-
-  for (const name of Object.keys(matchers) as Array<keyof TProperties>) {
-    const matcher = matchers[name];
-    const candidates = findPropertyCandidates(service, matcher);
-
-    if (candidates.length !== 1) {
-      return undefined;
-    }
-
-    const [property] = candidates;
-
-    if (property === undefined || usedPropertyIids.has(property.iid)) {
-      return undefined;
-    }
-
-    properties[String(name)] = property;
-    usedPropertyIids.add(property.iid);
-  }
-
-  const optionalCandidates: Array<
-    readonly [name: string, property: MiotSpecProperty]
-  > = [];
-  const optionalPropertyUseCount = new Map<number, number>();
-
-  for (const name of Object.keys(optionalMatchers ?? {})) {
-    if (Object.hasOwn(matchers, name)) {
-      continue;
-    }
-
-    const matcher = optionalMatchers?.[name];
-
-    if (matcher === undefined) {
-      continue;
-    }
-
-    const candidates = findPropertyCandidates(service, matcher);
-    const [property] = candidates;
+      return properties === undefined ||
+        (!required && Object.keys(properties).length === 0)
+        ? []
+        : [{service, properties}];
+    });
 
     if (
-      candidates.length !== 1 ||
-      property === undefined ||
-      usedPropertyIids.has(property.iid)
+      (required && matches.length !== 1) ||
+      (!required &&
+        !options.allowMultipleOptionalServices &&
+        matches.length > 1)
     ) {
-      continue;
+      return undefined;
     }
 
-    optionalCandidates.push([name, property]);
-    optionalPropertyUseCount.set(
-      property.iid,
-      (optionalPropertyUseCount.get(property.iid) ?? 0) + 1,
-    );
-  }
+    for (const match of matches) {
+      if (serviceIidSet.has(match.service.iid)) {
+        return undefined;
+      }
 
-  for (const [name, property] of optionalCandidates) {
-    if (optionalPropertyUseCount.get(property.iid) === 1) {
-      properties[name] = property;
+      serviceIidSet.add(match.service.iid);
+      resources.push(match);
     }
   }
 
-  return properties as MiotEndpointMatch<
-    TProperties,
-    TOptionalProperties
-  >['properties'];
-}
-
-function findPropertyCandidates(
-  service: MiotSpecService,
-  matcher: MiotPropertyMatcher,
-): readonly MiotSpecProperty[] {
-  return (service.properties ?? []).filter(
-    property =>
-      matchesType(property.type, matcher.type) &&
-      matchesValue(property.format, matcher.format) &&
-      matcher.access.every(access => property.access.includes(access)) &&
-      (matcher.unit === undefined || property.unit === matcher.unit) &&
-      (matcher.valueRange !== true ||
-        isValidMiotSpecValueRange(property['value-range'], property.format)) &&
-      (matcher.valueList === undefined ||
-        matchesValueList(property['value-list'], matcher.valueList)),
-  );
+  return resources;
 }
 
 export function isValidMiotSpecValueList(
@@ -236,45 +236,141 @@ export function isValidMiotSpecValueRange(
   );
 }
 
-function matchesType(
-  actual: string,
-  expected: string | readonly string[],
-): boolean {
-  if (typeof expected === 'string') {
-    return actual === expected || actual.startsWith(`${expected}:`);
+function resolveServiceProperties(
+  service: MiotSpecService,
+  schema: Readonly<Record<string, MiotPropertyMapping>>,
+): Readonly<Record<string, MiotResolvedSpecProperty>> | undefined {
+  const properties: Record<string, MiotResolvedSpecProperty> = {};
+  const usedPropertyIids = new Set<number>();
+  const optionalCandidates: Array<
+    readonly [name: string, property: MiotResolvedSpecProperty]
+  > = [];
+  const optionalPropertyUseCount = new Map<number, number>();
+
+  for (const [propertyType, configuredMapping] of Object.entries(schema)) {
+    const mapping = getPropertyMapping(configuredMapping);
+    const candidates = findPropertyCandidates(
+      service,
+      propertyType,
+      mapping.enum,
+    );
+    const [property] = candidates;
+
+    if (!mapping.optional) {
+      if (
+        candidates.length !== 1 ||
+        property === undefined ||
+        usedPropertyIids.has(property.iid)
+      ) {
+        return undefined;
+      }
+
+      properties[mapping.name] = resolveProperty(property, mapping.enum);
+      usedPropertyIids.add(property.iid);
+      continue;
+    }
+
+    if (
+      candidates.length !== 1 ||
+      property === undefined ||
+      usedPropertyIids.has(property.iid)
+    ) {
+      continue;
+    }
+
+    optionalCandidates.push([
+      mapping.name,
+      resolveProperty(property, mapping.enum),
+    ]);
+    optionalPropertyUseCount.set(
+      property.iid,
+      (optionalPropertyUseCount.get(property.iid) ?? 0) + 1,
+    );
   }
 
-  return expected.some(type => matchesType(actual, type));
+  for (const [name, property] of optionalCandidates) {
+    if (
+      optionalPropertyUseCount.get(property.iid) === 1 &&
+      !usedPropertyIids.has(property.iid)
+    ) {
+      properties[name] = property;
+    }
+  }
+
+  return properties;
 }
 
-function matchesValue(
-  actual: string,
-  expected: string | readonly string[],
-): boolean {
-  if (typeof expected === 'string') {
-    return actual === expected;
-  }
+function findPropertyCandidates(
+  service: MiotSpecService,
+  propertyType: string,
+  enumMapping: MiotEnumMapping | undefined,
+): readonly MiotSpecProperty[] {
+  return (service.properties ?? []).filter(property => {
+    if (!matchesType(property.type, propertyType)) {
+      return false;
+    }
 
-  return expected.includes(actual);
+    // Vendor instances can declare different access modes for the same base
+    // property type.
+    // State-backed aliases must remain observable between commands so that
+    // acknowledged effects can be reconciled with manual device changes.
+    if (
+      !property.access.includes('read') ||
+      !property.access.includes('notify')
+    ) {
+      return false;
+    }
+
+    if (enumMapping === undefined) {
+      return true;
+    }
+
+    const valueList = property['value-list'];
+
+    return (
+      isValidMiotSpecValueList(valueList) &&
+      Object.values(enumMapping).every(value =>
+        valueList.some(entry => entry.value === value),
+      )
+    );
+  });
 }
 
-function matchesValueList(
-  actual: MiotSpecValueList | undefined,
-  expected: true | readonly number[],
-): boolean {
-  if (!isValidMiotSpecValueList(actual)) {
-    return false;
-  } else if (expected === true) {
-    return true;
-  }
+function resolveProperty(
+  property: MiotSpecProperty,
+  enumMapping: MiotEnumMapping | undefined,
+): MiotResolvedSpecProperty {
+  return enumMapping === undefined
+    ? property
+    : Object.assign({}, property, {enum: enumMapping});
+}
 
-  const actualValues = actual.map(entry => entry.value);
+function getPropertyMapping(mapping: MiotPropertyMapping): {
+  readonly name: string;
+  readonly enum?: MiotEnumMapping;
+  readonly optional: boolean;
+} {
+  return typeof mapping === 'string'
+    ? {name: mapping, optional: false}
+    : {
+        name: mapping.name,
+        enum: mapping.enum,
+        optional: mapping.optional === true,
+      };
+}
+
+function isValidEnumMapping(mapping: MiotEnumMapping): boolean {
+  const entries = Object.entries(mapping);
 
   return (
-    isValidUniqueNumberSet(expected) &&
-    actualValues.length === expected.length &&
-    actualValues.every(value => expected.includes(value))
+    entries.length > 0 &&
+    entries.every(([key, value]) => key.length > 0 && Number.isFinite(value)) &&
+    new Set(entries.map(([, value]) => value)).size === entries.length
   );
+}
+
+function matchesType(actual: string, expected: string): boolean {
+  return actual === expected || actual.startsWith(`${expected}:`);
 }
 
 function isValidUniqueNumberSet(values: readonly number[]): boolean {

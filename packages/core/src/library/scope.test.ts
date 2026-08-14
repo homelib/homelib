@@ -25,6 +25,7 @@ test('creates and declares a device from a provider namespace', () => {
   expect(device.name).toBe('test device');
   expect(deviceEntry.name).toBe('test device');
   expect([...deviceEntry.instances]).toEqual([device]);
+  expect([...deviceEntry.constructors]).toEqual([TestDevice]);
   expect(() => deviceEntry.createInstance(TestDevice)).toThrow(
     'Duplicate device instance: test device.',
   );

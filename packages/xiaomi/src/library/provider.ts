@@ -3,6 +3,8 @@ import {join} from 'node:path';
 
 import {
   $constructor,
+  type Device,
+  type DeviceConstructor,
   type EndpointConnectionBinding,
   type EndpointConnectionBindingPlan,
   type EndpointReference,
@@ -26,8 +28,12 @@ import {
   MiotProviderConfiguration,
   type MiotProviderConfigurationDiscovery,
 } from './configuration.js';
-import {getMiotEndpointAdapter} from './devices/index.js';
-import type {MiotEndpointAdapter} from './endpoint-adapter.js';
+import {
+  type MiotEndpointConnectionConstructor,
+  createMiotDeviceEndpointConnectionBinding,
+  getMiotEndpointConnectionConstructor,
+  resolveMiotEndpointConnectionMetadata,
+} from './device.js';
 import {
   type MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
@@ -150,24 +156,30 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
 
   protected override createEndpointConnectionBindingPlanFromMetadata(
     endpoint: EndpointReference,
+    deviceConstructors: readonly DeviceConstructor<Device>[],
     metadata: MiotEndpointConnectionMetadata,
   ): EndpointConnectionBindingPlan {
-    const endpointAdapter = getMiotEndpointAdapter(endpoint);
+    const Connection = getMiotEndpointConnectionConstructor(
+      deviceConstructors,
+      endpoint,
+    );
 
-    if (endpointAdapter === undefined) {
+    if (Connection === undefined) {
       throw new TypeError('Unsupported MIoT endpoint.');
     }
 
     const normalizedMetadata =
       normalizeMiotEndpointConnectionMetadata(metadata);
-    const resolvedMetadata =
-      endpointAdapter.resolveMetadata(normalizedMetadata);
+    const resolvedMetadata = resolveMiotEndpointConnectionMetadata(
+      Connection,
+      normalizedMetadata,
+    );
 
     return {
       resourceKeys: getMiotEndpointConnectionResourceKeys(normalizedMetadata),
       create: () =>
         this.createEndpointConnectionBinding(
-          endpointAdapter,
+          Connection,
           endpoint,
           resolvedMetadata,
         ),
@@ -175,7 +187,7 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
   }
 
   private async createEndpointConnectionBinding(
-    endpointAdapter: MiotEndpointAdapter,
+    Connection: MiotEndpointConnectionConstructor,
     endpoint: EndpointReference,
     metadata: MiotEndpointConnectionResolvedMetadata,
   ): Promise<EndpointConnectionBinding> {
@@ -186,7 +198,8 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     try {
       cloud = await this.getCloud();
       await cloud.client.connect();
-      const {connection, binding} = endpointAdapter.createBinding(
+      const {connection, binding} = createMiotDeviceEndpointConnectionBinding(
+        Connection,
         this,
         endpoint,
         metadata,
