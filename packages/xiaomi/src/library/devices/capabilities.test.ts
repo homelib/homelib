@@ -5,6 +5,7 @@ import {
   CommandError,
   DehumidifierEndpoint,
   FanEndpoint,
+  type LogEvent,
   SetAirConditionerModeCommand,
   SetAirConditionerTargetHumidityCommand,
   SetAirConditionerTargetTemperatureCommand,
@@ -14,6 +15,8 @@ import {
   SetFanModeCommand,
   SetFanSpeedCommand,
   Temperature,
+  addLogListener,
+  setEndpointLogTarget,
 } from '@homelib/core';
 import {autorun} from 'mobx';
 
@@ -157,6 +160,24 @@ describe('MIoT air conditioner capabilities', () => {
       createExpectedRequest(metadata, 'target-humidity', 58),
     ]);
 
+    const modeExecution = connection.prepareCommand(
+      new SetAirConditionerModeCommand('cool'),
+    );
+    const temperatureExecution = connection.prepareCommand(
+      new SetAirConditionerTargetTemperatureCommand(
+        Temperature.fromCelsius(23.6),
+      ),
+    );
+    const humidityExecution = connection.prepareCommand(
+      new SetAirConditionerTargetHumidityCommand(0.584),
+    );
+
+    expect(modeExecution.toLogString?.()).toBe('set mode=2');
+    expect(temperatureExecution.toLogString?.()).toBe(
+      'set target-temperature=23.5',
+    );
+    expect(humidityExecution.toLogString?.()).toBe('set target-humidity=58');
+
     await expect(
       executeCommand(connection, new SetAirConditionerModeCommand('auto')),
     ).rejects.toBeInstanceOf(CommandError);
@@ -270,6 +291,51 @@ describe('MIoT air conditioner capabilities', () => {
     expect(modeEffect.matches(endpoint)).toBe(false);
     expect(temperatureEffect.matches(endpoint)).toBe(false);
     expect(humidityEffect.matches(endpoint)).toBe(false);
+  });
+
+  test('logs prepared commands with normalized values', () => {
+    const metadata = findMetadata(
+      MiotAirConditionerEndpointConnection,
+      createAirConditionerSpec(),
+    );
+    const connection = new MiotAirConditionerEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
+    const endpoint = new AirConditionerEndpoint();
+    const logEvents: LogEvent[] = [];
+    const removeLogListener = addLogListener(event => logEvents.push(event));
+
+    try {
+      setEndpointLogTarget(endpoint, {
+        scopePath: ['home', 'living room'],
+        deviceName: 'air conditioner',
+        endpointName: '',
+      });
+      endpoint.bindConnection(connection);
+      endpoint.setTargetTemperature(Temperature.fromCelsius(23.6));
+      connection.handleStateUpdate({
+        did: metadata.device.did,
+        online: true,
+        properties: createStateProperties(metadata, {
+          on: false,
+          mode: 2,
+          'target-temperature': 20,
+          'target-humidity': 30,
+          temperature: 20,
+          'relative-humidity': 30,
+        }),
+      });
+
+      expect(
+        logEvents
+          .filter(event => event.type === 'endpoint-command')
+          .map(event => event.commandDescription),
+      ).toEqual(['set target-temperature=23.5']);
+    } finally {
+      removeLogListener();
+    }
   });
 
   test('routes writes by property alias independently of service order', async () => {

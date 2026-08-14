@@ -105,7 +105,11 @@ export class MiotLightEndpointConnection
 
     const {request} = effect;
 
-    return {effect, execute: () => this.executeRequest(request)};
+    return {
+      effect,
+      execute: () => this.executeRequest(request),
+      toLogString: () => effect.toLogString(),
+    };
   }
 }
 

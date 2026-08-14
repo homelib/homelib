@@ -146,6 +146,13 @@ export abstract class MiotCommandEffect<
     return new MiotSetPropertyRequest(property.address, property.value);
   }
 
+  /** Describes the canonical values that this effect writes to the device. */
+  toLogString(): string {
+    return this.properties
+      .map(({name, value}) => `set ${name}=${value}`)
+      .join(' ');
+  }
+
   equals(effect: CommandEffect): boolean {
     if (!(effect instanceof MiotCommandEffect)) {
       return false;

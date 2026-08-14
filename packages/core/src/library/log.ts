@@ -67,6 +67,7 @@ export function logEndpointCommand(
   connection: Loggable,
   command: Command,
   action: EndpointCommandLogEvent['action'],
+  execution: Loggable | undefined = undefined,
 ): void {
   try {
     const target = endpointLogTargetMap.get(endpoint);
@@ -76,8 +77,14 @@ export function logEndpointCommand(
         type: 'endpoint-command',
         action,
         target,
-        connectionDescription: safeLogString(connection),
-        commandDescription: safeLogString(command) ?? command.constructor.name,
+        connectionDescription: safeLogString(
+          connection,
+          connection.constructor.name,
+        ),
+        commandDescription:
+          safeLogString(execution) ??
+          safeLogString(command) ??
+          command.constructor.name,
       });
     }
   } catch {
@@ -98,7 +105,10 @@ export function logEndpointState(
       emitLogEvent({
         type: 'endpoint-state',
         target,
-        connectionDescription: safeLogString(connection),
+        connectionDescription: safeLogString(
+          connection,
+          connection.constructor.name,
+        ),
         state,
         previousState,
       });
@@ -124,15 +134,22 @@ function emitLogEvent(event: LogEventWithoutTimestamp): void {
   }
 }
 
-function safeLogString(value: Loggable): string | undefined {
-  if (!('toLogString' in value) || typeof value.toLogString !== 'function') {
+function safeLogString(
+  value: Loggable | undefined,
+  errorFallback: string | undefined = undefined,
+): string | undefined {
+  if (value === undefined) {
     return undefined;
   }
 
   try {
-    return String(value.toLogString());
+    const {toLogString} = value;
+
+    return typeof toLogString === 'function'
+      ? String(toLogString.call(value))
+      : undefined;
   } catch {
-    return value.constructor.name;
+    return errorFallback;
   }
 }
 

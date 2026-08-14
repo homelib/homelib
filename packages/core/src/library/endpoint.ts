@@ -143,7 +143,7 @@ export abstract class Endpoint<
           executionEffect = execution.effect;
 
           if (this.isStatefulCommandSatisfied(command, execution.effect)) {
-            logEndpointCommand(this, connection, command, 'skip');
+            logEndpointCommand(this, connection, command, 'skip', execution);
             consumeCommand(this.pendingCommands, command);
             this.connectionErrorBackoff.reset();
             continue;
@@ -153,7 +153,7 @@ export abstract class Endpoint<
             execution.effect?.observationRevision;
           executionStateGeneration = this.connectionStateGeneration;
 
-          logEndpointCommand(this, connection, command, 'execute');
+          logEndpointCommand(this, connection, command, 'execute', execution);
           executionStarted = true;
           await execution.execute();
 
@@ -507,6 +507,12 @@ export type CommandExecution = {
   readonly effect?: CommandEffect;
   /** Starts the externally observable command execution. */
   readonly execute: () => PromiseLike<void>;
+  /**
+   * Describes the prepared execution, reflecting any normalization the
+   * connection applied. Core prefers it over the command description when
+   * logging command actions.
+   */
+  readonly toLogString?: () => string;
 };
 
 export type EndpointConnection<in TCommand extends Command> = {

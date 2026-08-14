@@ -193,6 +193,18 @@ test('uses one enum mapping for requests, equality, and state matching', () => {
   expect(() => new TestEffect({mode: 'auto'})).toThrow(CommandError);
 });
 
+test('describes canonical values after clamping and unit conversion', () => {
+  const effect = new TestEffect({
+    brightness: 0.23,
+    targetTemperature: Temperature.fromCelsius(23.24),
+    mode: 'cool',
+  });
+
+  expect(effect.toLogString()).toBe(
+    'set brightness=25 set targetTemperature=23 set mode=2',
+  );
+});
+
 test('tracks observations only for the targeted aliases', () => {
   const connection = new TestConnection();
   const brightnessEffect = new TestEffect({brightness: 0.5}, connection);
