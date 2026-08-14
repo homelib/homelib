@@ -107,7 +107,7 @@ type StartupPageItem = {
 };
 
 const STARTUP_PAGE_ITEMS = [
-  {label: 'run automation', selection: 'run'},
+  {label: 'run', selection: 'run'},
   {label: 'providers', selection: 'providers'},
   {label: 'bindings', selection: 'bindings'},
 ] as const satisfies readonly StartupPageItem[];

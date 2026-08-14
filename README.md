@@ -29,7 +29,7 @@ light.turnOn();
 ```
 
 The terminal frontend handles setup and device binding during `bootstrap()`.
-Use `--automation` to run directly with existing bindings.
+Use `--run` to run directly with existing bindings.
 
 ## Try it out
 

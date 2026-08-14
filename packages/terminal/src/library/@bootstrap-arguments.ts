@@ -1,10 +1,10 @@
-export function isAutomationRequested(argv: readonly string[]): boolean {
+export function isRunRequested(argv: readonly string[]): boolean {
   for (const argument of argv.slice(2)) {
     if (argument === '--') {
       return false;
     }
 
-    if (argument === '--automation') {
+    if (argument === '--run') {
       return true;
     }
   }

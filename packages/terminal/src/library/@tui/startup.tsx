@@ -12,7 +12,7 @@ import {
   getEndpointPathKey,
   removeEndpointBinding,
 } from '@homelib/core';
-import {render, useApp} from 'ink';
+import {render, useApp, useInput} from 'ink';
 import {useRef, useState} from 'react';
 
 import {ProviderBindingOutlet, ProviderDetailsOutlet} from '../tui.js';
@@ -77,7 +77,8 @@ type StartupProps = {
   readonly model: StartupTuiModel;
 };
 
-function Startup({model}: StartupProps): React.JSX.Element {
+/** @internal */
+export function Startup({model}: StartupProps): React.JSX.Element {
   const {exit} = useApp();
   const [page, setPage] = useState<StartupTuiPage>({type: 'startup'});
   const [bindingFile, setBindingFile] = useState(model.bindingFile);
@@ -93,6 +94,12 @@ function Startup({model}: StartupProps): React.JSX.Element {
     model.bindingScopes,
     bindingFile,
   );
+
+  useInput(input => {
+    if (input === 'q' && page.type !== 'startup') {
+      setPage({type: 'startup'});
+    }
+  });
 
   const handleSelect = (selection: StartupPageSelection): void => {
     if (selection === 'run') {

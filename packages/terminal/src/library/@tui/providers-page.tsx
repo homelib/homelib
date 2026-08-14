@@ -67,7 +67,9 @@ export function ProvidersPage({
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>↑↓ select · enter · esc back · ctrl+c exit</Text>
+        <Text dimColor>
+          ↑↓ select · enter · esc back · q menu · ctrl+c exit
+        </Text>
       </Box>
     </Box>
   );

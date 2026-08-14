@@ -2,12 +2,12 @@ import {basename} from 'node:path';
 
 import {addLogListener, registerBootstrapFrontend} from '@homelib/core';
 
-import {isAutomationRequested} from './@bootstrap-arguments.js';
+import {isRunRequested} from './@bootstrap-arguments.js';
 import {presentStartup} from './@tui/startup.js';
 import {writeLogEvent} from './log.js';
 
 registerBootstrapFrontend(context => {
-  if (isAutomationRequested(process.argv)) {
+  if (isRunRequested(process.argv)) {
     return;
   }
 

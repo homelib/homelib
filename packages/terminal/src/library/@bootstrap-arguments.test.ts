@@ -1,52 +1,34 @@
-import {isAutomationRequested} from './@bootstrap-arguments.js';
+import {isRunRequested} from './@bootstrap-arguments.js';
 
-test('recognizes the automation flag in the script arguments', () => {
+test('recognizes the run flag in the script arguments', () => {
+  expect(isRunRequested(['/usr/bin/node', '/automation.js', '--run'])).toBe(
+    true,
+  );
   expect(
-    isAutomationRequested(['/usr/bin/node', '/automation.js', '--automation']),
-  ).toBe(true);
-  expect(
-    isAutomationRequested([
-      '/usr/bin/node',
-      '/automation.js',
-      '--verbose',
-      '--automation',
-    ]),
+    isRunRequested(['/usr/bin/node', '/automation.js', '--verbose', '--run']),
   ).toBe(true);
 });
 
-test('requires the exact automation flag', () => {
-  expect(isAutomationRequested(['/usr/bin/node', '/automation.js'])).toBe(
-    false,
-  );
+test('requires the exact run flag', () => {
+  expect(isRunRequested(['/usr/bin/node', '/automation.js'])).toBe(false);
   expect(
-    isAutomationRequested([
-      '/usr/bin/node',
-      '/automation.js',
-      '--automation=true',
-    ]),
+    isRunRequested(['/usr/bin/node', '/automation.js', '--run=true']),
+  ).toBe(false);
+  expect(
+    isRunRequested(['/usr/bin/node', '/automation.js', '--automation']),
   ).toBe(false);
 });
 
 test('does not inspect the executable or script path', () => {
-  expect(isAutomationRequested(['--automation', '/automation.js'])).toBe(false);
-  expect(isAutomationRequested(['/usr/bin/node', '--automation'])).toBe(false);
+  expect(isRunRequested(['--run', '/automation.js'])).toBe(false);
+  expect(isRunRequested(['/usr/bin/node', '--run'])).toBe(false);
 });
 
 test('stops parsing options at the argument terminator', () => {
   expect(
-    isAutomationRequested([
-      '/usr/bin/node',
-      '/automation.js',
-      '--',
-      '--automation',
-    ]),
+    isRunRequested(['/usr/bin/node', '/automation.js', '--', '--run']),
   ).toBe(false);
   expect(
-    isAutomationRequested([
-      '/usr/bin/node',
-      '/automation.js',
-      '--automation',
-      '--',
-    ]),
+    isRunRequested(['/usr/bin/node', '/automation.js', '--run', '--']),
   ).toBe(true);
 });

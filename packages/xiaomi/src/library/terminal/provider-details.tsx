@@ -41,7 +41,17 @@ export function MiotProviderDetails({
   }, []);
 
   const clearOperation = useCallback((): void => {
+    const operation = operationReference.current;
+
     operationReference.current = undefined;
+
+    if (
+      operation !== undefined &&
+      !operation.authorizationCancellationRequested
+    ) {
+      operation.authorizationCancellationRequested = true;
+      void operation.cancelAuthorization?.().catch(console.error);
+    }
   }, []);
 
   const load = useCallback((): void => {

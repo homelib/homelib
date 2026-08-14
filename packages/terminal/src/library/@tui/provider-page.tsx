@@ -29,7 +29,7 @@ export function ProviderPage({
       <Box marginTop={1}>{children}</Box>
 
       <Box marginTop={1}>
-        <Text dimColor>ctrl+c exit</Text>
+        <Text dimColor>q menu · ctrl+c exit</Text>
       </Box>
     </Box>
   );

@@ -247,20 +247,21 @@ function StaleBindingsView({
         <Text dimColor>
           {state.binding.provider.namespace} · {state.binding.provider.name}
         </Text>
-        <Hint>enter/y confirm · esc cancel · ctrl+c exit</Hint>
+        <Hint>enter/y confirm · esc cancel · q menu · ctrl+c exit</Hint>
       </Box>
     );
   } else if (state.type === 'removing') {
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text>removing stale binding…</Text>
+        <Hint>q menu · ctrl+c exit</Hint>
       </Box>
     );
   } else if (state.type === 'remove-error') {
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text color="red">{state.message}</Text>
-        <Hint>enter/r retry · esc back · ctrl+c exit</Hint>
+        <Hint>enter/r retry · esc back · q menu · ctrl+c exit</Hint>
       </Box>
     );
   }
@@ -294,8 +295,8 @@ function StaleBindingsView({
 
       <Hint>
         {bindings.length === 0
-          ? 'esc back · ctrl+c exit'
-          : '↑↓ select · enter · esc back · ctrl+c exit'}
+          ? 'esc back · q menu · ctrl+c exit'
+          : '↑↓ select · enter · esc back · q menu · ctrl+c exit'}
       </Hint>
     </>
   );
@@ -363,8 +364,8 @@ export function BindingScopePage({
 
       <Hint>
         {hasItems
-          ? '↑↓ select · enter · esc back · ctrl+c exit'
-          : 'esc back · ctrl+c exit'}
+          ? '↑↓ select · enter · esc back · q menu · ctrl+c exit'
+          : 'esc back · q menu · ctrl+c exit'}
       </Hint>
     </Page>
   );
@@ -575,7 +576,7 @@ function BindingDeviceView({
           ))}
         </Box>
 
-        <Hint>↑↓ select · enter · esc back · ctrl+c exit</Hint>
+        <Hint>↑↓ select · enter · esc back · q menu · ctrl+c exit</Hint>
       </Box>
     );
   } else if (state.type === 'confirm-unbind') {
@@ -588,20 +589,21 @@ function BindingDeviceView({
         <Text dimColor>
           {state.endpoint.provider.namespace} · {state.endpoint.provider.name}
         </Text>
-        <Hint>enter/y confirm · esc cancel · ctrl+c exit</Hint>
+        <Hint>enter/y confirm · esc cancel · q menu · ctrl+c exit</Hint>
       </Box>
     );
   } else if (state.type === 'unbinding') {
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text>removing binding…</Text>
+        <Hint>q menu · ctrl+c exit</Hint>
       </Box>
     );
   } else if (state.type === 'unbind-error') {
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text color="red">{state.message}</Text>
-        <Hint>enter/r retry · esc back · ctrl+c exit</Hint>
+        <Hint>enter/r retry · esc back · q menu · ctrl+c exit</Hint>
       </Box>
     );
   }
@@ -671,6 +673,8 @@ export function BindingProviderPage({
         <Box flexDirection="column" marginTop={1}>
           {children}
         </Box>
+
+        <Hint>q menu · ctrl+c exit</Hint>
       </Box>
     </Page>
   );
@@ -888,7 +892,7 @@ function getBindingDeviceHint(
     actions.push('u unbind');
   }
 
-  actions.push('esc back', 'ctrl+c exit');
+  actions.push('esc back', 'q menu', 'ctrl+c exit');
   return actions.join(' · ');
 }
 
@@ -906,7 +910,7 @@ function getBindingsPageHint(
     actions.push('u stale');
   }
 
-  actions.push('esc back', 'ctrl+c exit');
+  actions.push('esc back', 'q menu', 'ctrl+c exit');
   return actions.join(' · ');
 }
 
