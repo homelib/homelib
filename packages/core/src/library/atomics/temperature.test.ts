@@ -13,6 +13,21 @@ test('converts between Kelvin, Celsius, and Fahrenheit', () => {
   expect(fromFahrenheit.kelvin).toBeCloseTo(293.15);
 });
 
+test('preserves the constructing unit exactly', () => {
+  expect(Temperature.fromKelvin(300.15).kelvin).toBe(300.15);
+  expect(Temperature.fromCelsius(23.6).celsius).toBe(23.6);
+  expect(Temperature.fromFahrenheit(74.48).fahrenheit).toBe(74.48);
+});
+
+test('converts without intermediate rounding', () => {
+  const fromFahrenheit = Temperature.fromFahrenheit(74.48);
+
+  expect(fromFahrenheit.celsius).toBe(23.6);
+  expect(fromFahrenheit.kelvin).toBe(296.75);
+
+  expect(Temperature.fromCelsius(23.6).fahrenheit).toBe(74.48);
+});
+
 test('accepts absolute zero', () => {
   expect(Temperature.fromKelvin(0).kelvin).toBe(0);
   expect(Temperature.fromCelsius(-273.15).kelvin).toBe(0);
