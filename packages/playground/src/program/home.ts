@@ -19,7 +19,7 @@ const 主卧除湿机 = 主卧.$dehumidifier('除湿机');
 
 await bootstrap();
 
-setupTemperatureHumidityControl({
+setupTemperatureHumidityControl('客厅', {
   temperatureSensor: 客厅除湿机,
   humiditySensor: 客厅除湿机,
   airConditioner: 客厅空调,
@@ -27,7 +27,7 @@ setupTemperatureHumidityControl({
   onGetter: () => 客厅空调.on,
 });
 
-setupTemperatureHumidityControl({
+setupTemperatureHumidityControl('主卧', {
   temperatureSensor: 主卧除湿机,
   humiditySensor: 主卧除湿机,
   airConditioner: 主卧空调,
