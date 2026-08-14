@@ -36,17 +36,18 @@ Use `--run` to run directly with existing bindings.
 HomeLib is currently under development. To try it out:
 
 1. Clone the repository.
-2. Install dependencies:
+2. Install dependencies & build the project:
 
    ```sh
    npm install
+   npm run build
    ```
 
 3. Write your automation in `packages/playground/src/program/home.ts`
 4. Bootstrap the automation:
 
    ```sh
-   npx tsx packages/playground/src/program/home.ts
+   node packages/playground/bld/program/home.js
    ```
 
 Ask some AI agent to implement more devices so it will be actually useful.
