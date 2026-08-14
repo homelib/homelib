@@ -1,6 +1,7 @@
 {
   "name": "@homelib/xiaomi",
   "version": "0.0.0",
+  "repository": "https://github.com/homelib/homelib.git",
   "license": "MIT",
   "author": "vilicvane",
   "type": "module",
@@ -11,7 +12,6 @@
   "dependencies": {
     "@homelib/core": "*",
     "@homelib/terminal": "*",
-    "@homelib/web": "*",
     "bonjour-service": "^1.4.2",
     "mobx": "^6.16.1",
     "mqtt": "^5.13.0",
