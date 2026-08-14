@@ -164,9 +164,9 @@ function assertProviderResourceBindingsUnique(
     const target = findBootstrapBindingEndpoint(scopes, binding.endpoint);
 
     if (target === undefined) {
-      throw new Error(
-        `Binding references an unknown endpoint: ${getEndpointPathKey(binding.endpoint)}.`,
-      );
+      // Stale bindings remain persisted for frontend inspection and cleanup,
+      // but do not reserve provider resources in the current topology.
+      continue;
     }
 
     const plan = provider.createEndpointConnectionBindingPlan(

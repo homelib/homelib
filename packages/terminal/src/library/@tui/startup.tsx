@@ -304,6 +304,10 @@ export function Startup({model}: StartupProps): React.JSX.Element {
       device,
       bindingFile,
     );
+    const activeBindings = getActiveEndpointBindings(
+      model.bindingScopes,
+      bindingFile,
+    );
 
     return (
       <BindingProviderPage
@@ -315,7 +319,7 @@ export function Startup({model}: StartupProps): React.JSX.Element {
         }}
       >
         <ProviderBindingOutlet
-          bindings={bindingFile.bindings}
+          bindings={activeBindings}
           device={providerBindingDevice}
           provider={page.provider.provider}
           providerReference={providerReference}
@@ -470,6 +474,17 @@ function createStaleBindingItems(
     findStartupBindingEndpoint(scopes, binding.endpoint) === undefined
       ? [{path: binding.endpoint, provider: binding.provider}]
       : [],
+  );
+}
+
+/** @internal */
+export function getActiveEndpointBindings(
+  scopes: readonly BootstrapBindingScope[],
+  bindingFile: BindingFile,
+): readonly EndpointBinding[] {
+  return bindingFile.bindings.filter(
+    binding =>
+      findStartupBindingEndpoint(scopes, binding.endpoint) !== undefined,
   );
 }
 

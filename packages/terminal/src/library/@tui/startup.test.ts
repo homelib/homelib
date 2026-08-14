@@ -15,6 +15,7 @@ import {
   Startup,
   type StartupTuiModel,
   createProviderBindingDevice,
+  getActiveEndpointBindings,
 } from './startup.js';
 
 class TestDevice extends Device {}
@@ -56,6 +57,34 @@ test('preserves logical device constructor identity for provider binding', () =>
       endpoint: ENDPOINT,
       binding: bindingFile.bindings[0],
     },
+  ]);
+});
+
+test('excludes stale bindings from provider resource matching', () => {
+  const activeBinding = {
+    endpoint: ENDPOINT_PATH,
+    provider: {namespace: 'test', name: 'provider'},
+    metadata: {resource: 'active'},
+  } as const;
+  const staleBinding = {
+    endpoint: EndpointPath.satisfies({
+      scopePath: ['home'],
+      deviceName: 'removed light',
+      endpointName: '',
+    }),
+    provider: {namespace: 'test', name: 'provider'},
+    metadata: {resource: 'stale'},
+  } as const;
+  const bindingFile = BindingFile.satisfies({
+    version: 0,
+    bindings: [activeBinding, staleBinding],
+  });
+  const scopes: readonly BootstrapBindingScope[] = [
+    {path: ['home'], scopes: [], devices: [DEVICE]},
+  ];
+
+  expect(getActiveEndpointBindings(scopes, bindingFile)).toEqual([
+    activeBinding,
   ]);
 });
 

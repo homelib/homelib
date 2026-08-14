@@ -27,6 +27,11 @@ const OTHER_PROVIDER_REFERENCE = ProviderReference.satisfies({
 });
 const MAIN_PATH = createEndpointPath('main');
 const AMBIENT_PATH = createEndpointPath('ambient');
+const STALE_PATH = EndpointPath.satisfies({
+  scopePath: ['home'],
+  deviceName: 'removed light',
+  endpointName: 'main',
+});
 const MAIN_ENDPOINT: EndpointReference = {name: 'main', ready: false};
 const AMBIENT_ENDPOINT: EndpointReference = {name: 'ambient', ready: false};
 class SelectedDevice extends Device {}
@@ -122,6 +127,16 @@ test('rejects duplicate endpoints and provider resources', () => {
     ]),
   ).toThrow('Provider resource is already bound: shared.');
   expect(bindingFile.bindings).toEqual([]);
+});
+
+test('ignores stale bindings when validating provider resources', () => {
+  const staleBinding = createBinding(STALE_PATH, PROVIDER_REFERENCE, 'shared');
+  const nextBindingFile = applyRequests(createBindingFile([staleBinding]), [
+    createRequest(MAIN_PATH, 'shared'),
+  ]);
+
+  expect(nextBindingFile.bindings).toContainEqual(staleBinding);
+  expect(getResourceKey(nextBindingFile, MAIN_PATH)).toBe('shared');
 });
 
 test('requires confirmation before replacing another provider', () => {
