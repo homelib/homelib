@@ -27,6 +27,10 @@ import type {
 } from './miot/index.js';
 
 const DEVICE_TYPE = 'urn:miot-spec-v2:device:light:0000A001:test-light:1';
+const ALTERNATE_DEVICE_TYPE =
+  'urn:miot-spec-v2:device:light:0000A001:alternate-light:1';
+const ALTERNATE_DEVICE_TYPE_PATTERN =
+  'urn:miot-spec-v2:device:light:0000A001:alternate-*';
 const LIGHT_SERVICE_TYPE = 'urn:miot-spec-v2:service:light:00007802';
 const ENVIRONMENT_SERVICE_TYPE =
   'urn:miot-spec-v2:service:environment:0000780A';
@@ -44,7 +48,10 @@ const LIGHT_PROPERTIES = {
     [ON_PROPERTY_TYPE]: 'on',
     [MODE_PROPERTY_TYPE]: {
       name: 'mode',
-      enum: {off: 0, on: 1},
+      enum: {
+        [ALTERNATE_DEVICE_TYPE_PATTERN]: {off: 1, on: 0},
+        '*': {off: 0, on: 1},
+      },
       optional: true,
     },
   },
@@ -70,10 +77,10 @@ const TEST_PROPERTIES = {
 
 test('resolves one required service and one optional service', () => {
   const Connection = createConnection();
-  const resources = resolveMiotEndpointConnectionResources(Connection, [
-    createLightService(2),
-    createEnvironmentService(4, 'both'),
-  ]);
+  const resources = resolveMiotEndpointConnectionResources(
+    Connection,
+    createSpec([createLightService(2), createEnvironmentService(4, 'both')]),
+  );
 
   expect(resources).toMatchObject([
     {service: {iid: 2}, properties: {on: {iid: 1}, mode: {iid: 2}}},
@@ -86,9 +93,10 @@ test('resolves one required service and one optional service', () => {
 
 test('allows an optional service to be absent', () => {
   expect(
-    resolveMiotEndpointConnectionResources(createConnection(), [
-      createLightService(2),
-    ]),
+    resolveMiotEndpointConnectionResources(
+      createConnection(),
+      createSpec([createLightService(2)]),
+    ),
   ).toMatchObject([
     {service: {iid: 2}, properties: {on: {iid: 1}, mode: {iid: 2}}},
   ]);
@@ -99,17 +107,23 @@ test.each([
   ['ambiguous', [createLightService(2), createLightService(3)]],
 ] as const)('rejects a %s required service', (_name, services) => {
   expect(
-    resolveMiotEndpointConnectionResources(createConnection(), services),
+    resolveMiotEndpointConnectionResources(
+      createConnection(),
+      createSpec(services),
+    ),
   ).toBeUndefined();
 });
 
 test('rejects ambiguous optional services instead of choosing a combination', () => {
   expect(
-    resolveMiotEndpointConnectionResources(createConnection(), [
-      createLightService(2),
-      createEnvironmentService(4, 'temperature'),
-      createEnvironmentService(5, 'relativeHumidity'),
-    ]),
+    resolveMiotEndpointConnectionResources(
+      createConnection(),
+      createSpec([
+        createLightService(2),
+        createEnvironmentService(4, 'temperature'),
+        createEnvironmentService(5, 'relativeHumidity'),
+      ]),
+    ),
   ).toBeUndefined();
 });
 
@@ -122,7 +136,10 @@ test('rejects two declarations that resolve to the same service', () => {
   });
 
   expect(
-    resolveMiotEndpointConnectionResources(Connection, [createLightService(2)]),
+    resolveMiotEndpointConnectionResources(
+      Connection,
+      createSpec([createLightService(2)]),
+    ),
   ).toBeUndefined();
 });
 
@@ -165,7 +182,7 @@ test('restores a previously selected split environment without discovery', () =>
   });
 
   expect(
-    resolveMiotEndpointConnectionResources(Connection, services),
+    resolveMiotEndpointConnectionResources(Connection, createSpec(services)),
   ).toBeUndefined();
   expect(
     resolveMiotEndpointConnectionMetadata(Connection, metadata).resources,
@@ -174,6 +191,17 @@ test('restores a previously selected split environment without discovery', () =>
     {service: {iid: 4}, properties: {temperature: {iid: 1}}},
     {service: {iid: 5}, properties: {relativeHumidity: {iid: 1}}},
   ]);
+});
+
+test('restores the enum mapping selected by the persisted device URN', () => {
+  const Connection = createConnection();
+  const metadata = MiotEndpointConnectionMetadata.satisfies({
+    device: {...TEST_DEVICE, urn: ALTERNATE_DEVICE_TYPE},
+    resources: [{service: createLightService(2)}],
+  });
+  const resolved = resolveMiotEndpointConnectionMetadata(Connection, metadata);
+
+  expect(resolved.resources[0]?.properties.mode?.enum).toEqual({off: 1, on: 0});
 });
 
 test('derives newly supported optional properties from persisted services', () => {
@@ -370,7 +398,7 @@ test('matches every registered endpoint once without sharing services', () => {
       deviceConstructors: [MultiEndpointDevice],
       endpoints: [environmentEndpoint, lightEndpoint],
     },
-    [createLightService(2), createEnvironmentService(4, 'both')],
+    createSpec([createLightService(2), createEnvironmentService(4, 'both')]),
   );
 
   expect(match?.endpoints.map(item => item.endpoint)).toEqual([
@@ -395,7 +423,7 @@ test('matches every registered endpoint once without sharing services', () => {
         deviceConstructors: [MultiEndpointDevice],
         endpoints: [lightEndpoint, environmentEndpoint],
       },
-      [createLightService(2)],
+      createSpec([createLightService(2)]),
     ),
   ).toBeUndefined();
 });
@@ -433,7 +461,7 @@ function requireResources(
 ): readonly MiotEndpointConnectionResolvedResource[] {
   const resources = resolveMiotEndpointConnectionResources(
     Connection,
-    services,
+    createSpec(services),
   );
 
   if (resources === undefined) {
@@ -441,6 +469,13 @@ function requireResources(
   }
 
   return resources;
+}
+
+function createSpec(
+  services: readonly MiotSpecService[],
+  type = DEVICE_TYPE,
+): {readonly type: string; readonly services: readonly MiotSpecService[]} {
+  return {type, services};
 }
 
 class TestLightEndpointConnection

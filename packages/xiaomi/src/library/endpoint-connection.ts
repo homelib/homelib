@@ -276,7 +276,7 @@ export abstract class MiotEndpointConnection<
     >,
   >(
     name: TName,
-    initial: MiotPropertyEnumName<
+    initial: MiotPropertyEnumInitial<
       MiotEndpointConnectionSchemaProperties<TSchema>[TName]
     >,
   ): MiotEndpointConnectionPropertyState<
@@ -301,6 +301,12 @@ export abstract class MiotEndpointConnection<
     const value = this.getState(name);
 
     if (value === undefined) {
+      if (!Object.hasOwn(property.enum, initial)) {
+        throw new TypeError(
+          `Unsupported MIoT property enum initial value: ${name}=${initial}.`,
+        );
+      }
+
       return initial as MiotEndpointConnectionPropertyState<
         MiotEndpointConnectionSchemaProperties<TSchema>[TName],
         MiotPropertyEnumName<
@@ -630,7 +636,15 @@ type MiotEndpointConnectionEnumPropertyName<TProperties> = Extract<
   string
 >;
 
-type MiotPropertyEnumName<TProperty> =
+type MiotPropertyEnumName<TProperty> = TProperty extends {
+  readonly enum: infer TEnum;
+}
+  ? TEnum extends Readonly<Record<string, number>>
+    ? Extract<keyof TEnum, string>
+    : never
+  : never;
+
+type MiotPropertyEnumInitial<TProperty> =
   NonNullable<TProperty> extends {
     readonly enum: infer TEnum extends Readonly<Record<string, number>>;
   }

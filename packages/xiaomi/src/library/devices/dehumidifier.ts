@@ -37,7 +37,7 @@ export class MiotDehumidifierEndpointConnection
       'urn:miot-spec-v2:property:on:00000006': 'on',
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {auto: 0, sleep: 1, laundry: 2},
+        enum: {'*': {auto: 0, sleep: 1, laundry: 2}},
         optional: true,
       },
       'urn:miot-spec-v2:property:target-humidity:00000022': {

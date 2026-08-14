@@ -212,10 +212,7 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
       spec.services.push({...service, iid: 3});
 
       expect(
-        resolveMiotEndpointConnectionResources(
-          options.Connection,
-          spec.services,
-        ),
+        resolveMiotEndpointConnectionResources(options.Connection, spec),
       ).toBeUndefined();
     });
 
@@ -330,10 +327,7 @@ function findPersistedMetadata(
   spec: MiotSpecInstance,
   name: string,
 ): MiotEndpointConnectionMetadata {
-  const resources = resolveMiotEndpointConnectionResources(
-    Connection,
-    spec.services,
-  );
+  const resources = resolveMiotEndpointConnectionResources(Connection, spec);
 
   if (resources === undefined) {
     throw new Error('Test connection did not resolve endpoint resources.');

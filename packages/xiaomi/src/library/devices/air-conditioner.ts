@@ -38,7 +38,7 @@ export class MiotAirConditionerEndpointConnection
       'urn:miot-spec-v2:property:on:00000006': 'on',
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {cool: 2, dry: 3, fan: 4, heat: 5},
+        enum: {'*': {cool: 2, dry: 3, fan: 4, heat: 5}},
         optional: true,
       },
       'urn:miot-spec-v2:property:target-temperature:00000021': {

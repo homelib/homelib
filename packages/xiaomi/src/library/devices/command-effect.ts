@@ -14,6 +14,7 @@ import {
   MiotSetPropertyRequest,
   isValidMiotSpecValueList,
   isValidMiotSpecValueRange,
+  matchesMiotUrnPattern,
 } from '../miot/index.js';
 
 import {clampAndQuantizeValue} from './value-range.js';
@@ -303,7 +304,7 @@ function getMiotEffectValue(
     return value;
   }
 
-  if (matchesMiotPropertyType(property, MIOT_BRIGHTNESS_PROPERTY_TYPE)) {
+  if (matchesMiotUrnPattern(property.type, MIOT_BRIGHTNESS_PROPERTY_TYPE)) {
     const valueRange = property['value-range'];
 
     if (!isValidMiotSpecValueRange(valueRange, property.format)) {
@@ -314,13 +315,16 @@ function getMiotEffectValue(
   }
 
   if (
-    matchesMiotPropertyType(property, MIOT_RELATIVE_HUMIDITY_PROPERTY_TYPE) ||
-    matchesMiotPropertyType(property, MIOT_TARGET_HUMIDITY_PROPERTY_TYPE)
+    matchesMiotUrnPattern(
+      property.type,
+      MIOT_RELATIVE_HUMIDITY_PROPERTY_TYPE,
+    ) ||
+    matchesMiotUrnPattern(property.type, MIOT_TARGET_HUMIDITY_PROPERTY_TYPE)
   ) {
     return value * 100;
   }
 
-  if (matchesMiotPropertyType(property, MIOT_FAN_LEVEL_PROPERTY_TYPE)) {
+  if (matchesMiotUrnPattern(property.type, MIOT_FAN_LEVEL_PROPERTY_TYPE)) {
     const valueList = property['value-list'];
 
     if (!isValidMiotSpecValueList(valueList)) {
@@ -339,13 +343,6 @@ function getMiotEffectValue(
   }
 
   return value;
-}
-
-function matchesMiotPropertyType(
-  property: MiotResolvedSpecProperty,
-  type: string,
-): boolean {
-  return property.type === type || property.type.startsWith(`${type}:`);
 }
 
 function compareMiotCommandEffectProperties(

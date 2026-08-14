@@ -38,8 +38,14 @@ export class MiotFanEndpointConnection
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'windMode',
         enum: {
-          normal: 0,
-          natural: 1,
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {
+            natural: 0,
+            normal: 1,
+          },
+          '*': {
+            normal: 0,
+            natural: 1,
+          },
         },
         optional: true,
       },

@@ -19,6 +19,7 @@ import {
 } from './endpoint-connection.js';
 import {
   type MiotPropertySchema,
+  type MiotSpecMatchContext,
   type MiotSpecProperty,
   type MiotSpecService,
   assertMiotPropertySchema,
@@ -179,7 +180,7 @@ export class MiotDeviceRegistry {
 
   match<TEndpoint extends MiotLogicalDeviceEndpoint>(
     device: MiotLogicalDevice<TEndpoint>,
-    services: readonly MiotSpecService[],
+    spec: MiotSpecMatchContext,
   ): MiotDeviceMatch<TEndpoint> | undefined {
     const registeredDevice = this.getRegisteredDevice(
       device.deviceConstructors,
@@ -216,7 +217,7 @@ export class MiotDeviceRegistry {
 
       const resolvedResources = resolveMiotEndpointConnectionResources(
         Connection,
-        services,
+        spec,
       );
       const [firstResource, ...remainingResources] = resolvedResources ?? [];
 
@@ -301,9 +302,9 @@ export function registerMiotDevice(
 
 export function matchMiotDevice<TEndpoint extends MiotLogicalDeviceEndpoint>(
   device: MiotLogicalDevice<TEndpoint>,
-  services: readonly MiotSpecService[],
+  spec: MiotSpecMatchContext,
 ): MiotDeviceMatch<TEndpoint> | undefined {
-  return MIOT_DEVICE_REGISTRY.match(device, services);
+  return MIOT_DEVICE_REGISTRY.match(device, spec);
 }
 
 export function getMiotEndpointConnectionConstructor(
@@ -344,16 +345,16 @@ export function createMiotDeviceEndpointConnectionBinding(
 
 export function resolveMiotEndpointConnectionResources(
   Connection: MiotEndpointConnectionConstructor,
-  services: readonly MiotSpecService[],
+  spec: MiotSpecMatchContext,
 ): readonly MiotEndpointConnectionResolvedResource[] | undefined {
-  return resolveMiotPropertySchema(services, Connection.properties);
+  return resolveMiotPropertySchema(spec, Connection.properties);
 }
 
 export function resolvePersistedMiotEndpointConnectionResources(
   Connection: MiotEndpointConnectionConstructor,
-  services: readonly MiotSpecService[],
+  spec: MiotSpecMatchContext,
 ): readonly MiotEndpointConnectionResolvedResource[] | undefined {
-  return resolveMiotPropertySchema(services, Connection.properties, {
+  return resolveMiotPropertySchema(spec, Connection.properties, {
     allowMultipleOptionalServices: true,
   });
 }
@@ -364,7 +365,10 @@ export function resolveMiotEndpointConnectionMetadata(
 ): MiotEndpointConnectionResolvedMetadata {
   const resources = resolvePersistedMiotEndpointConnectionResources(
     Connection,
-    metadata.resources.map(resource => resource.service),
+    {
+      type: metadata.device.urn,
+      services: metadata.resources.map(resource => resource.service),
+    },
   );
 
   if (

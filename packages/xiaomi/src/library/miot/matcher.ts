@@ -16,7 +16,19 @@ const MIOT_INTEGER_FORMAT_RANGES: Readonly<
   uint32: [0, 4_294_967_295],
 };
 
-export type MiotEnumMapping = Readonly<Record<string, number>>;
+/**
+ * A full-URN prefix pattern. `*` matches one or more non-colon characters,
+ * and a successful match must end at a URN segment boundary.
+ */
+export type MiotUrnPattern = string;
+
+/** Maps HomeLib domain names to MIoT wire values. */
+export type MiotEnumValueMapping = Readonly<Record<string, number>>;
+
+/** Selects an enum value mapping from the complete device URN. */
+export type MiotEnumMapping = Readonly<
+  Record<MiotUrnPattern, MiotEnumValueMapping>
+>;
 
 export type MiotPropertyMapping =
   | string
@@ -30,8 +42,13 @@ export type MiotPropertySchema = Readonly<
   Record<string, Readonly<Record<string, MiotPropertyMapping>>>
 >;
 
+export type MiotSpecMatchContext = {
+  readonly type: string;
+  readonly services: readonly MiotSpecService[];
+};
+
 export type MiotResolvedSpecProperty = MiotSpecProperty & {
-  readonly enum?: MiotEnumMapping;
+  readonly enum?: MiotEnumValueMapping;
 };
 
 export type MiotPropertySchemaResource = {
@@ -82,7 +99,7 @@ type MiotResolvedPropertyForName<
     TName
   > extends infer TMapping
     ? TMapping extends {readonly enum: infer TEnum extends MiotEnumMapping}
-      ? {readonly enum: TEnum}
+      ? {readonly enum: TEnum[keyof TEnum]}
       : {readonly enum?: undefined}
     : never);
 
@@ -134,12 +151,13 @@ export function assertMiotPropertySchema(schema: MiotPropertySchema): void {
 }
 
 export function resolveMiotPropertySchema(
-  services: readonly MiotSpecService[],
+  spec: MiotSpecMatchContext,
   schema: MiotPropertySchema,
   options: {readonly allowMultipleOptionalServices?: boolean} = {},
 ): readonly MiotPropertySchemaResource[] | undefined {
   assertMiotPropertySchema(schema);
 
+  const {services, type: deviceType} = spec;
   const resources: MiotPropertySchemaResource[] = [];
   const serviceIidSet = new Set<number>();
 
@@ -148,11 +166,15 @@ export function resolveMiotPropertySchema(
       mapping => !getPropertyMapping(mapping).optional,
     );
     const matches = services.flatMap(service => {
-      if (!matchesType(service.type, serviceType)) {
+      if (!matchesMiotUrnPattern(service.type, serviceType)) {
         return [];
       }
 
-      const properties = resolveServiceProperties(service, propertySchema);
+      const properties = resolveServiceProperties(
+        deviceType,
+        service,
+        propertySchema,
+      );
 
       return properties === undefined ||
         (!required && Object.keys(properties).length === 0)
@@ -237,6 +259,7 @@ export function isValidMiotSpecValueRange(
 }
 
 function resolveServiceProperties(
+  deviceType: string,
   service: MiotSpecService,
   schema: Readonly<Record<string, MiotPropertyMapping>>,
 ): Readonly<Record<string, MiotResolvedSpecProperty>> | undefined {
@@ -249,10 +272,15 @@ function resolveServiceProperties(
 
   for (const [propertyType, configuredMapping] of Object.entries(schema)) {
     const mapping = getPropertyMapping(configuredMapping);
+    const enumMapping =
+      mapping.enum === undefined
+        ? undefined
+        : selectMiotUrnPatternValue(deviceType, mapping.enum);
     const candidates = findPropertyCandidates(
       service,
       propertyType,
-      mapping.enum,
+      enumMapping,
+      mapping.enum !== undefined,
     );
     const [property] = candidates;
 
@@ -265,7 +293,7 @@ function resolveServiceProperties(
         return undefined;
       }
 
-      properties[mapping.name] = resolveProperty(property, mapping.enum);
+      properties[mapping.name] = resolveProperty(property, enumMapping);
       usedPropertyIids.add(property.iid);
       continue;
     }
@@ -280,7 +308,7 @@ function resolveServiceProperties(
 
     optionalCandidates.push([
       mapping.name,
-      resolveProperty(property, mapping.enum),
+      resolveProperty(property, enumMapping),
     ]);
     optionalPropertyUseCount.set(
       property.iid,
@@ -303,10 +331,11 @@ function resolveServiceProperties(
 function findPropertyCandidates(
   service: MiotSpecService,
   propertyType: string,
-  enumMapping: MiotEnumMapping | undefined,
+  enumMapping: MiotEnumValueMapping | undefined,
+  requiresEnumMapping: boolean,
 ): readonly MiotSpecProperty[] {
   return (service.properties ?? []).filter(property => {
-    if (!matchesType(property.type, propertyType)) {
+    if (!matchesMiotUrnPattern(property.type, propertyType)) {
       return false;
     }
 
@@ -322,7 +351,7 @@ function findPropertyCandidates(
     }
 
     if (enumMapping === undefined) {
-      return true;
+      return !requiresEnumMapping;
     }
 
     const valueList = property['value-list'];
@@ -338,7 +367,7 @@ function findPropertyCandidates(
 
 function resolveProperty(
   property: MiotSpecProperty,
-  enumMapping: MiotEnumMapping | undefined,
+  enumMapping: MiotEnumValueMapping | undefined,
 ): MiotResolvedSpecProperty {
   return enumMapping === undefined
     ? property
@@ -364,13 +393,53 @@ function isValidEnumMapping(mapping: MiotEnumMapping): boolean {
 
   return (
     entries.length > 0 &&
+    entries.every(
+      ([pattern, valueMapping]) =>
+        pattern.length > 0 && isValidEnumValueMapping(valueMapping),
+    )
+  );
+}
+
+function isValidEnumValueMapping(mapping: MiotEnumValueMapping): boolean {
+  const entries = Object.entries(mapping);
+
+  return (
+    entries.length > 0 &&
     entries.every(([key, value]) => key.length > 0 && Number.isFinite(value)) &&
     new Set(entries.map(([, value]) => value)).size === entries.length
   );
 }
 
-function matchesType(actual: string, expected: string): boolean {
-  return actual === expected || actual.startsWith(`${expected}:`);
+/** Selects a matching pattern that is nested within every other match. */
+export function selectMiotUrnPatternValue<T>(
+  urn: string,
+  values: Readonly<Record<MiotUrnPattern, T>>,
+): T | undefined {
+  const matches = Object.entries(values).filter(([pattern]) =>
+    matchesMiotUrnPattern(urn, pattern),
+  );
+  const nestedMatches = matches.filter(([pattern]) =>
+    matches.every(
+      ([otherPattern]) =>
+        pattern === otherPattern ||
+        matchesMiotUrnPattern(pattern, otherPattern),
+    ),
+  );
+
+  return nestedMatches.length === 1 ? nestedMatches[0]?.[1] : undefined;
+}
+
+/** Matches a pattern against the beginning of a complete MIoT URN. */
+export function matchesMiotUrnPattern(
+  urn: string,
+  pattern: MiotUrnPattern,
+): boolean {
+  const source = pattern
+    .split('*')
+    .map(part => part.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&'))
+    .join('[^:]+');
+
+  return new RegExp(`^${source}(?=:|$)`).test(urn);
 }
 
 function isValidUniqueNumberSet(values: readonly number[]): boolean {

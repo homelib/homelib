@@ -234,6 +234,9 @@ const _TEST_MULTI_RESOURCE_PROPERTIES = {
   },
 } as const satisfies MiotPropertySchema;
 
+const TEST_HELPER_DEVICE_TYPE_PATTERN =
+  'urn:miot-spec-v2:device:light:0000A001:test-*';
+
 const TEST_HELPER_PROPERTIES = {
   'urn:miot-spec-v2:service:light:00007802': {
     'urn:miot-spec-v2:property:on:00000006': 'on',
@@ -241,7 +244,10 @@ const TEST_HELPER_PROPERTIES = {
   'urn:miot-spec-v2:service:fan:00007808': {
     'urn:miot-spec-v2:property:mode:00000008': {
       name: 'mode',
-      enum: {off: 0, onn: 1},
+      enum: {
+        [TEST_HELPER_DEVICE_TYPE_PATTERN]: {off: 0, onn: 1},
+        '*': {off: 0, standby: 2},
+      },
       optional: true,
     },
     'urn:miot-spec-v2:property:fan-level:00000016': {
@@ -309,7 +315,7 @@ const TEST_HELPER_METADATA = createTestResolvedMetadata({
           ...TEST_HELPER_MODE_PROPERTY,
           enum: TEST_HELPER_PROPERTIES['urn:miot-spec-v2:service:fan:00007808'][
             'urn:miot-spec-v2:property:mode:00000008'
-          ].enum,
+          ].enum[TEST_HELPER_DEVICE_TYPE_PATTERN],
         },
       },
     },
@@ -343,7 +349,7 @@ test('provides typed property state helpers across resolved resources', () => {
 
   const requiredBoolean: boolean = connection.on;
   const optionalNumber: number | undefined = connection.missingSpeed;
-  const exactEnum: 'off' | 'onn' | undefined = connection.mode;
+  const exactEnum: 'off' | 'onn' | 'standby' | undefined = connection.mode;
   // @ts-expect-error -- A schema typo cannot masquerade as a domain enum name.
   const domainEnum: 'off' | 'on' | undefined = connection.mode;
 
@@ -358,6 +364,9 @@ test('provides typed property state helpers across resolved resources', () => {
   expect(connection.missingSpeed).toBeUndefined();
   expect(connection.missingSpeedWithInitial).toBeUndefined();
   expect(connection.mode).toBe('off');
+  expect(() => connection.modeWithUnavailableInitial).toThrow(
+    'Unsupported MIoT property enum initial value: mode=standby.',
+  );
   expect(connection.projectedMode).toBe(0);
   expect(connection.projectionCount).toBe(0);
   expect(connection.getTemperatureCelsius(initialTemperature)).toBe(
@@ -1770,8 +1779,18 @@ class TestPropertyHelperEndpointConnection extends MiotEndpointConnection<
     return this.getNumberPropertyState('missingSpeed', 3);
   }
 
-  get mode(): 'off' | 'onn' | undefined {
+  get mode(): 'off' | 'onn' | 'standby' | undefined {
     return this.getEnumPropertyState('mode', 'off');
+  }
+
+  get incorrectlyNarrowMode(): 'off' | 'onn' | undefined {
+    // @ts-expect-error -- Other device-type branches add enum names.
+    return this.getEnumPropertyState('mode', 'off');
+  }
+
+  get modeWithUnavailableInitial(): 'off' | 'onn' | 'standby' | undefined {
+    // @ts-expect-error -- An initial value must exist in every enum branch.
+    return this.getEnumPropertyState('mode', 'standby');
   }
 
   get invalidAlias(): boolean {

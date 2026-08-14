@@ -105,7 +105,7 @@ test('routes endpoint binding plans through the exact endpoint connection', () =
 
   const resources = resolveMiotEndpointConnectionResources(
     MiotLightEndpointConnection,
-    LIGHT_SPEC.services,
+    LIGHT_SPEC,
   );
 
   if (resources === undefined) {
@@ -153,7 +153,7 @@ test('routes endpoint binding plans through the exact endpoint connection', () =
 test('claims every service used by a multi-service endpoint', () => {
   const resources = resolveMiotEndpointConnectionResources(
     MiotDehumidifierEndpointConnection,
-    DEHUMIDIFIER_SPEC.services,
+    DEHUMIDIFIER_SPEC,
   );
 
   if (resources === undefined) {
@@ -408,7 +408,7 @@ function getProviderCleanupInternals(
 function createTestLightResolvedMetadata(): MiotEndpointConnectionResolvedMetadata {
   const resources = resolveMiotEndpointConnectionResources(
     MiotLightEndpointConnection,
-    LIGHT_SPEC.services,
+    LIGHT_SPEC,
   );
 
   if (resources === undefined) {

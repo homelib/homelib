@@ -436,7 +436,7 @@ describe('MIoT air conditioner capabilities', () => {
     expect(
       resolveMiotEndpointConnectionResources(
         MiotAirConditionerEndpointConnection,
-        spec.services,
+        spec,
       ),
     ).toBeUndefined();
   });
@@ -463,7 +463,7 @@ describe('MIoT air conditioner capabilities', () => {
     expect(
       resolveMiotEndpointConnectionResources(
         MiotAirConditionerEndpointConnection,
-        spec.services,
+        spec,
       ),
     ).toBeUndefined();
   });
@@ -793,7 +793,7 @@ describe('MIoT dehumidifier capabilities', () => {
     expect(
       resolveMiotEndpointConnectionResources(
         MiotDehumidifierEndpointConnection,
-        spec.services,
+        spec,
       ),
     ).toBeUndefined();
   });
@@ -820,7 +820,7 @@ describe('MIoT dehumidifier capabilities', () => {
     expect(
       resolveMiotEndpointConnectionResources(
         MiotDehumidifierEndpointConnection,
-        spec.services,
+        spec,
       ),
     ).toBeUndefined();
   });
@@ -848,6 +848,28 @@ describe('MIoT dehumidifier capabilities', () => {
 });
 
 describe('MIoT fan capabilities', () => {
+  test('uses the device URN enum branch for state and command values', async () => {
+    const spec = {
+      ...createFanSpec(),
+      type: 'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1:1',
+    };
+    const metadata = findMetadata(MiotFanEndpointConnection, spec);
+    const transport = new TestTransport();
+    const connection = new MiotFanEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [transport],
+    );
+
+    updateProperty(connection, metadata, 'windMode', 0);
+    expect(connection.windMode).toBe('natural');
+
+    await executeCommand(connection, new SetFanWindModeCommand('normal'));
+    expect(transport.requests).toEqual([
+      createExpectedRequest(metadata, 'windMode', 1),
+    ]);
+  });
+
   test('matches and projects wind mode, normalized speed, and swing', () => {
     const metadata = findMetadata(MiotFanEndpointConnection, createFanSpec());
     const connection = new MiotFanEndpointConnection(
@@ -1227,10 +1249,7 @@ function findPersistedMetadata(
   Connection: MiotEndpointConnectionConstructor,
   spec: MiotSpecInstance,
 ): MiotEndpointConnectionMetadata {
-  const resources = resolveMiotEndpointConnectionResources(
-    Connection,
-    spec.services,
-  );
+  const resources = resolveMiotEndpointConnectionResources(Connection, spec);
 
   if (resources === undefined) {
     throw new Error('Test connection did not resolve endpoint resources.');

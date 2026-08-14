@@ -242,7 +242,7 @@ function createBindingDeviceCandidate(
   spec: MiotSpecInstance,
   logicalDevice: ProviderBindingDevice,
 ): MiotBindingDeviceCandidate | undefined {
-  const match = matchMiotDevice(logicalDevice, spec.services);
+  const match = matchMiotDevice(logicalDevice, spec);
 
   if (match === undefined) {
     return undefined;
