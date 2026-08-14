@@ -130,6 +130,38 @@ test('does not offer ambiguous service combinations for manual matching', async 
   }
 }, 10_000);
 
+test('reports success only after an explicit device reload', async () => {
+  const spec = createLightSpec('reload', ['Main Light']);
+  const restoreFetch = installSpecFetch(spec);
+  const provider = createFakeProvider('reload', spec);
+  const terminal = renderTestTerminal(
+    createElement(MiotProviderBindings, {
+      provider,
+      device: createLogicalDevice(),
+      providerBindings: [],
+      onBind: () => Promise.resolve(),
+      onBack: () => undefined,
+      onComplete: () => undefined,
+    }),
+  );
+
+  try {
+    await terminal.flushUntil(frame =>
+      frame.includes('choose a mi home device'),
+    );
+    expect(terminal.frame()).not.toContain('devices reloaded.');
+
+    await terminal.input('r');
+    await terminal.flushUntil(frame => frame.includes('devices reloaded.'));
+
+    await terminal.input('\u001B[B');
+    expect(terminal.frame()).not.toContain('devices reloaded.');
+  } finally {
+    await terminal.close();
+    restoreFetch();
+  }
+}, 10_000);
+
 test('returns to the logical device on escape without completing', async () => {
   const spec = createLightSpec('escape', ['Main Light']);
   const restoreFetch = installSpecFetch(spec);

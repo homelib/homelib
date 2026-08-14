@@ -379,12 +379,16 @@ test('refuses to save a selection without an account identity', async () => {
 test('wraps authorization without exposing its private result', async () => {
   let authorizationWaitCount = 0;
   let authorizationCancelCount = 0;
+  const submittedCallbackUrls: string[] = [];
   let discoveryCount = 0;
   const internalAuthorization = {
     url: 'https://example.test/authorize',
     token: 'must-not-leak',
     wait: async (): Promise<void> => {
       authorizationWaitCount++;
+    },
+    submitCallbackUrl: async (callbackUrl: string): Promise<void> => {
+      submittedCallbackUrls.push(callbackUrl);
     },
     cancel: async (): Promise<void> => {
       authorizationCancelCount++;
@@ -408,6 +412,13 @@ test('wraps authorization without exposing its private result', async () => {
   expect(firstCompletion).toBe(secondCompletion);
   await firstCompletion;
   expect(authorizationWaitCount).toBe(1);
+
+  await authorization.submitCallbackUrl(
+    'http://localhost/oauth/callback?code=code&state=state',
+  );
+  expect(submittedCallbackUrls).toEqual([
+    'http://localhost/oauth/callback?code=code&state=state',
+  ]);
 
   await authorization.cancel();
   expect(authorizationCancelCount).toBe(1);

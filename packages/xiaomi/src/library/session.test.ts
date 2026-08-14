@@ -46,6 +46,54 @@ test('receives an OAuth callback and releases its port', async () => {
   }
 });
 
+test('submits a copied OAuth callback URL and remains retryable after invalid input', async () => {
+  const port = await reservePort();
+  const redirectUrl = `http://homeassistant.local:${port}/api/webhook/test`;
+  const listener = await startOAuthCallbackListener({
+    expectedState: 'expected-state',
+    redirectUrl,
+    timeout: 1_000,
+  });
+
+  try {
+    await expect(
+      listener.submitCallbackUrl('not a URL containing secret-code'),
+    ).rejects.toThrow('Invalid OAuth callback URL.');
+    await expect(
+      listener.submitCallbackUrl(
+        'http://browser.local/wrong?code=secret-code&state=expected-state',
+      ),
+    ).rejects.toThrow('Invalid OAuth callback path.');
+    await expect(
+      listener.submitCallbackUrl(
+        'http://browser.local/api/webhook/test?code=secret-code&state=invalid-state',
+      ),
+    ).rejects.toThrow('Invalid OAuth state.');
+    await expect(
+      listener.submitCallbackUrl(
+        'http://browser.local/api/webhook/test?state=expected-state',
+      ),
+    ).rejects.toThrow('Missing OAuth code.');
+    await expect(
+      listener.submitCallbackUrl(
+        'http://browser.local/api/webhook/test?code=&state=expected-state',
+      ),
+    ).rejects.toThrow('Missing OAuth code.');
+
+    const callback = listener.wait();
+
+    await listener.submitCallbackUrl(
+      'http://browser.local/api/webhook/test?code=test-code&state=expected-state',
+    );
+
+    await expect(callback).resolves.toBe('test-code');
+    await expectPortAvailable(port);
+  } finally {
+    await listener.close();
+    await listener.wait().catch(() => undefined);
+  }
+});
+
 test('closes an OAuth callback listener idempotently and releases its port', async () => {
   const port = await reservePort();
   const listener = await startOAuthCallbackListener({
@@ -100,9 +148,10 @@ test('completes and persists an initial OAuth authorization', async () => {
 
     const completion = authorization.wait();
 
-    await requestCallback(
-      redirectUrl,
-      `?code=test-code&state=${encodeURIComponent(String(state))}`,
+    await authorization.submitCallbackUrl(
+      `http://browser.local/api/webhook/test?code=test-code&state=${encodeURIComponent(
+        String(state),
+      )}`,
     );
 
     const session = await completion;

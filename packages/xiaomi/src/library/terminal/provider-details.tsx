@@ -1,5 +1,5 @@
 import {type ProviderDetailsComponentProps} from '@homelib/terminal';
-import {Box, Text, useInput} from 'ink';
+import {Box, Text, useInput, usePaste} from 'ink';
 import {useCallback, useEffect, useRef, useState} from 'react';
 
 import {
@@ -54,37 +54,40 @@ export function MiotProviderDetails({
     }
   }, []);
 
-  const load = useCallback((): void => {
-    const operation = beginOperation();
+  const load = useCallback(
+    (notice?: ReadyNotice): void => {
+      const operation = beginOperation();
 
-    setState({type: 'loading'});
-    void provider.configuration.load().then(
-      snapshot => {
-        if (!isCurrentOperation(operation)) {
-          return;
-        }
+      setState({type: 'loading'});
+      void provider.configuration.load().then(
+        snapshot => {
+          if (!isCurrentOperation(operation)) {
+            return;
+          }
 
-        completeOperation(operation);
+          completeOperation(operation);
 
-        if (snapshot === undefined) {
-          setState({
-            type: 'authorization-required',
-            cloudServerIndex: DEFAULT_CLOUD_SERVER_INDEX,
-          });
-        } else {
-          setState(createReadyState(snapshot));
-        }
-      },
-      error => {
-        if (!isCurrentOperation(operation)) {
-          return;
-        }
+          if (snapshot === undefined) {
+            setState({
+              type: 'authorization-required',
+              cloudServerIndex: DEFAULT_CLOUD_SERVER_INDEX,
+            });
+          } else {
+            setState({...createReadyState(snapshot), notice});
+          }
+        },
+        error => {
+          if (!isCurrentOperation(operation)) {
+            return;
+          }
 
-        completeOperation(operation);
-        setState({type: 'load-error', message: getErrorMessage(error)});
-      },
-    );
-  }, [beginOperation, completeOperation, isCurrentOperation, provider]);
+          completeOperation(operation);
+          setState({type: 'load-error', message: getErrorMessage(error)});
+        },
+      );
+    },
+    [beginOperation, completeOperation, isCurrentOperation, provider],
+  );
 
   const authorize = useCallback(
     (cloudServer: CloudServer): void => {
@@ -101,6 +104,8 @@ export function MiotProviderDetails({
         }
 
         operation.cancelAuthorization = authorization.cancel;
+        operation.submitCallbackUrl = callbackUrl =>
+          authorization.submitCallbackUrl(callbackUrl);
 
         if (operation.authorizationCancellationRequested) {
           await authorization.cancel();
@@ -141,6 +146,84 @@ export function MiotProviderDetails({
     [beginOperation, completeOperation, isCurrentOperation, load, provider],
   );
 
+  const submitCallbackUrl = useCallback(
+    (value: string): void => {
+      if (
+        state.type !== 'authorizing' ||
+        state.url === undefined ||
+        state.callbackStatus !== undefined
+      ) {
+        return;
+      }
+
+      const operation = operationReference.current;
+      const submit = operation?.submitCallbackUrl;
+
+      if (operation === undefined || submit === undefined) {
+        return;
+      }
+
+      const callbackUrl = value.trim();
+
+      if (callbackUrl.length === 0) {
+        setState({...state, callbackError: 'callback URL is empty.'});
+        return;
+      }
+
+      setState({
+        ...state,
+        callbackStatus: 'submitting',
+        callbackError: undefined,
+      });
+      void submit(callbackUrl).then(
+        () => {
+          if (
+            !isCurrentOperation(operation) ||
+            operation.authorizationCancellationRequested
+          ) {
+            return;
+          }
+
+          setState(currentState => {
+            return currentState.type === 'authorizing'
+              ? {
+                  ...currentState,
+                  callbackStatus: 'accepted',
+                  callbackError: undefined,
+                }
+              : currentState;
+          });
+        },
+        error => {
+          if (
+            !isCurrentOperation(operation) ||
+            operation.authorizationCancellationRequested
+          ) {
+            return;
+          }
+
+          setState(currentState => {
+            return currentState.type === 'authorizing'
+              ? {
+                  ...currentState,
+                  callbackStatus: undefined,
+                  callbackError: getErrorMessage(error),
+                }
+              : currentState;
+          });
+        },
+      );
+    },
+    [isCurrentOperation, state],
+  );
+
+  usePaste(submitCallbackUrl, {
+    isActive:
+      state.type === 'authorizing' &&
+      state.url !== undefined &&
+      state.callbackStatus === undefined,
+  });
+
   const save = useCallback(
     (readyState: ReadyState): void => {
       const operation = beginOperation();
@@ -148,7 +231,12 @@ export function MiotProviderDetails({
         .filter(home => readyState.draftHomeKeys.has(getHomeKey(home)))
         .map(({source, id}) => ({source, id}));
 
-      setState({...readyState, saving: true, saveError: undefined});
+      setState({
+        ...readyState,
+        saving: true,
+        saveError: undefined,
+        notice: undefined,
+      });
       void provider.configuration
         .saveIncludedHomes(readyState.snapshot.account, includedHomes)
         .then(
@@ -176,6 +264,7 @@ export function MiotProviderDetails({
               draftHomeKeys: new Set(savedHomeKeys),
               saving: false,
               saveError: undefined,
+              notice: 'saved',
             });
           },
           error => {
@@ -188,6 +277,7 @@ export function MiotProviderDetails({
               ...readyState,
               saving: false,
               saveError: getErrorMessage(error),
+              notice: undefined,
             });
           },
         );
@@ -316,18 +406,26 @@ export function MiotProviderDetails({
     } else if (!state.saving) {
       const homeCount = state.snapshot.homes.length;
       const filteringAvailable = state.snapshot.account.userId !== null;
+      const clearedState =
+        state.notice === undefined ? state : {...state, notice: undefined};
 
       if (key.escape) {
         onBack();
       } else if (key.upArrow && homeCount > 0) {
-        setState({...state, cursor: wrapIndex(state.cursor - 1, homeCount)});
+        setState({
+          ...clearedState,
+          cursor: wrapIndex(state.cursor - 1, homeCount),
+        });
       } else if (key.downArrow && homeCount > 0) {
-        setState({...state, cursor: wrapIndex(state.cursor + 1, homeCount)});
+        setState({
+          ...clearedState,
+          cursor: wrapIndex(state.cursor + 1, homeCount),
+        });
       } else if (input === ' ' && homeCount > 0 && filteringAvailable) {
         const home = state.snapshot.homes.at(state.cursor);
 
         if (home !== undefined) {
-          const draftHomeKeys = new Set(state.draftHomeKeys);
+          const draftHomeKeys = new Set(clearedState.draftHomeKeys);
           const key = getHomeKey(home);
 
           if (draftHomeKeys.has(key)) {
@@ -336,14 +434,20 @@ export function MiotProviderDetails({
             draftHomeKeys.add(key);
           }
 
-          setState({...state, draftHomeKeys, saveError: undefined});
+          setState({
+            ...clearedState,
+            draftHomeKeys,
+            saveError: undefined,
+          });
         }
       } else if (key.return && filteringAvailable && needsSave(state)) {
-        save(state);
+        save(clearedState);
       } else if (input === 'r' && !hasDraftChanges(state)) {
-        load();
-      } else if (input === 'l') {
-        setState({type: 'logout-confirmation', readyState: state});
+        load('reloaded');
+      } else if (input === 'o') {
+        setState({type: 'logout-confirmation', readyState: clearedState});
+      } else if (state.notice !== undefined) {
+        setState(clearedState);
       }
     }
   });
@@ -460,11 +564,30 @@ function AuthorizingView({state}: AuthorizingViewProps): React.JSX.Element {
           <Text color="cyan" underline wrap="wrap">
             {state.url}
           </Text>
-          <Text>waiting for browser callback…</Text>
+          {state.callbackStatus === 'submitting' ? (
+            <Text>processing pasted callback…</Text>
+          ) : state.callbackStatus === 'accepted' ? (
+            <Text>callback received; completing authorization…</Text>
+          ) : (
+            <>
+              <Text>waiting for browser callback…</Text>
+              <Text dimColor>
+                if the browser cannot connect, paste the complete callback URL
+                here.
+              </Text>
+            </>
+          )}
+          {state.callbackError === undefined ? null : (
+            <Text color="red">callback rejected: {state.callbackError}</Text>
+          )}
         </Box>
       )}
 
-      <Hint>esc cancel</Hint>
+      <Hint>
+        {state.url !== undefined && state.callbackStatus === undefined
+          ? 'paste callback URL · esc cancel'
+          : 'esc cancel'}
+      </Hint>
     </Box>
   );
 }
@@ -531,22 +654,27 @@ function ReadyView({state}: ReadyViewProps): React.JSX.Element {
       {state.saveError === undefined ? null : (
         <Text color="red">save failed: {state.saveError}</Text>
       )}
+      {state.notice === 'saved' ? (
+        <Text color="green">home selection saved.</Text>
+      ) : state.notice === 'reloaded' ? (
+        <Text color="green">configuration reloaded.</Text>
+      ) : null}
 
       {state.saving ? (
         <Hint>saving…</Hint>
       ) : !filteringAvailable ? (
-        <Hint>↑↓ select · r reload · l log out · esc back</Hint>
+        <Hint>↑↓ select · r reload · o log out · esc back</Hint>
       ) : draftChanged ? (
         <Hint>
-          ↑↓ select · space toggle · enter save · l log out · esc discard/back
+          ↑↓ select · space toggle · enter save · o log out · esc discard/back
         </Hint>
       ) : saveRequired ? (
         <Hint>
-          ↑↓ select · space toggle · enter save · r reload · l log out · esc
+          ↑↓ select · space toggle · enter save · r reload · o log out · esc
           back
         </Hint>
       ) : (
-        <Hint>↑↓ select · space toggle · r reload · l log out · esc back</Hint>
+        <Hint>↑↓ select · space toggle · r reload · o log out · esc back</Hint>
       )}
     </Box>
   );
@@ -623,6 +751,8 @@ type AuthorizingState = {
   readonly type: 'authorizing';
   readonly cloudServer: CloudServer;
   readonly url?: string;
+  readonly callbackStatus?: 'submitting' | 'accepted';
+  readonly callbackError?: string;
 };
 
 type CancellingAuthorizationState = {
@@ -667,11 +797,15 @@ type ReadyState = {
   readonly draftHomeKeys: ReadonlySet<string>;
   readonly saving: boolean;
   readonly saveError?: string;
+  readonly notice?: ReadyNotice;
 };
+
+type ReadyNotice = 'saved' | 'reloaded';
 
 type Operation = {
   authorizationCancellationRequested: boolean;
   cancelAuthorization?: () => Promise<void>;
+  submitCallbackUrl?: (callbackUrl: string) => Promise<void>;
 };
 
 function createReadyState(

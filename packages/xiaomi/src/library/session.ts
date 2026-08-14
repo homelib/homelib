@@ -102,6 +102,7 @@ export async function beginOAuthSessionAuthorization(options: {
     url: authorization.url,
     wait: () => completion,
     cancel: () => callback.close(),
+    submitCallbackUrl: callbackUrl => callback.submitCallbackUrl(callbackUrl),
   };
 }
 
@@ -131,6 +132,7 @@ export type OAuthSessionAuthorization = {
   readonly url: string;
   wait(): Promise<OAuthSession>;
   cancel(): Promise<void>;
+  submitCallbackUrl(callbackUrl: string): Promise<void>;
 };
 
 export type OAuthSession = {
@@ -278,37 +280,41 @@ export async function startOAuthCallbackListener(options: {
   let outcome: OAuthCallbackOutcome | undefined;
   let settlementPromise: Promise<void> | undefined;
   const server = createServer((request, response) => {
-    const callbackUrl = new URL(request.url ?? '/', redirectUrl);
-    const state = callbackUrl.searchParams.get('state');
-    const error = callbackUrl.searchParams.get('error');
-    const code = callbackUrl.searchParams.get('code');
-
     if (outcome !== undefined) {
       response.writeHead(409);
       response.end('OAuth callback already received.');
-    } else if (callbackUrl.pathname !== redirectUrl.pathname) {
-      response.writeHead(404);
-      response.end('Not found.');
-    } else if (state !== expectedState) {
-      response.writeHead(400);
-      response.end('Invalid OAuth state.');
-    } else if (error !== null) {
-      outcome = {type: 'error', error: new Error(`OAuth failed: ${error}.`)};
+      return;
+    }
+
+    try {
+      outcome = readOAuthCallback(
+        request.url ?? '/',
+        redirectUrl,
+        expectedState,
+        redirectUrl,
+      );
+    } catch (error) {
+      if (!(error instanceof OAuthCallbackValidationError)) {
+        throw error;
+      }
+
+      response.writeHead(error.status);
+      response.end(error.responseMessage);
+      return;
+    }
+
+    if (outcome.type === 'error') {
       response.writeHead(400);
       response.end('OAuth failed.', closeConnections);
-      void settle(false);
-    } else if (code === null) {
-      response.writeHead(400);
-      response.end('Missing OAuth code.');
     } else {
-      outcome = {type: 'code', code};
       response.writeHead(200, {'content-type': 'text/plain; charset=utf-8'});
       response.end(
         'OAuth authorization received. You can close this tab.',
         closeConnections,
       );
-      void settle(false);
     }
+
+    void settle(false);
   });
   const handleError = (error: Error): void => {
     outcome ??= {type: 'error', error};
@@ -333,6 +339,14 @@ export async function startOAuthCallbackListener(options: {
         error: new Error('OAuth callback listener closed.'),
       };
       return settle(outcome.type !== 'code');
+    },
+    submitCallbackUrl: async callbackUrl => {
+      if (outcome !== undefined) {
+        throw new Error('OAuth callback already received.');
+      }
+
+      outcome = readOAuthCallback(callbackUrl, redirectUrl, expectedState);
+      await settle(false);
     },
   };
 
@@ -371,11 +385,66 @@ export async function startOAuthCallbackListener(options: {
 export type OAuthCallbackListener = {
   wait(): Promise<string>;
   close(): Promise<void>;
+  submitCallbackUrl(callbackUrl: string): Promise<void>;
 };
 
 type OAuthCallbackOutcome =
   | {readonly type: 'code'; readonly code: string}
   | {readonly type: 'error'; readonly error: unknown};
+
+class OAuthCallbackValidationError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly responseMessage = message,
+  ) {
+    super(message);
+  }
+}
+
+function readOAuthCallback(
+  value: string,
+  redirectUrl: URL,
+  expectedState: string,
+  baseUrl?: URL,
+): OAuthCallbackOutcome {
+  let callbackUrl: URL;
+
+  try {
+    callbackUrl =
+      baseUrl === undefined ? new URL(value) : new URL(value, baseUrl);
+  } catch {
+    throw new OAuthCallbackValidationError('Invalid OAuth callback URL.', 400);
+  }
+
+  if (callbackUrl.pathname !== redirectUrl.pathname) {
+    throw new OAuthCallbackValidationError(
+      'Invalid OAuth callback path.',
+      404,
+      'Not found.',
+    );
+  }
+
+  const state = callbackUrl.searchParams.get('state');
+
+  if (state !== expectedState) {
+    throw new OAuthCallbackValidationError('Invalid OAuth state.', 400);
+  }
+
+  const error = callbackUrl.searchParams.get('error');
+
+  if (error !== null) {
+    return {type: 'error', error: new Error(`OAuth failed: ${error}.`)};
+  }
+
+  const code = callbackUrl.searchParams.get('code');
+
+  if (code === null || code.trim().length === 0) {
+    throw new OAuthCallbackValidationError('Missing OAuth code.', 400);
+  }
+
+  return {type: 'code', code};
+}
 
 function createResult<T>(): {
   readonly promise: Promise<T>;

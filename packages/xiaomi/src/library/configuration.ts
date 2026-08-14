@@ -167,6 +167,8 @@ export class MiotProviderConfiguration {
         });
         return completion;
       },
+      submitCallbackUrl: callbackUrl =>
+        authorization.submitCallbackUrl(x.string.satisfies(callbackUrl)),
       cancel: () => authorization.cancel(),
     };
   }
@@ -317,12 +319,14 @@ export type MiotProviderFilteredDiscovery = MiotProviderConfigurationDiscovery;
 export type MiotProviderConfigurationAuthorizationDependency = {
   readonly url: string;
   wait(): Promise<void>;
+  submitCallbackUrl(callbackUrl: string): Promise<void>;
   cancel(): Promise<void>;
 };
 
 export type MiotProviderConfigurationAuthorization = {
   readonly url: string;
   wait(): Promise<void>;
+  submitCallbackUrl(callbackUrl: string): Promise<void>;
   cancel(): Promise<void>;
 };
 

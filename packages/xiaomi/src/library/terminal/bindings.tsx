@@ -34,30 +34,33 @@ export function MiotProviderBindings({
   const deviceReference = useRef(device);
   deviceReference.current = device;
 
-  const load = useCallback((): void => {
-    const operation = {};
+  const load = useCallback(
+    (notice?: DevicesState['notice']): void => {
+      const operation = {};
 
-    operationReference.current = operation;
-    setState({type: 'loading'});
-    void discoverMiotBindingDevices(provider, deviceReference.current).then(
-      discovery => {
-        if (operationReference.current !== operation) {
-          return;
-        }
+      operationReference.current = operation;
+      setState({type: 'loading'});
+      void discoverMiotBindingDevices(provider, deviceReference.current).then(
+        discovery => {
+          if (operationReference.current !== operation) {
+            return;
+          }
 
-        operationReference.current = undefined;
-        setState({type: 'devices', discovery, cursor: 0});
-      },
-      error => {
-        if (operationReference.current !== operation) {
-          return;
-        }
+          operationReference.current = undefined;
+          setState({type: 'devices', discovery, cursor: 0, notice});
+        },
+        error => {
+          if (operationReference.current !== operation) {
+            return;
+          }
 
-        operationReference.current = undefined;
-        setState({type: 'load-error', message: getErrorMessage(error)});
-      },
-    );
-  }, [provider]);
+          operationReference.current = undefined;
+          setState({type: 'load-error', message: getErrorMessage(error)});
+        },
+      );
+    },
+    [provider],
+  );
 
   useEffect(() => {
     load();
@@ -139,13 +142,21 @@ export function MiotProviderBindings({
       }
     } else if (state.type === 'devices') {
       const deviceCount = state.discovery.devices.length;
+      const clearedState =
+        state.notice === undefined ? state : {...state, notice: undefined};
 
       if (key.escape) {
         onBack();
       } else if (key.upArrow && deviceCount > 0) {
-        setState({...state, cursor: wrapIndex(state.cursor - 1, deviceCount)});
+        setState({
+          ...clearedState,
+          cursor: wrapIndex(state.cursor - 1, deviceCount),
+        });
       } else if (key.downArrow && deviceCount > 0) {
-        setState({...state, cursor: wrapIndex(state.cursor + 1, deviceCount)});
+        setState({
+          ...clearedState,
+          cursor: wrapIndex(state.cursor + 1, deviceCount),
+        });
       } else if (key.return) {
         const selectedDevice = state.discovery.devices.at(state.cursor);
 
@@ -157,7 +168,9 @@ export function MiotProviderBindings({
           });
         }
       } else if (input === 'r') {
-        load();
+        load('reloaded');
+      } else if (state.notice !== undefined) {
+        setState(clearedState);
       }
     } else if (state.type === 'device-match') {
       const proposal = getProposal(state, providerBindings);
@@ -298,6 +311,10 @@ function DevicesView({
           information.
         </Text>
       )}
+
+      {state.notice === 'reloaded' ? (
+        <Text color="green">devices reloaded.</Text>
+      ) : null}
 
       <Hint>
         {discovery.devices.length === 0
@@ -451,6 +468,7 @@ type DevicesState = {
   readonly type: 'devices';
   readonly discovery: MiotBindingDiscovery;
   readonly cursor: number;
+  readonly notice?: 'reloaded';
 };
 
 type DeviceMatchState = {

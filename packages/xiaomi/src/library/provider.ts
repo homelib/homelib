@@ -26,6 +26,7 @@ import {
 } from './cloud/index.js';
 import {
   MiotProviderConfiguration,
+  type MiotProviderConfigurationAuthorizationDependency,
   type MiotProviderConfigurationDiscovery,
 } from './configuration.js';
 import {
@@ -384,11 +385,7 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
 
   private async beginConfigurationAuthorization(
     cloudServer: CloudServer,
-  ): Promise<{
-    readonly url: string;
-    wait(): Promise<void>;
-    cancel(): Promise<void>;
-  }> {
+  ): Promise<MiotProviderConfigurationAuthorizationDependency> {
     if (this.authorizationInProgress) {
       throw new Error('MIoT provider authorization is already in progress.');
     } else if (
@@ -460,6 +457,8 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     return {
       url: authorization.url,
       wait: () => completion,
+      submitCallbackUrl: callbackUrl =>
+        authorization.submitCallbackUrl(callbackUrl),
       cancel: () => authorization.cancel(),
     };
   }
