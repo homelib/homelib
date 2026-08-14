@@ -8,6 +8,11 @@
     "author": "vilicvane",
     "defaultBranch": "master",
     "packageManager": "npm",
+    "badges": {
+      "npm": true,
+      "license": true,
+      "discord": "https://discord.gg/wEVn2qcf8h"
+    },
     "packages": [
       {
         "name": "@homelib/core",
@@ -40,6 +45,9 @@
       },
       {
         "name": "@homelib/web",
+        "badges": {
+          "npm": false
+        },
         "projects": [
           {
             "name": "library",
@@ -89,6 +97,9 @@
       },
       {
         "name": "@homelib/playground",
+        "badges": {
+          "npm": false
+        },
         "projects": [
           {
             "name": "program",

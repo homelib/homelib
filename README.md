@@ -1,4 +1,12 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./packages/web/src/library/public/homelib-text-dark.svg">
+    <img alt="HomeLib" src="./packages/web/src/library/public/homelib-text-light.svg" width="240">
+  </picture>
+</p>
+
 [![MIT License](https://img.shields.io/badge/license-MIT-999999?style=flat-square)](./LICENSE)
+[![Discord](https://img.shields.io/badge/chat-discord-5662f6?style=flat-square)](https://discord.gg/wEVn2qcf8h)
 
 # HomeLib
 
