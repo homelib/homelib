@@ -1,8 +1,10 @@
 *
 !/src/exports/**/*.{ts,tsx}
+/src/exports/**/*.test.{ts,tsx}
 !/bld/exports/**
-/bld/exports/**/*.test.js
+/bld/exports/**/*.test.*
 !/src/library/**/*.{ts,tsx}
+/src/library/**/*.test.{ts,tsx}
 !/bld/library/**
-/bld/library/**/*.test.js
+/bld/library/**/*.test.*
 *.tsbuildinfo

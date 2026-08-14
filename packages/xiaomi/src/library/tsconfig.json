@@ -12,9 +12,6 @@
     },
     {
       "path": "../../../terminal/src/library"
-    },
-    {
-      "path": "../../../web/src/library"
     }
   ]
 }

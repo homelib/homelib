@@ -1,6 +1,7 @@
 {
   "name": "@homelib/playground",
   "version": "0.0.0",
+  "repository": "https://github.com/homelib/homelib.git",
   "license": "MIT",
   "author": "vilicvane",
   "type": "module",

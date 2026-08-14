@@ -1,5 +1,6 @@
 *
 !/src/program/**/*.{ts,tsx}
+/src/program/**/*.test.{ts,tsx}
 !/bld/program/**
-/bld/program/**/*.test.js
+/bld/program/**/*.test.*
 *.tsbuildinfo
