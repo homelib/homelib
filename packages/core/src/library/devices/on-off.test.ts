@@ -35,9 +35,9 @@ import {
   type FanEndpointCommand,
   type FanEndpointConnection,
   SetFanHorizontalSwingCommand,
+  SetFanModeCommand,
   SetFanOnCommand,
   SetFanSpeedCommand,
-  SetFanWindModeCommand,
 } from './fan.js';
 
 test('air conditioner exposes state and on/off commands', async () => {
@@ -271,13 +271,13 @@ test('publishes sensor state and readiness atomically', () => {
   }
 });
 
-test('fan exposes wind mode, speed, horizontal swing, and commands', async () => {
+test('fan exposes mode, speed, horizontal swing, and commands', async () => {
   const entry = new DeviceEntry('fan');
   const fan = entry.createInstance(Fan);
   const endpoint = entry.getEndpoint();
 
   expect(fan.on).toBe(false);
-  expect(fan.windMode).toBeUndefined();
+  expect(fan.mode).toBeUndefined();
   expect(fan.speed).toBeUndefined();
   expect(fan.horizontalSwing).toBeUndefined();
 
@@ -290,17 +290,17 @@ test('fan exposes wind mode, speed, horizontal swing, and commands', async () =>
   endpoint.bindConnection(connection);
 
   expect(fan.on).toBe(true);
-  expect(fan.windMode).toBe('natural');
+  expect(fan.mode).toBe('natural');
   expect(fan.speed).toBe(0.4);
   expect(fan.horizontalSwing).toBe(true);
 
-  fan.setWindMode('normal');
+  fan.setMode('normal');
   fan.setSpeed(0.8);
   fan.setHorizontalSwing(false);
   await flushMicrotasks();
 
   expect(connection.commands).toEqual([
-    new SetFanWindModeCommand('normal'),
+    new SetFanModeCommand('normal'),
     new SetFanSpeedCommand(0.8),
     new SetFanHorizontalSwingCommand(false),
   ]);
@@ -400,7 +400,7 @@ test('new device commands only supersede commands of the same class', () => {
   const dehumidifierMode = new SetDehumidifierModeCommand('auto');
   const dehumidifierTargetHumidityCommand =
     new SetDehumidifierTargetHumidityCommand(0.5);
-  const fanWindMode = new SetFanWindModeCommand('normal');
+  const fanMode = new SetFanModeCommand('normal');
   const fanSpeed = new SetFanSpeedCommand(0.5);
   const fanHorizontalSwing = new SetFanHorizontalSwingCommand(true);
 
@@ -440,10 +440,8 @@ test('new device commands only supersede commands of the same class', () => {
       new SetDehumidifierTargetHumidityCommand(0.6),
     ),
   ).toBe(true);
-  expect(fanWindMode.supersedes(new SetFanWindModeCommand('natural'))).toBe(
-    true,
-  );
-  expect(fanWindMode.supersedes(fanSpeed)).toBe(false);
+  expect(fanMode.supersedes(new SetFanModeCommand('natural'))).toBe(true);
+  expect(fanMode.supersedes(fanSpeed)).toBe(false);
   expect(fanSpeed.supersedes(new SetFanSpeedCommand(0.6))).toBe(true);
   expect(fanSpeed.supersedes(fanHorizontalSwing)).toBe(false);
   expect(
@@ -469,8 +467,8 @@ test('new device commands have semantic log strings', () => {
   expect(new SetDehumidifierTargetHumidityCommand(0.5).toLogString()).toBe(
     'set targetRelativeHumidity=0.5',
   );
-  expect(new SetFanWindModeCommand('natural').toLogString()).toBe(
-    'set windMode=natural',
+  expect(new SetFanModeCommand('natural').toLogString()).toBe(
+    'set mode=natural',
   );
   expect(new SetFanSpeedCommand(0.5).toLogString()).toBe('set speed=0.5');
   expect(new SetFanHorizontalSwingCommand(true).toLogString()).toBe(
@@ -727,7 +725,7 @@ class TestFanEndpointConnection
 {
   constructor(
     on: boolean,
-    readonly windMode: FanEndpointConnection['windMode'],
+    readonly mode: FanEndpointConnection['mode'],
     readonly speed: number | undefined,
     readonly horizontalSwing: boolean | undefined,
   ) {

@@ -4,11 +4,11 @@ import {
   FanEndpoint,
   type FanEndpointCommand,
   type FanEndpointConnection,
-  type FanWindMode,
+  type FanMode,
   SetFanHorizontalSwingCommand,
+  SetFanModeCommand,
   SetFanOnCommand,
   SetFanSpeedCommand,
-  SetFanWindModeCommand,
 } from '@homelib/core';
 import {computed} from 'mobx';
 
@@ -20,7 +20,6 @@ import {
 
 import {
   MiotCommandEffect,
-  type MiotCommandEffectConnection,
   type MiotCommandEffectValues,
 } from './command-effect.js';
 
@@ -36,7 +35,7 @@ export class MiotFanEndpointConnection
     'urn:miot-spec-v2:service:fan:00007808': {
       'urn:miot-spec-v2:property:on:00000006': 'on',
       'urn:miot-spec-v2:property:mode:00000008': {
-        name: 'windMode',
+        name: 'mode',
         enum: {
           'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {
             natural: 0,
@@ -50,11 +49,11 @@ export class MiotFanEndpointConnection
         optional: true,
       },
       'urn:miot-spec-v2:property:fan-level:00000016': {
-        name: 'speed',
+        name: 'fan-level',
         optional: true,
       },
       'urn:miot-spec-v2:property:horizontal-swing:00000017': {
-        name: 'horizontalSwing',
+        name: 'horizontal-swing',
         optional: true,
       },
     },
@@ -66,42 +65,65 @@ export class MiotFanEndpointConnection
   }
 
   @computed
-  get windMode(): FanWindMode | undefined {
-    return this.getEnumPropertyState('windMode', 'normal');
+  get mode(): FanMode | undefined {
+    return this.getEnumPropertyState('mode', 'normal');
   }
 
   @computed
   get speed(): number | undefined {
-    if (this.properties.speed === undefined) {
+    const fanLevel = this.properties['fan-level'];
+
+    if (fanLevel === undefined) {
       return undefined;
     }
 
-    const valueList = this.getPropertyValueList(this.properties.speed);
+    const valueList = this.getPropertyValueList(fanLevel);
     const levels = valueList
       .map(entry => entry.value)
       .toSorted((left, right) => left - right);
-    const value = this.getNumberPropertyState('speed');
+    const value = this.getNumberPropertyState('fan-level');
 
     if (value === undefined) {
       return 0;
     }
 
-    const index = levels.indexOf(value);
-
-    if (index === -1) {
-      throw new TypeError('Invalid MIoT fan speed state.');
-    }
-
-    return (index + 1) / levels.length;
+    return (levels.indexOf(value) + 1) / levels.length;
   }
 
   @computed
   get horizontalSwing(): boolean | undefined {
-    return this.getBooleanPropertyState('horizontalSwing', false);
+    return this.getBooleanPropertyState('horizontal-swing', false);
   }
 
   override prepareCommand(command: FanEndpointCommand): CommandExecution {
-    const effect = createMiotFanEffect(command, this, this.properties);
+    let effect: MiotFanCommandEffect;
+
+    if (command instanceof SetFanOnCommand) {
+      effect = new MiotFanCommandEffect(this, {on: command.value});
+    } else if (command instanceof SetFanModeCommand) {
+      if (this.properties.mode === undefined) {
+        throw new CommandError('MIoT fan does not support mode.');
+      }
+
+      effect = new MiotFanCommandEffect(this, {mode: command.value});
+    } else if (command instanceof SetFanSpeedCommand) {
+      if (this.properties['fan-level'] === undefined) {
+        throw new CommandError('MIoT fan does not support speed.');
+      }
+
+      effect = new MiotFanCommandEffect(this, {'fan-level': command.value});
+    } else if (command instanceof SetFanHorizontalSwingCommand) {
+      if (this.properties['horizontal-swing'] === undefined) {
+        throw new CommandError('MIoT fan does not support horizontal swing.');
+      }
+
+      effect = new MiotFanCommandEffect(this, {
+        'horizontal-swing': command.value,
+      });
+    } else {
+      throw new TypeError('Unsupported MIoT fan endpoint command.');
+    }
+
     const {request} = effect;
 
     return {effect, execute: () => this.executeRequest(request)};
@@ -112,40 +134,6 @@ type MiotFanEndpointProperties = MiotPropertySchemaProperties<
   typeof MiotFanEndpointConnection.properties
 >;
 
-function createMiotFanEffect(
-  command: FanEndpointCommand,
-  connection: MiotCommandEffectConnection,
-  properties: MiotFanEndpointProperties,
-): MiotFanCommandEffect {
-  if (command instanceof SetFanOnCommand) {
-    return new MiotFanCommandEffect(connection, {on: command.value});
-  } else if (command instanceof SetFanWindModeCommand) {
-    if (properties.windMode === undefined) {
-      throw new CommandError('MIoT fan does not support wind mode.');
-    }
-
-    return new MiotFanCommandEffect(connection, {
-      windMode: command.value,
-    });
-  } else if (command instanceof SetFanSpeedCommand) {
-    if (properties.speed === undefined) {
-      throw new CommandError('MIoT fan does not support speed.');
-    }
-
-    return new MiotFanCommandEffect(connection, {speed: command.value});
-  } else if (command instanceof SetFanHorizontalSwingCommand) {
-    if (properties.horizontalSwing === undefined) {
-      throw new CommandError('MIoT fan does not support horizontal swing.');
-    }
-
-    return new MiotFanCommandEffect(connection, {
-      horizontalSwing: command.value,
-    });
-  }
-
-  throw new TypeError('Unsupported MIoT fan endpoint command.');
-}
-
 class MiotFanCommandEffect extends MiotCommandEffect<
   FanEndpoint,
   keyof MiotFanEndpointProperties
@@ -155,9 +143,9 @@ class MiotFanCommandEffect extends MiotCommandEffect<
   ): MiotCommandEffectValues<keyof MiotFanEndpointProperties> {
     return {
       on: endpoint.on,
-      windMode: endpoint.windMode,
-      speed: endpoint.speed,
-      horizontalSwing: endpoint.horizontalSwing,
+      mode: endpoint.mode,
+      'fan-level': endpoint.speed,
+      'horizontal-swing': endpoint.horizontalSwing,
     };
   }
 }

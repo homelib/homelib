@@ -7,9 +7,9 @@ import {
   type FanEndpointCommand,
   type FanEndpointConnection,
   SetFanHorizontalSwingCommand,
+  SetFanModeCommand,
   SetFanOnCommand,
   SetFanSpeedCommand,
-  SetFanWindModeCommand,
 } from './fan.js';
 
 test('fan commands support chaining', () => {
@@ -18,7 +18,7 @@ test('fan commands support chaining', () => {
   expect(
     fan
       .turnOn()
-      .setWindMode('natural')
+      .setMode('natural')
       .setSpeed(0.5)
       .setHorizontalSwing(true)
       .turnOff(),
@@ -26,7 +26,7 @@ test('fan commands support chaining', () => {
   expect(
     endpoint
       .turnOn()
-      .setWindMode('normal')
+      .setMode('normal')
       .setSpeed(0.6)
       .setHorizontalSwing(false)
       .turnOff(),
@@ -43,14 +43,14 @@ test('fan turnOn queues turn-on for devices and endpoints', async () => {
   expect(
     deviceCase.fan
       .turnOn()
-      .setWindMode('normal')
+      .setMode('normal')
       .setSpeed(0.5)
       .setHorizontalSwing(false),
   ).toBe(deviceCase.fan);
   await flushMicrotasks();
   expect(deviceConnection.commands).toEqual([
     new SetFanOnCommand(true),
-    new SetFanWindModeCommand('normal'),
+    new SetFanModeCommand('normal'),
     new SetFanSpeedCommand(0.5),
     new SetFanHorizontalSwingCommand(false),
   ]);
@@ -81,7 +81,7 @@ class TestFanEndpointConnection implements FanEndpointConnection {
 
   readonly stateRevision = 0;
 
-  readonly windMode = 'natural';
+  readonly mode = 'natural';
 
   readonly speed = 0.5;
 

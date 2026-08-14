@@ -20,7 +20,6 @@ import {
 
 import {
   MiotCommandEffect,
-  type MiotCommandEffectConnection,
   type MiotCommandEffectValues,
 } from './command-effect.js';
 
@@ -41,7 +40,7 @@ export class MiotDehumidifierEndpointConnection
         optional: true,
       },
       'urn:miot-spec-v2:property:target-humidity:00000022': {
-        name: 'targetRelativeHumidity',
+        name: 'target-humidity',
         optional: true,
       },
     },
@@ -51,7 +50,7 @@ export class MiotDehumidifierEndpointConnection
         optional: true,
       },
       'urn:miot-spec-v2:property:relative-humidity:0000000C': {
-        name: 'relativeHumidity',
+        name: 'relative-humidity',
         optional: true,
       },
     },
@@ -69,7 +68,7 @@ export class MiotDehumidifierEndpointConnection
 
   @computed
   get targetRelativeHumidity(): number | undefined {
-    const value = this.getNumberPropertyState('targetRelativeHumidity', 0);
+    const value = this.getNumberPropertyState('target-humidity', 0);
     return value === undefined ? undefined : value / 100;
   }
 
@@ -83,14 +82,39 @@ export class MiotDehumidifierEndpointConnection
 
   @computed
   get relativeHumidity(): number | undefined {
-    const value = this.getNumberPropertyState('relativeHumidity', 0);
+    const value = this.getNumberPropertyState('relative-humidity', 0);
     return value === undefined ? undefined : value / 100;
   }
 
   override prepareCommand(
     command: DehumidifierEndpointCommand,
   ): CommandExecution {
-    const effect = createMiotDehumidifierEffect(command, this, this.properties);
+    let effect: MiotDehumidifierCommandEffect;
+
+    if (command instanceof SetDehumidifierOnCommand) {
+      effect = new MiotDehumidifierCommandEffect(this, {on: command.value});
+    } else if (command instanceof SetDehumidifierModeCommand) {
+      if (this.properties.mode === undefined) {
+        throw new CommandError('MIoT dehumidifier does not support mode.');
+      }
+
+      effect = new MiotDehumidifierCommandEffect(this, {
+        mode: command.value,
+      });
+    } else if (command instanceof SetDehumidifierTargetHumidityCommand) {
+      if (this.properties['target-humidity'] === undefined) {
+        throw new CommandError(
+          'MIoT dehumidifier does not support target humidity.',
+        );
+      }
+
+      effect = new MiotDehumidifierCommandEffect(this, {
+        'target-humidity': command.relativeHumidity,
+      });
+    } else {
+      throw new TypeError('Unsupported MIoT dehumidifier endpoint command.');
+    }
+
     const {request} = effect;
 
     return {effect, execute: () => this.executeRequest(request)};
@@ -100,36 +124,6 @@ export class MiotDehumidifierEndpointConnection
 type MiotDehumidifierEndpointProperties = MiotPropertySchemaProperties<
   typeof MiotDehumidifierEndpointConnection.properties
 >;
-
-function createMiotDehumidifierEffect(
-  command: DehumidifierEndpointCommand,
-  connection: MiotCommandEffectConnection,
-  properties: MiotDehumidifierEndpointProperties,
-): MiotDehumidifierCommandEffect {
-  if (command instanceof SetDehumidifierOnCommand) {
-    return new MiotDehumidifierCommandEffect(connection, {on: command.value});
-  } else if (command instanceof SetDehumidifierModeCommand) {
-    if (properties.mode === undefined) {
-      throw new CommandError('MIoT dehumidifier does not support mode.');
-    }
-
-    return new MiotDehumidifierCommandEffect(connection, {
-      mode: command.value,
-    });
-  } else if (command instanceof SetDehumidifierTargetHumidityCommand) {
-    if (properties.targetRelativeHumidity === undefined) {
-      throw new CommandError(
-        'MIoT dehumidifier does not support target humidity.',
-      );
-    }
-
-    return new MiotDehumidifierCommandEffect(connection, {
-      targetRelativeHumidity: command.relativeHumidity,
-    });
-  }
-
-  throw new TypeError('Unsupported MIoT dehumidifier endpoint command.');
-}
 
 class MiotDehumidifierCommandEffect extends MiotCommandEffect<
   DehumidifierEndpoint,
@@ -141,7 +135,7 @@ class MiotDehumidifierCommandEffect extends MiotCommandEffect<
     return {
       on: endpoint.on,
       mode: endpoint.mode,
-      targetRelativeHumidity: endpoint.targetRelativeHumidity,
+      'target-humidity': endpoint.targetRelativeHumidity,
     };
   }
 }

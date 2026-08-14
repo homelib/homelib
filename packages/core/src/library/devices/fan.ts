@@ -8,7 +8,7 @@ import {
   type EndpointLogState,
 } from '../endpoint.js';
 
-export type FanWindMode = 'normal' | 'natural';
+export type FanMode = 'normal' | 'natural';
 
 export class Fan extends Device {
   protected readonly endpoint: FanEndpoint;
@@ -19,8 +19,8 @@ export class Fan extends Device {
   }
 
   @computed
-  get windMode(): FanWindMode | undefined {
-    return this.endpoint.windMode;
+  get mode(): FanMode | undefined {
+    return this.endpoint.mode;
   }
 
   /** Fan speed as a normalized ratio from 0 to 1. */
@@ -49,8 +49,8 @@ export class Fan extends Device {
     return this;
   }
 
-  setWindMode(value: FanWindMode): this {
-    this.endpoint.setWindMode(value);
+  setMode(value: FanMode): this {
+    this.endpoint.setMode(value);
     return this;
   }
 
@@ -82,8 +82,8 @@ export class FanEndpoint<
   }
 
   @computed
-  get windMode(): FanWindMode | undefined {
-    return this.connection?.windMode;
+  get mode(): FanMode | undefined {
+    return this.connection?.mode;
   }
 
   /** Fan speed as a normalized ratio from 0 to 1. */
@@ -105,7 +105,7 @@ export class FanEndpoint<
     return {
       ready: true,
       on: this.on,
-      windMode: this.windMode,
+      mode: this.mode,
       speed: this.speed,
       horizontalSwing: this.horizontalSwing,
     };
@@ -119,8 +119,8 @@ export class FanEndpoint<
     return this.enqueueCommand(new SetFanOnCommand(false));
   }
 
-  setWindMode(value: FanWindMode): this {
-    return this.enqueueCommand(new SetFanWindModeCommand(value));
+  setMode(value: FanMode): this {
+    return this.enqueueCommand(new SetFanModeCommand(value));
   }
 
   /**
@@ -142,7 +142,7 @@ export class FanEndpoint<
 
 export type FanEndpointConnection = EndpointConnection<FanEndpointCommand> & {
   readonly on: boolean;
-  readonly windMode: FanWindMode | undefined;
+  readonly mode: FanMode | undefined;
   /** Fan speed as a normalized ratio from 0 to 1. */
   readonly speed: number | undefined;
   readonly horizontalSwing: boolean | undefined;
@@ -160,13 +160,13 @@ export class SetFanOnCommand extends FanCommand {
   }
 }
 
-export class SetFanWindModeCommand extends FanCommand {
-  constructor(readonly value: FanWindMode) {
+export class SetFanModeCommand extends FanCommand {
+  constructor(readonly value: FanMode) {
     super();
   }
 
   override toLogString(): string {
-    return `set windMode=${this.value}`;
+    return `set mode=${this.value}`;
   }
 }
 
@@ -199,6 +199,6 @@ export class SetFanHorizontalSwingCommand extends FanCommand {
 
 export type FanEndpointCommand =
   | SetFanOnCommand
-  | SetFanWindModeCommand
+  | SetFanModeCommand
   | SetFanSpeedCommand
   | SetFanHorizontalSwingCommand;

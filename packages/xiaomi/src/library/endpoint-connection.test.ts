@@ -122,7 +122,7 @@ const TEST_DIMMABLE_METADATA = createTestResolvedMetadata({
           unit: 'percentage',
           'value-range': [1, 100, 1],
         },
-        colorTemperature: {
+        'color-temperature': {
           iid: 3,
           type: 'urn:miot-spec-v2:property:color-temperature:0000000F',
           description: 'Color Temperature',
@@ -827,7 +827,7 @@ test('keeps an uncertain property effect through an unrelated property update', 
     properties: [
       createStateProperty(TEST_DIMMABLE_METADATA, 'on', true),
       createStateProperty(TEST_DIMMABLE_METADATA, 'brightness', 50),
-      createStateProperty(TEST_DIMMABLE_METADATA, 'colorTemperature', 4_000),
+      createStateProperty(TEST_DIMMABLE_METADATA, 'color-temperature', 4_000),
     ],
   });
 
@@ -1040,7 +1040,7 @@ test('returns light on and color temperature effects from public endpoint state'
     properties: [
       createStateProperty(TEST_DIMMABLE_METADATA, 'on', true),
       createStateProperty(TEST_DIMMABLE_METADATA, 'brightness', 50),
-      createStateProperty(TEST_DIMMABLE_METADATA, 'colorTemperature', 4_049),
+      createStateProperty(TEST_DIMMABLE_METADATA, 'color-temperature', 4_049),
     ],
   });
 
@@ -1081,7 +1081,7 @@ test('returns light on and color temperature effects from public endpoint state'
     createStateProperty(TEST_DIMMABLE_METADATA, 'on', false),
   );
   connection.handlePropertyUpdate(
-    createStateProperty(TEST_DIMMABLE_METADATA, 'colorTemperature', 4_051),
+    createStateProperty(TEST_DIMMABLE_METADATA, 'color-temperature', 4_051),
   );
   expect(onEffect.matches(endpoint)).toBe(false);
   expect(colorTemperatureEffect.matches(endpoint)).toBe(false);
@@ -1423,12 +1423,12 @@ test('tracks observation revisions independently for each property alias', () =>
     properties: [
       createStateProperty(TEST_DIMMABLE_METADATA, 'on', false),
       createStateProperty(TEST_DIMMABLE_METADATA, 'brightness', 60),
-      createStateProperty(TEST_DIMMABLE_METADATA, 'colorTemperature', 4_100),
+      createStateProperty(TEST_DIMMABLE_METADATA, 'color-temperature', 4_100),
     ],
   });
   expect(connection.getObservationRevision(['on'])).toBe(4);
   expect(connection.getObservationRevision(['brightness'])).toBe(4);
-  expect(connection.getObservationRevision(['colorTemperature'])).toBe(4);
+  expect(connection.getObservationRevision(['color-temperature'])).toBe(4);
 
   connection.handleStateUpdate({
     did: TEST_DIMMABLE_METADATA.device.did,
@@ -1465,7 +1465,11 @@ test('rejects incomplete initial state without exposing partial values', () => {
   expect(connection.brightness).toBe(0);
   expect(connection.colorTemperature).toBe(2_600);
   expect(
-    connection.getObservationRevision(['on', 'brightness', 'colorTemperature']),
+    connection.getObservationRevision([
+      'on',
+      'brightness',
+      'color-temperature',
+    ]),
   ).toBe(0);
 });
 

@@ -18,7 +18,6 @@ import {
 
 import {
   MiotCommandEffect,
-  type MiotCommandEffectConnection,
   type MiotCommandEffectValues,
 } from './command-effect.js';
 
@@ -38,7 +37,7 @@ export class MiotLightEndpointConnection
         optional: true,
       },
       'urn:miot-spec-v2:property:color-temperature:0000000F': {
-        name: 'colorTemperature',
+        name: 'color-temperature',
         optional: true,
       },
     },
@@ -66,7 +65,7 @@ export class MiotLightEndpointConnection
 
   @computed
   get colorTemperature(): number | undefined {
-    const {colorTemperature} = this.properties;
+    const colorTemperature = this.properties['color-temperature'];
 
     if (colorTemperature === undefined) {
       return undefined;
@@ -74,11 +73,36 @@ export class MiotLightEndpointConnection
 
     const valueRange = this.getPropertyValueRange(colorTemperature);
     const [minimum] = valueRange;
-    return this.getNumberPropertyState('colorTemperature', minimum);
+    return this.getNumberPropertyState('color-temperature', minimum);
   }
 
   override prepareCommand(command: LightEndpointCommand): CommandExecution {
-    const effect = createMiotLightEffect(command, this, this.properties);
+    let effect: MiotLightCommandEffect;
+
+    if (command instanceof SetLightOnCommand) {
+      effect = new MiotLightCommandEffect(this, {on: command.value});
+    } else if (command instanceof SetLightBrightnessCommand) {
+      if (this.properties.brightness === undefined) {
+        throw new CommandError('MIoT light does not support brightness.');
+      }
+
+      effect = new MiotLightCommandEffect(this, {
+        brightness: command.value,
+      });
+    } else if (command instanceof SetLightColorTemperatureCommand) {
+      if (this.properties['color-temperature'] === undefined) {
+        throw new CommandError(
+          'MIoT light does not support color temperature.',
+        );
+      }
+
+      effect = new MiotLightCommandEffect(this, {
+        'color-temperature': command.value,
+      });
+    } else {
+      throw new TypeError('Unsupported MIoT light endpoint command.');
+    }
+
     const {request} = effect;
 
     return {effect, execute: () => this.executeRequest(request)};
@@ -88,34 +112,6 @@ export class MiotLightEndpointConnection
 type MiotLightEndpointProperties = MiotPropertySchemaProperties<
   typeof MiotLightEndpointConnection.properties
 >;
-
-function createMiotLightEffect(
-  command: LightEndpointCommand,
-  connection: MiotCommandEffectConnection,
-  properties: MiotLightEndpointProperties,
-): MiotLightCommandEffect {
-  if (command instanceof SetLightOnCommand) {
-    return new MiotLightCommandEffect(connection, {on: command.value});
-  } else if (command instanceof SetLightBrightnessCommand) {
-    if (properties.brightness === undefined) {
-      throw new CommandError('MIoT light does not support brightness.');
-    }
-
-    return new MiotLightCommandEffect(connection, {
-      brightness: command.value,
-    });
-  } else if (command instanceof SetLightColorTemperatureCommand) {
-    if (properties.colorTemperature === undefined) {
-      throw new CommandError('MIoT light does not support color temperature.');
-    }
-
-    return new MiotLightCommandEffect(connection, {
-      colorTemperature: command.value,
-    });
-  }
-
-  throw new TypeError('Unsupported MIoT light endpoint command.');
-}
 
 class MiotLightCommandEffect extends MiotCommandEffect<
   LightEndpoint,
@@ -127,7 +123,7 @@ class MiotLightCommandEffect extends MiotCommandEffect<
     return {
       on: endpoint.on,
       brightness: endpoint.brightness,
-      colorTemperature: endpoint.colorTemperature,
+      'color-temperature': endpoint.colorTemperature,
     };
   }
 }

@@ -11,8 +11,8 @@ import {
   SetDehumidifierModeCommand,
   SetDehumidifierTargetHumidityCommand,
   SetFanHorizontalSwingCommand,
+  SetFanModeCommand,
   SetFanSpeedCommand,
-  SetFanWindModeCommand,
   Temperature,
 } from '@homelib/core';
 import {autorun} from 'mobx';
@@ -78,14 +78,14 @@ describe('MIoT air conditioner capabilities', () => {
     expect(getMetadataProperties(metadata)).toMatchObject({
       on: {iid: 1},
       mode: {iid: 2},
-      targetTemperature: {iid: 3},
-      targetRelativeHumidity: {iid: 4},
+      'target-temperature': {iid: 3},
+      'target-humidity': {iid: 4},
     });
     expect(metadata.resources).toMatchObject([
       {service: {iid: 2}},
       {
         service: {iid: 4},
-        properties: {temperature: {iid: 7}, relativeHumidity: {iid: 9}},
+        properties: {temperature: {iid: 7}, 'relative-humidity': {iid: 9}},
       },
     ]);
     expect(connection.stateProperties).toHaveLength(6);
@@ -96,10 +96,10 @@ describe('MIoT air conditioner capabilities', () => {
     expect(connection.relativeHumidity).toBe(0);
 
     updateProperty(connection, metadata, 'mode', 2);
-    updateProperty(connection, metadata, 'targetTemperature', 23);
-    updateProperty(connection, metadata, 'targetRelativeHumidity', 55);
+    updateProperty(connection, metadata, 'target-temperature', 23);
+    updateProperty(connection, metadata, 'target-humidity', 55);
     updateProperty(connection, metadata, 'temperature', 24.5);
-    updateProperty(connection, metadata, 'relativeHumidity', 61);
+    updateProperty(connection, metadata, 'relative-humidity', 61);
     expect(connection.mode).toBe('cool');
     expect(connection.targetTemperature?.celsius).toBeCloseTo(23);
     expect(connection.targetRelativeHumidity).toBe(0.55);
@@ -112,7 +112,7 @@ describe('MIoT air conditioner capabilities', () => {
       TypeError,
     );
     expect(() =>
-      updateProperty(connection, metadata, 'targetRelativeHumidity', 71),
+      updateProperty(connection, metadata, 'target-humidity', 71),
     ).toThrow(TypeError);
   });
 
@@ -152,9 +152,9 @@ describe('MIoT air conditioner capabilities', () => {
       createExpectedRequest(metadata, 'mode', 3),
       createExpectedRequest(metadata, 'mode', 4),
       createExpectedRequest(metadata, 'mode', 5),
-      createExpectedRequest(metadata, 'targetTemperature', 23.5),
-      createExpectedRequest(metadata, 'targetRelativeHumidity', 30),
-      createExpectedRequest(metadata, 'targetRelativeHumidity', 58),
+      createExpectedRequest(metadata, 'target-temperature', 23.5),
+      createExpectedRequest(metadata, 'target-humidity', 30),
+      createExpectedRequest(metadata, 'target-humidity', 58),
     ]);
 
     await expect(
@@ -184,10 +184,10 @@ describe('MIoT air conditioner capabilities', () => {
     );
 
     expect(transport.requests.slice(7)).toEqual([
-      createExpectedRequest(metadata, 'targetTemperature', 16),
-      createExpectedRequest(metadata, 'targetTemperature', 31),
-      createExpectedRequest(metadata, 'targetRelativeHumidity', 30),
-      createExpectedRequest(metadata, 'targetRelativeHumidity', 70),
+      createExpectedRequest(metadata, 'target-temperature', 16),
+      createExpectedRequest(metadata, 'target-temperature', 31),
+      createExpectedRequest(metadata, 'target-humidity', 30),
+      createExpectedRequest(metadata, 'target-humidity', 70),
     ]);
   });
 
@@ -209,10 +209,10 @@ describe('MIoT air conditioner capabilities', () => {
       properties: createStateProperties(metadata, {
         on: true,
         mode: 2,
-        targetTemperature: 23.74,
-        targetRelativeHumidity: 58,
+        'target-temperature': 23.74,
+        'target-humidity': 58,
         temperature: 24,
-        relativeHumidity: 60,
+        'relative-humidity': 60,
       }),
     });
 
@@ -265,8 +265,8 @@ describe('MIoT air conditioner capabilities', () => {
     ).toThrow(CommandError);
 
     updateProperty(connection, metadata, 'mode', 3);
-    updateProperty(connection, metadata, 'targetTemperature', 23.76);
-    updateProperty(connection, metadata, 'targetRelativeHumidity', 59);
+    updateProperty(connection, metadata, 'target-temperature', 23.76);
+    updateProperty(connection, metadata, 'target-humidity', 59);
     expect(modeEffect.matches(endpoint)).toBe(false);
     expect(temperatureEffect.matches(endpoint)).toBe(false);
     expect(humidityEffect.matches(endpoint)).toBe(false);
@@ -319,10 +319,10 @@ describe('MIoT air conditioner capabilities', () => {
       [
         'on',
         'mode',
-        'targetTemperature',
-        'targetRelativeHumidity',
+        'target-temperature',
+        'target-humidity',
         'temperature',
-        'relativeHumidity',
+        'relative-humidity',
       ].toSorted(),
     );
     updateProperty(connection, metadata, 'mode', 0);
@@ -388,13 +388,13 @@ describe('MIoT air conditioner capabilities', () => {
       2,
     ]);
     expect(getMetadataPropertyNames(metadata)).toEqual(
-      ['on', 'mode', 'targetTemperature', 'targetRelativeHumidity'].toSorted(),
+      ['on', 'mode', 'target-temperature', 'target-humidity'].toSorted(),
     );
   });
 
   test.each([
-    {name: 'temperature', iid: 7, remaining: 'relativeHumidity'},
-    {name: 'relativeHumidity', iid: 9, remaining: 'temperature'},
+    {name: 'temperature', iid: 7, remaining: 'relative-humidity'},
+    {name: 'relative-humidity', iid: 9, remaining: 'temperature'},
   ])('matches the remaining environment feature without $name', entry => {
     const spec = createAirConditionerSpec();
     removeSpecProperty(spec, 4, entry.iid);
@@ -404,8 +404,8 @@ describe('MIoT air conditioner capabilities', () => {
       [
         'on',
         'mode',
-        'targetTemperature',
-        'targetRelativeHumidity',
+        'target-temperature',
+        'target-humidity',
         entry.remaining,
       ].toSorted(),
     );
@@ -482,10 +482,10 @@ describe('MIoT air conditioner capabilities', () => {
       [
         'on',
         'mode',
-        'targetTemperature',
-        'targetRelativeHumidity',
+        'target-temperature',
+        'target-humidity',
         'temperature',
-        'relativeHumidity',
+        'relative-humidity',
       ].toSorted(),
     );
   });
@@ -527,10 +527,10 @@ describe('MIoT air conditioner capabilities', () => {
       properties: createStateProperties(metadata, {
         on: true,
         mode: 2,
-        targetTemperature: 23,
-        targetRelativeHumidity: 55,
+        'target-temperature': 23,
+        'target-humidity': 55,
         temperature: 24.5,
-        relativeHumidity: 61,
+        'relative-humidity': 61,
       }),
     });
 
@@ -557,13 +557,13 @@ describe('MIoT dehumidifier capabilities', () => {
     expect(getMetadataProperties(metadata)).toMatchObject({
       on: {iid: 1},
       mode: {iid: 2},
-      targetRelativeHumidity: {iid: 3},
+      'target-humidity': {iid: 3},
     });
     expect(metadata.resources).toMatchObject([
       {service: {iid: 2}},
       {
         service: {iid: 3},
-        properties: {temperature: {iid: 2}, relativeHumidity: {iid: 1}},
+        properties: {temperature: {iid: 2}, 'relative-humidity': {iid: 1}},
       },
     ]);
     expect(connection.mode).toBe('auto');
@@ -572,11 +572,11 @@ describe('MIoT dehumidifier capabilities', () => {
     expect(connection.relativeHumidity).toBe(0);
 
     updateProperty(connection, metadata, 'mode', 1);
-    updateProperty(connection, metadata, 'targetRelativeHumidity', 55);
+    updateProperty(connection, metadata, 'target-humidity', 55);
     // The MIoT step describes write precision. Devices may still report a
     // finer-grained floating-point sensor state.
     updateProperty(connection, metadata, 'temperature', 21.5);
-    updateProperty(connection, metadata, 'relativeHumidity', 58);
+    updateProperty(connection, metadata, 'relative-humidity', 58);
     expect(connection.mode).toBe('sleep');
     expect(connection.targetRelativeHumidity).toBe(0.55);
     expect(connection.temperature?.celsius).toBeCloseTo(21.5);
@@ -617,8 +617,8 @@ describe('MIoT dehumidifier capabilities', () => {
       createExpectedRequest(metadata, 'mode', 0),
       createExpectedRequest(metadata, 'mode', 1),
       createExpectedRequest(metadata, 'mode', 2),
-      createExpectedRequest(metadata, 'targetRelativeHumidity', 30),
-      createExpectedRequest(metadata, 'targetRelativeHumidity', 58),
+      createExpectedRequest(metadata, 'target-humidity', 30),
+      createExpectedRequest(metadata, 'target-humidity', 58),
     ]);
 
     await executeCommand(
@@ -631,8 +631,8 @@ describe('MIoT dehumidifier capabilities', () => {
     );
 
     expect(transport.requests.slice(5)).toEqual([
-      createExpectedRequest(metadata, 'targetRelativeHumidity', 30),
-      createExpectedRequest(metadata, 'targetRelativeHumidity', 70),
+      createExpectedRequest(metadata, 'target-humidity', 30),
+      createExpectedRequest(metadata, 'target-humidity', 70),
     ]);
   });
 
@@ -654,9 +654,9 @@ describe('MIoT dehumidifier capabilities', () => {
       properties: createStateProperties(metadata, {
         on: true,
         mode: 1,
-        targetRelativeHumidity: 58,
+        'target-humidity': 58,
         temperature: 22,
-        relativeHumidity: 60,
+        'relative-humidity': 60,
       }),
     });
 
@@ -683,7 +683,7 @@ describe('MIoT dehumidifier capabilities', () => {
     expect(humidityEffect.matches(endpoint)).toBe(true);
 
     updateProperty(connection, metadata, 'mode', 2);
-    updateProperty(connection, metadata, 'targetRelativeHumidity', 59);
+    updateProperty(connection, metadata, 'target-humidity', 59);
     expect(modeEffect.matches(endpoint)).toBe(false);
     expect(humidityEffect.matches(endpoint)).toBe(false);
   });
@@ -729,9 +729,9 @@ describe('MIoT dehumidifier capabilities', () => {
       [
         'on',
         'mode',
-        'targetRelativeHumidity',
+        'target-humidity',
         'temperature',
-        'relativeHumidity',
+        'relative-humidity',
       ].toSorted(),
     );
     updateProperty(connection, metadata, 'mode', 3);
@@ -751,20 +751,20 @@ describe('MIoT dehumidifier capabilities', () => {
       2,
     ]);
     expect(getMetadataPropertyNames(metadata)).toEqual(
-      ['on', 'mode', 'targetRelativeHumidity'].toSorted(),
+      ['on', 'mode', 'target-humidity'].toSorted(),
     );
   });
 
   test.each([
-    {name: 'temperature', iid: 2, remaining: 'relativeHumidity'},
-    {name: 'relativeHumidity', iid: 1, remaining: 'temperature'},
+    {name: 'temperature', iid: 2, remaining: 'relative-humidity'},
+    {name: 'relative-humidity', iid: 1, remaining: 'temperature'},
   ])('matches the remaining environment feature without $name', entry => {
     const spec = createDehumidifierSpec();
     removeSpecProperty(spec, 3, entry.iid);
     const metadata = findMetadata(MiotDehumidifierEndpointConnection, spec);
 
     expect(getMetadataPropertyNames(metadata)).toEqual(
-      ['on', 'mode', 'targetRelativeHumidity', entry.remaining].toSorted(),
+      ['on', 'mode', 'target-humidity', entry.remaining].toSorted(),
     );
   });
 
@@ -839,9 +839,9 @@ describe('MIoT dehumidifier capabilities', () => {
       [
         'on',
         'mode',
-        'targetRelativeHumidity',
+        'target-humidity',
         'temperature',
-        'relativeHumidity',
+        'relative-humidity',
       ].toSorted(),
     );
   });
@@ -861,16 +861,16 @@ describe('MIoT fan capabilities', () => {
       [transport],
     );
 
-    updateProperty(connection, metadata, 'windMode', 0);
-    expect(connection.windMode).toBe('natural');
+    updateProperty(connection, metadata, 'mode', 0);
+    expect(connection.mode).toBe('natural');
 
-    await executeCommand(connection, new SetFanWindModeCommand('normal'));
+    await executeCommand(connection, new SetFanModeCommand('normal'));
     expect(transport.requests).toEqual([
-      createExpectedRequest(metadata, 'windMode', 1),
+      createExpectedRequest(metadata, 'mode', 1),
     ]);
   });
 
-  test('matches and projects wind mode, normalized speed, and swing', () => {
+  test('matches and projects mode, normalized speed, and swing', () => {
     const metadata = findMetadata(MiotFanEndpointConnection, createFanSpec());
     const connection = new MiotFanEndpointConnection(
       new MiotProvider('provider'),
@@ -880,27 +880,27 @@ describe('MIoT fan capabilities', () => {
 
     expect(getMetadataProperties(metadata)).toMatchObject({
       on: {iid: 1},
-      windMode: {iid: 2},
-      speed: {iid: 3},
-      horizontalSwing: {iid: 4},
+      mode: {iid: 2},
+      'fan-level': {iid: 3},
+      'horizontal-swing': {iid: 4},
     });
-    expect(connection.windMode).toBe('normal');
+    expect(connection.mode).toBe('normal');
     expect(connection.speed).toBe(0);
     expect(connection.horizontalSwing).toBe(false);
 
-    updateProperty(connection, metadata, 'windMode', 1);
-    updateProperty(connection, metadata, 'speed', 3);
-    updateProperty(connection, metadata, 'horizontalSwing', true);
-    expect(connection.windMode).toBe('natural');
+    updateProperty(connection, metadata, 'mode', 1);
+    updateProperty(connection, metadata, 'fan-level', 3);
+    updateProperty(connection, metadata, 'horizontal-swing', true);
+    expect(connection.mode).toBe('natural');
     expect(connection.speed).toBe(0.75);
     expect(connection.horizontalSwing).toBe(true);
 
-    expect(() => updateProperty(connection, metadata, 'speed', 0)).toThrow(
+    expect(() => updateProperty(connection, metadata, 'fan-level', 0)).toThrow(
       TypeError,
     );
   });
 
-  test('maps wind mode, quantizes speed, and writes horizontal swing', async () => {
+  test('maps mode, quantizes speed, and writes horizontal swing', async () => {
     const metadata = findMetadata(MiotFanEndpointConnection, createFanSpec());
     const transport = new TestTransport();
     const connection = new MiotFanEndpointConnection(
@@ -909,20 +909,20 @@ describe('MIoT fan capabilities', () => {
       [transport],
     );
 
-    await executeCommand(connection, new SetFanWindModeCommand('normal'));
-    await executeCommand(connection, new SetFanWindModeCommand('natural'));
+    await executeCommand(connection, new SetFanModeCommand('normal'));
+    await executeCommand(connection, new SetFanModeCommand('natural'));
     await executeCommand(connection, new SetFanSpeedCommand(0.01));
     await executeCommand(connection, new SetFanSpeedCommand(0.38));
     await executeCommand(connection, new SetFanSpeedCommand(1));
     await executeCommand(connection, new SetFanHorizontalSwingCommand(true));
 
     expect(transport.requests).toEqual([
-      createExpectedRequest(metadata, 'windMode', 0),
-      createExpectedRequest(metadata, 'windMode', 1),
-      createExpectedRequest(metadata, 'speed', 1),
-      createExpectedRequest(metadata, 'speed', 2),
-      createExpectedRequest(metadata, 'speed', 4),
-      createExpectedRequest(metadata, 'horizontalSwing', true),
+      createExpectedRequest(metadata, 'mode', 0),
+      createExpectedRequest(metadata, 'mode', 1),
+      createExpectedRequest(metadata, 'fan-level', 1),
+      createExpectedRequest(metadata, 'fan-level', 2),
+      createExpectedRequest(metadata, 'fan-level', 4),
+      createExpectedRequest(metadata, 'horizontal-swing', true),
     ]);
   });
 
@@ -940,14 +940,14 @@ describe('MIoT fan capabilities', () => {
       online: true,
       properties: createStateProperties(metadata, {
         on: true,
-        windMode: 0,
-        speed: 2,
-        horizontalSwing: true,
+        mode: 0,
+        'fan-level': 2,
+        'horizontal-swing': true,
       }),
     });
 
     const modeEffect = requireEffect(
-      await executeCommand(connection, new SetFanWindModeCommand('normal')),
+      await executeCommand(connection, new SetFanModeCommand('normal')),
     );
     const speedEffect = requireEffect(
       await executeCommand(connection, new SetFanSpeedCommand(0.38)),
@@ -967,7 +967,7 @@ describe('MIoT fan capabilities', () => {
     expect(speedEffect.matches(endpoint)).toBe(true);
     expect(swingEffect.matches(endpoint)).toBe(true);
 
-    updateProperty(connection, metadata, 'speed', 3);
+    updateProperty(connection, metadata, 'fan-level', 3);
     expect(modeEffect.matches(endpoint)).toBe(true);
     expect(speedEffect.matches(endpoint)).toBe(false);
     expect(swingEffect.matches(endpoint)).toBe(true);
@@ -988,11 +988,11 @@ describe('MIoT fan capabilities', () => {
       [transport],
     );
 
-    expect(connection.windMode).toBeUndefined();
+    expect(connection.mode).toBeUndefined();
     expect(connection.speed).toBeUndefined();
     expect(connection.horizontalSwing).toBeUndefined();
     await expect(
-      executeCommand(connection, new SetFanWindModeCommand('normal')),
+      executeCommand(connection, new SetFanModeCommand('normal')),
     ).rejects.toBeInstanceOf(CommandError);
     await expect(
       executeCommand(connection, new SetFanSpeedCommand(0.5)),
@@ -1015,9 +1015,9 @@ describe('MIoT fan capabilities', () => {
     );
 
     expect(getMetadataPropertyNames(metadata)).toEqual(
-      ['on', 'windMode', 'speed', 'horizontalSwing'].toSorted(),
+      ['on', 'mode', 'fan-level', 'horizontal-swing'].toSorted(),
     );
-    updateProperty(connection, metadata, 'speed', 2);
+    updateProperty(connection, metadata, 'fan-level', 2);
     expect(connection.speed).toBeCloseTo(2 / 3);
   });
 
@@ -1032,7 +1032,7 @@ describe('MIoT fan capabilities', () => {
       2,
     ]);
     expect(getMetadataPropertyNames(metadata)).toEqual(
-      ['on', 'windMode', 'speed', 'horizontalSwing'].toSorted(),
+      ['on', 'mode', 'fan-level', 'horizontal-swing'].toSorted(),
     );
   });
 });
