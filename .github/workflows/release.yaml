@@ -1,0 +1,64 @@
+name: Release
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - master
+permissions:
+  contents: write
+  id-token: write
+concurrency:
+  group: release-${{ github.event.workflow_run.head_sha }}
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run build
+      - name: Publish npm packages
+        env:
+          NPM_CONFIG_PROVENANCE: true
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          version="0.0.0-wip.${RELEASE_SHA:0:12}"
+          npx --yes --package=lerna@9.0.7 lerna publish "$version" \
+            --yes \
+            --force-publish \
+            --exact \
+            --no-private \
+            --no-git-tag-version \
+            --no-push \
+            --dist-tag latest \
+            --pre-dist-tag latest
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag already exists; skipping."
+          else
+            gh release create "$tag" \
+              --target "$RELEASE_SHA" \
+              --title "$tag" \
+              --prerelease \
+              --generate-notes
+          fi

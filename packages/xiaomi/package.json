@@ -1,6 +1,9 @@
 {
   "name": "@homelib/xiaomi",
   "version": "0.0.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": "https://github.com/homelib/homelib.git",
   "license": "MIT",
   "author": "vilicvane",

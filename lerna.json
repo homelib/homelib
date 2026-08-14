@@ -1,0 +1,10 @@
+{
+  "version": "0.0.0",
+  "npmClient": "npm",
+  "packages": [
+    "packages/core",
+    "packages/terminal",
+    "packages/utils",
+    "packages/xiaomi"
+  ]
+}
