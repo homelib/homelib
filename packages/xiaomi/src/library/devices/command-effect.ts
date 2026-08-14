@@ -149,7 +149,16 @@ export class MiotCommandEffect<
   /** Describes the canonical values that this effect writes to the device. */
   toLogString(): string {
     return this.properties
-      .map(({name, value}) => `set ${name}=${value}`)
+      .map(({name, property, value}) => {
+        const enumName =
+          property.enum === undefined
+            ? undefined
+            : Object.entries(property.enum).find(
+                ([, enumValue]) => enumValue === value,
+              )?.[0];
+
+        return `set ${name}=${value}${enumName === undefined ? '' : ` (${enumName})`}`;
+      })
       .join(' ');
   }
 

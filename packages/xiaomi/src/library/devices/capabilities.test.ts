@@ -173,7 +173,7 @@ describe('MIoT air conditioner capabilities', () => {
       new SetAirConditionerTargetHumidityCommand(0.584),
     );
 
-    expect(modeExecution.toLogString?.()).toBe('set mode=2');
+    expect(modeExecution.toLogString?.()).toBe('set mode=2 (cool)');
     expect(temperatureExecution.toLogString?.()).toBe(
       'set target-temperature=23.5',
     );

@@ -224,13 +224,13 @@ test('uses one enum mapping for requests, equality, and state matching', () => {
 
 test('describes canonical values after clamping and unit conversion', () => {
   const effect = new TestEffect({
-    brightness: 0.23,
-    targetTemperature: Temperature.fromCelsius(23.24),
     mode: 'cool',
+    targetTemperature: Temperature.fromCelsius(23.24),
+    brightness: 0.23,
   });
 
   expect(effect.toLogString()).toBe(
-    'set brightness=25 set targetTemperature=23 set mode=2',
+    'set brightness=25 set targetTemperature=23 set mode=2 (cool)',
   );
 });
 
