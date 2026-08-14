@@ -20,8 +20,8 @@ const TEMPERATURE_BACKOFF = 4;
 const IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT = 0.5;
 const IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT = 0.45;
 
-const IDEAL_TEMPERATURE_DEVIATION = 0.2;
-const IDEAL_RELATIVE_HUMIDITY_DEVIATION = 0.02;
+const IDEAL_TEMPERATURE_TOLERANCE = 0.2;
+const IDEAL_RELATIVE_HUMIDITY_TOLERANCE = 0.02;
 
 const SOFT_POWER_OFF_RELATIVE_HUMIDITY = 1;
 
@@ -32,12 +32,16 @@ export function setupTemperatureHumidityControl(
     humiditySensor,
     airConditioner,
     dehumidifier,
+    idealTemperatureTolerance = IDEAL_TEMPERATURE_TOLERANCE,
+    idealRelativeHumidityTolerance = IDEAL_RELATIVE_HUMIDITY_TOLERANCE,
     onGetter = () => true,
   }: {
     temperatureSensor: TemperatureSensor;
     humiditySensor: HumiditySensor;
     airConditioner: AirConditioner;
     dehumidifier: Dehumidifier;
+    idealTemperatureTolerance?: number;
+    idealRelativeHumidityTolerance?: number;
     onGetter?: () => boolean | undefined;
   },
 ): void {
@@ -51,7 +55,7 @@ export function setupTemperatureHumidityControl(
       state: 'high',
       enter: temperature => temperature > idealTemperatureUpperLimit,
       leave: temperature =>
-        temperature <= idealTemperatureUpperLimit - IDEAL_TEMPERATURE_DEVIATION,
+        temperature <= idealTemperatureUpperLimit - idealTemperatureTolerance,
     },
     {
       state: 'ideal',
@@ -66,7 +70,7 @@ export function setupTemperatureHumidityControl(
       state: 'low',
       enter: temperature => temperature < idealTemperatureLowerLimit,
       leave: temperature =>
-        temperature >= idealTemperatureLowerLimit + IDEAL_TEMPERATURE_DEVIATION,
+        temperature >= idealTemperatureLowerLimit + idealTemperatureTolerance,
     },
   ]);
 
@@ -77,7 +81,7 @@ export function setupTemperatureHumidityControl(
         relativeHumidity > IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT,
       leave: relativeHumidity =>
         relativeHumidity <=
-        IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT - IDEAL_RELATIVE_HUMIDITY_DEVIATION,
+        IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT - idealRelativeHumidityTolerance,
     },
     {
       state: 'ideal',
@@ -94,7 +98,7 @@ export function setupTemperatureHumidityControl(
         relativeHumidity < IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT,
       leave: relativeHumidity =>
         relativeHumidity >=
-        IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT + IDEAL_RELATIVE_HUMIDITY_DEVIATION,
+        IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT + idealRelativeHumidityTolerance,
     },
   ]);
 

@@ -32,5 +32,7 @@ setupTemperatureHumidityControl('主卧', {
   humiditySensor: 主卧除湿机,
   airConditioner: 主卧空调,
   dehumidifier: 主卧除湿机,
+  idealTemperatureTolerance: 0.5,
+  idealRelativeHumidityTolerance: 0.05,
   onGetter: () => 主卧空调.on,
 });
