@@ -45,21 +45,24 @@ test('confirms the default device match as one batch and returns after saving', 
   );
 
   try {
-    await terminal.flushUntil(frame =>
-      frame.includes('choose a mi home device'),
-    );
+    await terminal.flushUntil(frame => frame.includes('choose a device'));
     expect(terminal.frame()).toContain('Ceiling Light');
     expect(terminal.frame()).toContain('My Home ›');
     expect(terminal.frame()).toContain('Living Room');
 
     await terminal.input('\r');
     const summary = terminal.frame();
+    const summaryLines = summary.split('\n').map(line => line.trim());
+    const endpointIndex = summaryLines.indexOf('● main [ready]');
 
     expect(summary).toContain('device match');
     expect(summary).toContain('main');
-    expect(summary).toContain('matched automatically');
+    expect(summary).toContain('[ready]');
     expect(summary).toContain('Main Light');
-    expect(summary).toContain('› bind device · 1 endpoint');
+    expect(summary).toContain('› bind device');
+    expect(summaryLines[endpointIndex + 1]).toBe('Main Light');
+    expect(summary).not.toContain('matched automatically');
+    expect(summary).not.toContain('1 endpoint');
     expectInternalDetailsToBeHidden(summary);
     expect(bindingBatches).toHaveLength(0);
 
@@ -117,13 +120,108 @@ test('does not offer ambiguous service combinations for manual matching', async 
   );
 
   try {
-    await terminal.flushUntil(frame =>
-      frame.includes('choose a mi home device'),
-    );
+    await terminal.flushUntil(frame => frame.includes('choose a device'));
     expect(terminal.frame()).toContain('no matching devices found.');
     expect(terminal.frame()).not.toContain('endpoint matching');
     expect(terminal.frame()).not.toContain('possible matches');
     expectInternalDetailsToBeHidden(terminal.frame());
+  } finally {
+    await terminal.close();
+    restoreFetch();
+  }
+}, 10_000);
+
+test('groups devices by location and emphasizes binding status', async () => {
+  const spec = createLightSpec('device-list-labels', ['Main Light']);
+  const restoreFetch = installSpecFetch(spec);
+  const provider = createFakeProvider('device-list-labels', spec, {
+    devices: [
+      {
+        did: 'bound-light',
+        name: 'Ceiling Light',
+        model: 'test.light',
+        specType: spec.type,
+        homeName: 'My Home',
+        roomName: 'Living Room',
+      },
+      {
+        did: 'offline-light',
+        name: 'Offline Light',
+        model: 'test.light',
+        specType: spec.type,
+        homeName: 'My Home',
+        roomName: 'Bedroom',
+        online: false,
+      },
+      {
+        did: 'used-light',
+        name: 'Used Light',
+        model: 'test.light',
+        specType: spec.type,
+        homeName: 'My Home',
+        roomName: 'Living Room',
+      },
+      ...Array.from({length: 4}, (_, index) => ({
+        did: `bedroom-light-${index + 1}`,
+        name: `Bedroom Light ${index + 1}`,
+        model: 'test.light',
+        specType: spec.type,
+        homeName: 'My Home',
+        roomName: 'Bedroom',
+      })),
+    ],
+  });
+  const device = createLogicalDevice();
+  const endpoint = device.endpoints[0];
+
+  if (endpoint === undefined || spec.services[0] === undefined) {
+    throw new Error('Missing test endpoint or service.');
+  }
+
+  const terminal = renderTestTerminal(
+    createElement(MiotProviderBindings, {
+      provider,
+      device,
+      providerBindings: [
+        {
+          endpoint: endpoint.path,
+          metadata: createTestMetadata('bound-light', spec),
+        },
+        {
+          endpoint: EndpointPath.satisfies({
+            scopePath: ['Other Home'],
+            deviceName: 'Other Light',
+            endpointName: '',
+          }),
+          metadata: createTestMetadata('used-light', spec),
+        },
+      ],
+      onBind: () => Promise.resolve(),
+      onBack: () => undefined,
+      onComplete: () => undefined,
+    }),
+  );
+
+  try {
+    await terminal.flushUntil(frame => frame.includes('choose a device'));
+    const frame = terminal.frame();
+    const lines = frame.split('\n').map(line => line.trim());
+    const livingRoomIndex = lines.indexOf('My Home › Living Room');
+    const bedroomIndex = lines.indexOf('My Home › Bedroom');
+    const rangeIndex = lines.indexOf('1–6 of 7');
+
+    expect(frame.match(/My Home › Living Room/g)).toHaveLength(1);
+    expect(lines.slice(livingRoomIndex, livingRoomIndex + 3)).toEqual([
+      'My Home › Living Room',
+      '› Ceiling Light [bound here]',
+      'Used Light [used elsewhere]',
+    ]);
+    expect(lines.slice(bedroomIndex, bedroomIndex + 2)).toEqual([
+      'My Home › Bedroom',
+      'Offline Light [offline]',
+    ]);
+    expect(frame).not.toContain('endpoint ready');
+    expect(lines[rangeIndex - 1]).toBe('');
   } finally {
     await terminal.close();
     restoreFetch();
@@ -146,9 +244,7 @@ test('reports success only after an explicit device reload', async () => {
   );
 
   try {
-    await terminal.flushUntil(frame =>
-      frame.includes('choose a mi home device'),
-    );
+    await terminal.flushUntil(frame => frame.includes('choose a device'));
     expect(terminal.frame()).not.toContain('devices reloaded.');
 
     await terminal.input('r');
@@ -184,9 +280,7 @@ test('returns to the logical device on escape without completing', async () => {
   );
 
   try {
-    await terminal.flushUntil(frame =>
-      frame.includes('choose a mi home device'),
-    );
+    await terminal.flushUntil(frame => frame.includes('choose a device'));
     await terminal.input('\u001B');
     await delay(25);
     await terminal.flushUntil(() => backCallCount === 1);
@@ -202,12 +296,15 @@ test('returns to the logical device on escape without completing', async () => {
 function createFakeProvider(
   name: string,
   spec: MiotSpecInstance,
+  options: {
+    readonly devices?: MiotProviderFilteredDiscovery['devices'];
+  } = {},
 ): MiotProvider {
   const provider = new MiotProvider(name);
   const discovery: MiotProviderFilteredDiscovery = {
     account: {cloudServer: 'cn', userId: 'test-user'},
     homes: [],
-    devices: [
+    devices: options.devices ?? [
       {
         did: 'physical-light',
         name: 'Ceiling Light',
@@ -225,6 +322,19 @@ function createFakeProvider(
   });
 
   return provider;
+}
+
+function createTestMetadata(did: string, spec: MiotSpecInstance): unknown {
+  const service = spec.services[0];
+
+  if (service === undefined) {
+    throw new Error('Missing test service.');
+  }
+
+  return {
+    device: {did, model: 'test.light', urn: spec.type},
+    resources: [{service}],
+  };
 }
 
 function createLogicalDevice(): ProviderBindingDevice {

@@ -19,7 +19,7 @@ import {
 } from '../binding.js';
 import type {MiotProvider} from '../provider.js';
 
-const PHYSICAL_DEVICE_PAGE_SIZE = 12;
+const PHYSICAL_DEVICE_PAGE_SIZE = 6;
 
 export function MiotProviderBindings({
   provider,
@@ -47,7 +47,15 @@ export function MiotProviderBindings({
           }
 
           operationReference.current = undefined;
-          setState({type: 'devices', discovery, cursor: 0, notice});
+          setState({
+            type: 'devices',
+            discovery: {
+              ...discovery,
+              devices: orderDevicesByLocation(discovery.devices),
+            },
+            cursor: 0,
+            notice,
+          });
         },
         error => {
           if (operationReference.current !== operation) {
@@ -270,50 +278,74 @@ function DevicesView({
     state.cursor,
     PHYSICAL_DEVICE_PAGE_SIZE,
   );
+  const deviceGroups = groupDevicesByLocation(visibleDevices.items);
+  const hasSummary =
+    discovery.devices.length > PHYSICAL_DEVICE_PAGE_SIZE ||
+    discovery.failedDeviceCount > 0 ||
+    discovery.incompleteDeviceCount > 0 ||
+    state.notice === 'reloaded';
 
   return (
     <Box flexDirection="column">
-      <Text>choose a mi home device</Text>
+      <Text>choose a device</Text>
 
       <Box flexDirection="column" marginTop={1}>
         {discovery.devices.length === 0 ? (
           <Text dimColor>no matching devices found.</Text>
         ) : (
-          visibleDevices.items.map((device, index) => (
-            <ListItem
-              key={device.key}
-              details={getDeviceMatchDetails(device, providerBindings)}
-              label={getDeviceLabel(device.device)}
-              selected={visibleDevices.startIndex + index === state.cursor}
-              sublabel={getDeviceLocation(device.device)}
-            />
+          deviceGroups.map((group, groupIndex) => (
+            <Box
+              key={group.location ?? ''}
+              flexDirection="column"
+              marginTop={groupIndex === 0 ? 0 : 1}
+            >
+              <Text bold dimColor>
+                {group.location ?? 'unknown location'}
+              </Text>
+              {group.devices.map(device => (
+                <ListItem
+                  key={device.key}
+                  label={getDeviceLabel(device.device)}
+                  offline={device.device.online === false}
+                  selected={
+                    getCandidateDeviceIndex(discovery, device.key) ===
+                    state.cursor
+                  }
+                  status={getDeviceMatchStatus(device, providerBindings)}
+                />
+              ))}
+            </Box>
           ))
         )}
       </Box>
 
-      {discovery.devices.length <= PHYSICAL_DEVICE_PAGE_SIZE ? null : (
-        <Text dimColor>
-          {visibleDevices.startIndex + 1}–
-          {visibleDevices.startIndex + visibleDevices.items.length} of{' '}
-          {discovery.devices.length}
-        </Text>
-      )}
+      {hasSummary ? (
+        <Box flexDirection="column" marginTop={1}>
+          {discovery.devices.length <= PHYSICAL_DEVICE_PAGE_SIZE ? null : (
+            <Text dimColor>
+              {visibleDevices.startIndex + 1}–
+              {visibleDevices.startIndex + visibleDevices.items.length} of{' '}
+              {discovery.devices.length}
+            </Text>
+          )}
 
-      {discovery.failedDeviceCount === 0 ? null : (
-        <Text color="yellow">
-          {discovery.failedDeviceCount} devices could not be checked.
-        </Text>
-      )}
+          {discovery.failedDeviceCount === 0 ? null : (
+            <Text color="yellow">
+              {discovery.failedDeviceCount} devices could not be checked.
+            </Text>
+          )}
 
-      {discovery.incompleteDeviceCount === 0 ? null : (
-        <Text dimColor>
-          {discovery.incompleteDeviceCount} devices do not expose enough
-          information.
-        </Text>
-      )}
+          {discovery.incompleteDeviceCount === 0 ? null : (
+            <Text dimColor>
+              {discovery.incompleteDeviceCount} devices do not expose enough
+              information.
+            </Text>
+          )}
 
-      {state.notice === 'reloaded' ? (
-        <Text color="green">devices reloaded.</Text>
+          {state.notice === 'reloaded' ? (
+            <Text color="green">devices reloaded.</Text>
+          ) : null}
+        </Box>
       ) : null}
 
       <Hint>
@@ -332,7 +364,13 @@ function DeviceMatchView({
 }): React.JSX.Element {
   return (
     <Box flexDirection="column">
-      <Text bold>{getDeviceLabel(proposal.device.device)}</Text>
+      <Box>
+        <Text bold>{getDeviceLabel(proposal.device.device)}</Text>
+        <DeviceStatusBadges
+          offline={proposal.device.device.online === false}
+          status={proposal.status}
+        />
+      </Box>
       {getDeviceLocation(proposal.device.device) === undefined ? null : (
         <Text dimColor>{getDeviceLocation(proposal.device.device)}</Text>
       )}
@@ -356,12 +394,11 @@ function DeviceMatchView({
       <Box marginTop={1}>
         {proposal.status === 'automatic' ? (
           <Text bold color="cyan">
-            › bind device · {proposal.bindings.length}{' '}
-            {proposal.bindings.length === 1 ? 'endpoint' : 'endpoints'}
+            › bind device
           </Text>
         ) : proposal.status === 'existing' ? (
           <Text bold color="cyan">
-            › done · already bound
+            › done
           </Text>
         ) : (
           <Text color="yellow">device match unavailable.</Text>
@@ -381,50 +418,77 @@ function EndpointProposalRow({
 }: {
   readonly proposal: MiotBindingEndpointProposal;
 }): React.JSX.Element {
-  const color = proposal.status === 'unavailable' ? 'yellow' : 'green';
-  const status =
+  const color = proposal.status === 'unavailable' ? 'red' : 'green';
+  const badge =
     proposal.status === 'automatic'
-      ? 'matched automatically'
+      ? 'ready'
       : proposal.status === 'existing'
-        ? 'already bound'
-        : 'mapping unavailable';
+        ? 'bound here'
+        : 'used elsewhere';
 
   return (
-    <Box>
-      <Box width={28}>
+    <Box flexDirection="column">
+      <Text>
         <Text color={color}>
           {proposal.status === 'unavailable' ? '!' : '●'}{' '}
           {getEndpointLabel(proposal.endpoint.endpoint)}
         </Text>
+        <Text bold color={color}>
+          {' '}
+          [{badge}]
+        </Text>
+      </Text>
+      <Box marginLeft={2}>
+        <Text dimColor>{proposal.endpoint.label}</Text>
       </Box>
-      <Text color={color}>{status}</Text>
-      <Text dimColor> · {proposal.endpoint.label}</Text>
     </Box>
   );
 }
 
 function ListItem({
   label,
-  sublabel,
-  details,
+  offline,
   selected,
+  status,
 }: {
   readonly label: string;
-  readonly sublabel?: string;
-  readonly details: string;
+  readonly offline: boolean;
   readonly selected: boolean;
+  readonly status: MiotBindingDeviceProposal['status'];
 }): React.JSX.Element {
   return (
     <Box>
-      <Box width={32}>
-        <Text bold={selected} color={selected ? 'cyan' : undefined}>
-          {selected ? '› ' : '  '}
-          {label}
-          {sublabel === undefined ? null : <Text dimColor> · {sublabel}</Text>}
-        </Text>
-      </Box>
-      <Text dimColor>{details}</Text>
+      <Text bold={selected} color={selected ? 'cyan' : undefined}>
+        {selected ? '› ' : '  '}
+        {label}
+      </Text>
+      <DeviceStatusBadges offline={offline} status={status} />
     </Box>
+  );
+}
+
+function DeviceStatusBadges({
+  offline,
+  status,
+}: {
+  readonly offline: boolean;
+  readonly status: MiotBindingDeviceProposal['status'];
+}): React.JSX.Element {
+  return (
+    <>
+      {status === 'existing' ? (
+        <Text bold color="green">
+          {' '}
+          [bound here]
+        </Text>
+      ) : status === 'unavailable' ? (
+        <Text bold color="red">
+          {' '}
+          [used elsewhere]
+        </Text>
+      ) : null}
+      {offline ? <Text color="yellow"> [offline]</Text> : null}
+    </>
   );
 }
 
@@ -556,28 +620,44 @@ function getDeviceLocation(device: BackendDevice): string | undefined {
     .filter(value => value !== undefined)
     .join(' › ');
 
-  if (device.online === false) {
-    return location === '' ? 'offline' : `${location} · offline`;
-  }
-
   return location === '' ? undefined : location;
 }
 
-function getDeviceMatchDetails(
+function getDeviceMatchStatus(
   device: MiotBindingDeviceCandidate,
   providerBindings: BindingViewProps['providerBindings'],
-): string {
-  const proposal = resolveMiotBindingDeviceProposal(device, providerBindings);
+): MiotBindingDeviceProposal['status'] {
+  return resolveMiotBindingDeviceProposal(device, providerBindings).status;
+}
 
-  if (proposal.status === 'existing') {
-    return 'already bound';
-  } else if (proposal.status === 'unavailable') {
-    return 'resources already used';
+type DeviceGroup = {
+  readonly location: string | undefined;
+  readonly devices: readonly MiotBindingDeviceCandidate[];
+};
+
+function orderDevicesByLocation(
+  devices: readonly MiotBindingDeviceCandidate[],
+): readonly MiotBindingDeviceCandidate[] {
+  return groupDevicesByLocation(devices).flatMap(group => group.devices);
+}
+
+function groupDevicesByLocation(
+  devices: readonly MiotBindingDeviceCandidate[],
+): readonly DeviceGroup[] {
+  const groupMap = new Map<string | undefined, MiotBindingDeviceCandidate[]>();
+
+  for (const device of devices) {
+    const location = getDeviceLocation(device.device);
+    const group = groupMap.get(location);
+
+    if (group === undefined) {
+      groupMap.set(location, [device]);
+    } else {
+      group.push(device);
+    }
   }
 
-  const count = proposal.bindings.length;
-
-  return `${count} ${count === 1 ? 'endpoint' : 'endpoints'} ready`;
+  return [...groupMap].map(([location, devices]) => ({location, devices}));
 }
 
 function getEndpointLabel(
