@@ -22,5 +22,13 @@
     "typescript",
     "typescriptreact"
   ],
-  "cSpell.words": ["autorun", "homelib", "miot", "piid", "routra", "siid"]
+  "cSpell.words": [
+    "autorun",
+    "debouncer",
+    "homelib",
+    "miot",
+    "piid",
+    "routra",
+    "siid"
+  ]
 }
