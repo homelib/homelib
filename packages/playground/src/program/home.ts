@@ -1,7 +1,7 @@
 import {$home, bootstrap} from '@homelib/core';
-import {autorun} from '@homelib/core/mobx';
 import {$xiaomi} from '@homelib/xiaomi';
 
+import {setupAutoPetFeeding} from './@auto-pet-feeding.js';
 import {setupTemperatureHumidityControl} from './@temperature-humidity-control.js';
 
 $xiaomi('美岸');
@@ -22,6 +22,8 @@ const 主卧除湿机 = 主卧.$dehumidifier('除湿机');
 
 const 主卧温湿度传感器 = 主卧.$temperatureHumiditySensor('温湿度传感器');
 
+const 宠物喂食器 = 客厅.$petFeeder('宠物喂食器');
+
 await bootstrap();
 
 setupTemperatureHumidityControl('客厅', {
@@ -29,13 +31,13 @@ setupTemperatureHumidityControl('客厅', {
   dehumidifier: 客厅除湿机,
   onGetter: () => 客厅空调.on,
   temperature: {
-    sensor: 客厅除湿机,
+    sensor: 客厅温湿度传感器,
     idealApparentTemperatureUpperLimit: 27,
     idealApparentTemperatureLowerLimit: 20,
     idealTemperatureTolerance: 0.5,
   },
   humidity: {
-    sensor: 客厅除湿机,
+    sensor: 客厅温湿度传感器,
     idealRelativeHumidityUpperLimit: 0.55,
     idealRelativeHumidityLowerLimit: 0.45,
     idealRelativeHumidityTolerance: 0.05,
@@ -47,37 +49,17 @@ setupTemperatureHumidityControl('主卧', {
   dehumidifier: 主卧除湿机,
   onGetter: () => 主卧空调.on,
   temperature: {
-    sensor: 主卧除湿机,
+    sensor: 主卧温湿度传感器,
     idealApparentTemperatureUpperLimit: 27,
     idealApparentTemperatureLowerLimit: 20,
     idealTemperatureTolerance: 0.5,
   },
   humidity: {
-    sensor: 主卧除湿机,
+    sensor: 主卧温湿度传感器,
     idealRelativeHumidityUpperLimit: 0.55,
     idealRelativeHumidityLowerLimit: 0.45,
     idealRelativeHumidityTolerance: 0.05,
   },
 });
 
-autorun(() => {
-  if (!客厅温湿度传感器.ready) {
-    return;
-  }
-
-  console.info('客厅温湿度传感器', {
-    temperature: 客厅温湿度传感器.temperature,
-    relativeHumidity: 客厅温湿度传感器.relativeHumidity,
-  });
-});
-
-autorun(() => {
-  if (!主卧温湿度传感器.ready) {
-    return;
-  }
-
-  console.info('主卧温湿度传感器', {
-    temperature: 主卧温湿度传感器.temperature,
-    relativeHumidity: 主卧温湿度传感器.relativeHumidity,
-  });
-});
+setupAutoPetFeeding(宠物喂食器);
