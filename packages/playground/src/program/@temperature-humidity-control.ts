@@ -11,44 +11,51 @@ import {
   getTemperatureByApparentTemperatureAndRelativeHumidity,
 } from '@homelib/utils';
 
-const IDEAL_APPARENT_TEMPERATURE_UPPER_LIMIT = 27;
-const IDEAL_APPARENT_TEMPERATURE_LOWER_LIMIT = 20;
-
 // 很多垃圾空调到了指定温度后还会继续制冷，所以需要一个后退值。
 const TEMPERATURE_BACKOFF = 4;
-
-const IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT = 0.5;
-const IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT = 0.45;
-
-const IDEAL_TEMPERATURE_TOLERANCE = 0.2;
-const IDEAL_RELATIVE_HUMIDITY_TOLERANCE = 0.02;
 
 const SOFT_POWER_OFF_RELATIVE_HUMIDITY = 1;
 
 export function setupTemperatureHumidityControl(
   name: string,
   {
-    temperatureSensor,
-    humiditySensor,
     airConditioner,
     dehumidifier,
-    idealTemperatureTolerance = IDEAL_TEMPERATURE_TOLERANCE,
-    idealRelativeHumidityTolerance = IDEAL_RELATIVE_HUMIDITY_TOLERANCE,
     onGetter = () => true,
+    temperature: {
+      sensor: temperatureSensor,
+      idealApparentTemperatureUpperLimit,
+      idealApparentTemperatureLowerLimit,
+      idealTemperatureTolerance,
+    },
+    humidity: {
+      sensor: humiditySensor,
+      idealRelativeHumidityUpperLimit,
+      idealRelativeHumidityLowerLimit,
+      idealRelativeHumidityTolerance,
+    },
   }: {
-    temperatureSensor: TemperatureSensor;
-    humiditySensor: HumiditySensor;
     airConditioner: AirConditioner;
     dehumidifier: Dehumidifier;
-    idealTemperatureTolerance?: number;
-    idealRelativeHumidityTolerance?: number;
     onGetter?: () => boolean | undefined;
+    temperature: {
+      sensor: TemperatureSensor;
+      idealApparentTemperatureUpperLimit: number;
+      idealApparentTemperatureLowerLimit: number;
+      idealTemperatureTolerance: number;
+    };
+    humidity: {
+      sensor: HumiditySensor;
+      idealRelativeHumidityUpperLimit: number;
+      idealRelativeHumidityLowerLimit: number;
+      idealRelativeHumidityTolerance: number;
+    };
   },
 ): void {
   type LevelState = 'high' | 'ideal' | 'low';
 
-  let idealTemperatureUpperLimit = IDEAL_APPARENT_TEMPERATURE_UPPER_LIMIT;
-  let idealTemperatureLowerLimit = IDEAL_APPARENT_TEMPERATURE_LOWER_LIMIT;
+  let idealTemperatureUpperLimit = idealApparentTemperatureUpperLimit;
+  let idealTemperatureLowerLimit = idealApparentTemperatureLowerLimit;
 
   const temperatureMatcher = new StateMatcher<LevelState, number>([
     {
@@ -78,27 +85,27 @@ export function setupTemperatureHumidityControl(
     {
       state: 'high',
       enter: relativeHumidity =>
-        relativeHumidity > IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT,
+        relativeHumidity > idealRelativeHumidityUpperLimit,
       leave: relativeHumidity =>
         relativeHumidity <=
-        IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT - idealRelativeHumidityTolerance,
+        idealRelativeHumidityUpperLimit - idealRelativeHumidityTolerance,
     },
     {
       state: 'ideal',
       enter: relativeHumidity =>
-        relativeHumidity <= IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT &&
-        relativeHumidity >= IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT,
+        relativeHumidity <= idealRelativeHumidityUpperLimit &&
+        relativeHumidity >= idealRelativeHumidityLowerLimit,
       leave: relativeHumidity =>
-        relativeHumidity > IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT ||
-        relativeHumidity < IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT,
+        relativeHumidity > idealRelativeHumidityUpperLimit ||
+        relativeHumidity < idealRelativeHumidityLowerLimit,
     },
     {
       state: 'low',
       enter: relativeHumidity =>
-        relativeHumidity < IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT,
+        relativeHumidity < idealRelativeHumidityLowerLimit,
       leave: relativeHumidity =>
         relativeHumidity >=
-        IDEAL_RELATIVE_HUMIDITY_LOWER_LIMIT + idealRelativeHumidityTolerance,
+        idealRelativeHumidityLowerLimit + idealRelativeHumidityTolerance,
     },
   ]);
 
@@ -131,12 +138,12 @@ export function setupTemperatureHumidityControl(
 
       const nextIdealTemperatureUpperLimit =
         getTemperatureByApparentTemperatureAndRelativeHumidity(
-          IDEAL_APPARENT_TEMPERATURE_UPPER_LIMIT,
+          idealApparentTemperatureUpperLimit,
           relativeHumidity,
         );
       const nextIdealTemperatureLowerLimit =
         getTemperatureByApparentTemperatureAndRelativeHumidity(
-          IDEAL_APPARENT_TEMPERATURE_LOWER_LIMIT,
+          idealApparentTemperatureLowerLimit,
           relativeHumidity,
         );
 
@@ -162,7 +169,7 @@ export function setupTemperatureHumidityControl(
       ) {
         airConditioner
           .setMode('dry')
-          .setTargetHumidity(IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT);
+          .setTargetHumidity(idealRelativeHumidityUpperLimit);
 
         dehumidifier.setTargetHumidity(SOFT_POWER_OFF_RELATIVE_HUMIDITY);
       } else if (temperatureState.state === 'high') {
@@ -180,7 +187,7 @@ export function setupTemperatureHumidityControl(
             ),
           );
 
-        dehumidifier.setTargetHumidity(IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT);
+        dehumidifier.setTargetHumidity(idealRelativeHumidityUpperLimit);
       } else if (
         temperatureState.state === 'low' &&
         relativeHumidityState.state === 'low'
@@ -213,9 +220,7 @@ export function setupTemperatureHumidityControl(
       } else {
         switch (airConditioner.mode) {
           case 'dry':
-            airConditioner.setTargetHumidity(
-              IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT,
-            );
+            airConditioner.setTargetHumidity(idealRelativeHumidityUpperLimit);
             dehumidifier.setTargetHumidity(SOFT_POWER_OFF_RELATIVE_HUMIDITY);
             break;
           case 'cool':
@@ -225,7 +230,7 @@ export function setupTemperatureHumidityControl(
               ),
             );
 
-            dehumidifier.setTargetHumidity(IDEAL_RELATIVE_HUMIDITY_UPPER_LIMIT);
+            dehumidifier.setTargetHumidity(idealRelativeHumidityUpperLimit);
             break;
           case 'heat':
             airConditioner.setTargetTemperature(

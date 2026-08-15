@@ -65,6 +65,21 @@ try it out with the current examples and project setup:
    node packages/playground/bld/program/home.js --run
    ```
 
+5. To try the current working tree on another machine, run the deployment tool.
+   It builds the project, synchronizes the working tree over SSH, and runs
+   `npm install` remotely. The remote directory defaults to `~/homelib`:
+
+   ```sh
+   npm run deploy -- pi@meian-hub
+   npm run deploy -- home-server /srv/homelib
+   ```
+
+   The script requires Bash, rsync, and npm on the remote host. It mirrors the
+   local working tree with `rsync --delete-delay`, so files that no longer exist
+   locally are removed remotely after a successful transfer. Remote `.git` and
+   `node_modules` directories are preserved. Set `DEPLOY_SSH` to use a specific
+   SSH executable.
+
 ## License
 
 MIT License.

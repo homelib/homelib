@@ -127,6 +127,15 @@ describe('matchesMiotUrnPattern', () => {
   test('supports a global wildcard fallback', () => {
     expect(matchesMiotUrnPattern(deviceType, '*')).toBe(true);
   });
+
+  test('supports comma-separated alternatives', () => {
+    expect(
+      matchesMiotUrnPattern(
+        deviceType,
+        'urn:miot-spec-v2:device:light:0000A001, urn:miot-spec-v2:device:fan:0000A005',
+      ),
+    ).toBe(true);
+  });
 });
 
 test('treats a string property mapping as required', () => {
@@ -463,6 +472,28 @@ test('selects a more specific enum pattern instead of the wildcard fallback', ()
   expect(Object.keys(modeNames)).toEqual(['normal', 'natural', 'sleep']);
 });
 
+test('selects a comma-separated enum pattern instead of its fallback', () => {
+  const selectedMapping = {normal: 1, natural: 0} as const;
+  const schema = {
+    [LIGHT_SERVICE_TYPE]: {
+      [MODE_PROPERTY_TYPE]: {
+        name: 'mode',
+        enum: {
+          '*': {normal: 0, natural: 1},
+          [`${ZHIMI_FAN_FAMILY_PATTERN}, ${DMAKER_FAN_FAMILY_PATTERN}`]:
+            selectedMapping,
+        },
+      },
+    },
+  } as const satisfies MiotPropertySchema;
+  const [resource] =
+    resolveTestSchema([createModeService()], schema, {
+      deviceType: ZHIMI_FAN_DEVICE_TYPE,
+    }) ?? [];
+
+  expect(resource?.properties.mode?.enum).toEqual(selectedMapping);
+});
+
 test('selects an enum pattern containing a wildcard within a segment', () => {
   const familyMapping = {natural: 0, normal: 1} as const;
   const schema = {
@@ -619,8 +650,16 @@ test('does not fall back when the selected enum mapping fails metadata validatio
 test.each([
   ['an empty schema', {}],
   ['an empty service type', {'': {[ON_PROPERTY_TYPE]: 'on'}}],
+  [
+    'an empty service type alternative',
+    {[`${LIGHT_SERVICE_TYPE},`]: {[ON_PROPERTY_TYPE]: 'on'}},
+  ],
   ['a service without properties', {[LIGHT_SERVICE_TYPE]: {}}],
   ['an empty property type', {[LIGHT_SERVICE_TYPE]: {'': 'on'}}],
+  [
+    'an empty property type alternative',
+    {[LIGHT_SERVICE_TYPE]: {[`${ON_PROPERTY_TYPE},`]: 'on'}},
+  ],
   ['an empty string name', {[LIGHT_SERVICE_TYPE]: {[ON_PROPERTY_TYPE]: ''}}],
   [
     'an unsafe property name',
@@ -648,6 +687,17 @@ test.each([
     {
       [LIGHT_SERVICE_TYPE]: {
         [MODE_PROPERTY_TYPE]: {name: 'mode', enum: {'': {normal: 0}}},
+      },
+    },
+  ],
+  [
+    'an empty enum pattern alternative',
+    {
+      [LIGHT_SERVICE_TYPE]: {
+        [MODE_PROPERTY_TYPE]: {
+          name: 'mode',
+          enum: {[`${ZHIMI_FAN_FAMILY_PATTERN},`]: {normal: 0}},
+        },
       },
     },
   ],

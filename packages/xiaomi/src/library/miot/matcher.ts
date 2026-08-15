@@ -17,8 +17,9 @@ const MIOT_INTEGER_FORMAT_RANGES: Readonly<
 };
 
 /**
- * A full-URN prefix pattern. `*` matches one or more non-colon characters,
- * and a successful match must end at a URN segment boundary.
+ * One or more comma-separated full-URN prefix patterns. `*` matches one or
+ * more non-colon characters, and each successful match must end at a URN
+ * segment boundary.
  */
 export type MiotUrnPattern = string;
 
@@ -126,12 +127,15 @@ export function assertMiotPropertySchema(schema: MiotPropertySchema): void {
   const nameSet = new Set<string>();
 
   for (const [serviceType, properties] of services) {
-    if (serviceType.length === 0 || Object.keys(properties).length === 0) {
+    if (
+      !isValidMiotUrnPattern(serviceType) ||
+      Object.keys(properties).length === 0
+    ) {
       throw new TypeError('Invalid MIoT property schema service.');
     }
 
     for (const [propertyType, mapping] of Object.entries(properties)) {
-      if (propertyType.length === 0) {
+      if (!isValidMiotUrnPattern(propertyType)) {
         throw new TypeError('Invalid MIoT property schema property.');
       }
 
@@ -395,7 +399,7 @@ function isValidEnumMapping(mapping: MiotEnumMapping): boolean {
     entries.length > 0 &&
     entries.every(
       ([pattern, valueMapping]) =>
-        pattern.length > 0 && isValidEnumValueMapping(valueMapping),
+        isValidMiotUrnPattern(pattern) && isValidEnumValueMapping(valueMapping),
     )
   );
 }
@@ -422,7 +426,7 @@ export function selectMiotUrnPatternValue<T>(
     matches.every(
       ([otherPattern]) =>
         pattern === otherPattern ||
-        matchesMiotUrnPattern(pattern, otherPattern),
+        isMiotUrnPatternNestedWithin(pattern, otherPattern),
     ),
   );
 
@@ -434,6 +438,41 @@ export function matchesMiotUrnPattern(
   urn: string,
   pattern: MiotUrnPattern,
 ): boolean {
+  return getMiotUrnPatternAlternatives(pattern).some(alternative =>
+    matchesSingleMiotUrnPattern(urn, alternative),
+  );
+}
+
+function isValidMiotUrnPattern(pattern: MiotUrnPattern): boolean {
+  const alternatives = getMiotUrnPatternAlternatives(pattern);
+
+  return (
+    alternatives.length > 0 &&
+    alternatives.every(alternative => alternative.length > 0)
+  );
+}
+
+function getMiotUrnPatternAlternatives(
+  pattern: MiotUrnPattern,
+): readonly string[] {
+  return pattern.split(',').map(alternative => alternative.trim());
+}
+
+function isMiotUrnPatternNestedWithin(
+  pattern: MiotUrnPattern,
+  otherPattern: MiotUrnPattern,
+): boolean {
+  const alternatives = getMiotUrnPatternAlternatives(pattern);
+  const otherAlternatives = getMiotUrnPatternAlternatives(otherPattern);
+
+  return alternatives.every(alternative =>
+    otherAlternatives.some(otherAlternative =>
+      matchesSingleMiotUrnPattern(alternative, otherAlternative),
+    ),
+  );
+}
+
+function matchesSingleMiotUrnPattern(urn: string, pattern: string): boolean {
   const source = pattern
     .split('*')
     .map(part => part.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&'))

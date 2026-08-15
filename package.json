@@ -8,6 +8,7 @@
   "scripts": {
     "3": "npm install && npm dedupe && npm install",
     "build": "rimraf --glob packages/*/bld && tsc --build",
+    "deploy": "scripts/deploy.sh",
     "lint": "eslint --no-error-on-unmatched-pattern --report-unused-disable-directives .",
     "lint-prettier": "prettier --check .",
     "bare-test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",

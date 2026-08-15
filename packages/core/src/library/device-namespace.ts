@@ -1,4 +1,10 @@
-import {AirConditioner, Dehumidifier, Fan, Light} from './devices/index.js';
+import {
+  AirConditioner,
+  Dehumidifier,
+  Fan,
+  Light,
+  TemperatureHumiditySensor,
+} from './devices/index.js';
 import {register} from './registry.js';
 
 register({
@@ -6,6 +12,7 @@ register({
   dehumidifier: Dehumidifier,
   fan: Fan,
   light: Light,
+  temperatureHumiditySensor: TemperatureHumiditySensor,
 });
 
 declare global {
@@ -16,6 +23,7 @@ declare global {
       dehumidifier: Dehumidifier;
       fan: Fan;
       light: Light;
+      temperatureHumiditySensor: TemperatureHumiditySensor;
     }
   }
 }
