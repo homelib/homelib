@@ -3,6 +3,7 @@ import {
   Dehumidifier,
   Fan,
   Light,
+  PetFeeder,
   TemperatureHumiditySensor,
 } from './devices/index.js';
 import {register} from './registry.js';
@@ -12,6 +13,7 @@ register({
   dehumidifier: Dehumidifier,
   fan: Fan,
   light: Light,
+  petFeeder: PetFeeder,
   temperatureHumiditySensor: TemperatureHumiditySensor,
 });
 
@@ -23,6 +25,7 @@ declare global {
       dehumidifier: Dehumidifier;
       fan: Fan;
       light: Light;
+      petFeeder: PetFeeder;
       temperatureHumiditySensor: TemperatureHumiditySensor;
     }
   }

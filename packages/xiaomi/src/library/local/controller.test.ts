@@ -1,6 +1,10 @@
 import type {BackendClient} from '../backend/index.js';
 import {MiotEndpointConnectionTransportUnavailableError} from '../endpoint-connection.js';
-import {MiotSetPropertyRequest} from '../miot/index.js';
+import {
+  type MiotExecutionRequest,
+  MiotInvokeActionRequest,
+  MiotSetPropertyRequest,
+} from '../miot/index.js';
 
 import type {LocalCertificateManager} from './certificate.js';
 import {
@@ -90,7 +94,14 @@ test('routes commands and messages only with the required device capabilities', 
 
   const request = createRequest('light-1');
   await expect(controller.executeRequest(request)).resolves.toEqual({code: 0});
-  expect(client?.requests).toEqual([request]);
+  const actionRequest = new MiotInvokeActionRequest(
+    {did: 'light-1', siid: 2, aiid: 1},
+    [{piid: 8, value: 10}],
+  );
+  await expect(controller.executeRequest(actionRequest)).resolves.toEqual({
+    code: 0,
+  });
+  expect(client?.requests).toEqual([request, actionRequest]);
   expect(routeChanges.length).toBeGreaterThan(0);
 
   const offlineRouteChangeCount = routeChanges.length;
@@ -110,7 +121,7 @@ test('routes commands and messages only with the required device capabilities', 
   await expect(controller.executeRequest(request)).rejects.toBeInstanceOf(
     MiotEndpointConnectionTransportUnavailableError,
   );
-  expect(client?.requests).toEqual([request]);
+  expect(client?.requests).toEqual([request, actionRequest]);
 
   client?.setDevices(
     new Map([
@@ -307,7 +318,7 @@ class TestLocalMqttClient {
 
   getDeviceListCount = 0;
 
-  readonly requests: ReturnType<typeof createRequest>[] = [];
+  readonly requests: MiotExecutionRequest[] = [];
 
   private devices: ReadonlyMap<string, LocalDeviceInfo> = new Map([
     ['light-1', {online: true, specV2Access: true, pushAvailable: true}],
@@ -346,7 +357,7 @@ class TestLocalMqttClient {
   }
 
   async executeRequest(
-    request: ReturnType<typeof createRequest>,
+    request: MiotExecutionRequest,
   ): Promise<{readonly code: number}> {
     this.requests.push(request);
     return {code: 0};

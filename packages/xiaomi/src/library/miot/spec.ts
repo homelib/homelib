@@ -69,11 +69,22 @@ export const MiotSpecProperty = x.object({
 
 export type MiotSpecProperty = x.TypeOf<typeof MiotSpecProperty>;
 
+export const MiotSpecAction = x.object({
+  iid: x.number,
+  type: x.string,
+  description: x.string,
+  in: x.array(x.number),
+  out: x.array(x.number),
+});
+
+export type MiotSpecAction = x.TypeOf<typeof MiotSpecAction>;
+
 export const MiotSpecService = x.object({
   iid: x.number,
   type: x.string,
   description: x.string,
   properties: x.array(MiotSpecProperty).optional(),
+  actions: x.array(MiotSpecAction).optional(),
 });
 
 export type MiotSpecService = x.TypeOf<typeof MiotSpecService>;

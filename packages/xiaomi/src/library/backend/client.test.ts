@@ -1,4 +1,7 @@
-import {MiotSetPropertyRequest} from '../miot/index.js';
+import {
+  MiotInvokeActionRequest,
+  MiotSetPropertyRequest,
+} from '../miot/index.js';
 
 import {BackendClient} from './client.js';
 
@@ -129,7 +132,7 @@ test('discovers owned and separately shared devices', async () => {
   }
 });
 
-test('gets and sets properties', async () => {
+test('gets and sets properties and invokes actions', async () => {
   const originalFetch = globalThis.fetch;
   const requests: Array<{
     readonly url: string;
@@ -143,9 +146,11 @@ test('gets and sets properties', async () => {
       body: JSON.parse(String(init?.body)) as Record<string, unknown>,
     });
 
-    return jsonResponse([
-      {did: 'device-1', siid: 2, piid: 1, value: true, code: 0},
-    ]);
+    return url.endsWith('/app/v2/miotspec/action')
+      ? jsonResponse({code: 0})
+      : jsonResponse([
+          {did: 'device-1', siid: 2, piid: 1, value: true, code: 0},
+        ]);
   };
 
   try {
@@ -159,6 +164,12 @@ test('gets and sets properties', async () => {
     const writeResults = await client.setProperties([
       new MiotSetPropertyRequest(property, true),
     ]);
+    const actionResult = await client.invokeAction(
+      new MiotInvokeActionRequest({did: 'device-1', siid: 2, aiid: 1}, [
+        {piid: 8, value: 10},
+        {piid: 9, value: 20},
+      ]),
+    );
 
     expect(requests).toEqual([
       expect.objectContaining({
@@ -169,9 +180,16 @@ test('gets and sets properties', async () => {
         url: expect.stringMatching('/app/v2/miotspec/prop/set$'),
         body: {params: [{...property, value: true}]},
       }),
+      expect.objectContaining({
+        url: expect.stringMatching('/app/v2/miotspec/action$'),
+        body: {
+          params: {did: 'device-1', siid: 2, aiid: 1, in: [10, 20]},
+        },
+      }),
     ]);
     expect(readResults).toEqual([{...property, value: true, code: 0}]);
     expect(writeResults).toEqual([{...property, value: true, code: 0}]);
+    expect(actionResult).toEqual({code: 0});
   } finally {
     globalThis.fetch = originalFetch;
   }

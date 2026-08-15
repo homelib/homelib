@@ -10,7 +10,9 @@ import {
 import {
   type MiotExecutionRequest,
   type MiotExecutionResult,
+  type MiotInvokeActionRequest,
   type MiotProperty,
+  MiotSetPropertyRequest,
 } from '../miot/index.js';
 
 import {isMipsGatewayCertificate} from './certificate.js';
@@ -231,33 +233,46 @@ export class LocalMqttClient extends MiotEndpointConnectionTransport {
   override async executeRequest(
     request: MiotExecutionRequest,
   ): Promise<MiotExecutionResult> {
-    const {property} = request;
-    validateProperty(property);
+    const did =
+      request instanceof MiotSetPropertyRequest
+        ? request.property.did
+        : request.action.did;
+    const rpc =
+      request instanceof MiotSetPropertyRequest
+        ? createSetPropertiesRpc(request, this.allocateMessageId())
+        : createInvokeActionRpc(request, this.allocateMessageId());
     const response = requireRecord(
       await this.request('proxy/rpcReq', {
-        did: property.did,
-        rpc: {
-          id: this.allocateMessageId(),
-          method: 'set_properties',
-          params: [{...property, value: request.value}],
-        },
+        did,
+        rpc,
       }),
       'local command response',
     );
 
-    if (Array.isArray(response.result) && response.result.length === 1) {
+    if (
+      request instanceof MiotSetPropertyRequest &&
+      Array.isArray(response.result) &&
+      response.result.length === 1
+    ) {
       const result = requireRecord(
         response.result[0],
         'local command response.result[0]',
       );
 
-      if (result.did !== property.did) {
+      if (result.did !== request.property.did) {
         throw new LocalMqttProtocolError(
           'Local command response has an unexpected device ID.',
         );
       }
 
       return {code: requireInteger(result.code, 'local command result code')};
+    } else if (
+      !(request instanceof MiotSetPropertyRequest) &&
+      response.result !== undefined
+    ) {
+      const result = requireRecord(response.result, 'local action response');
+
+      return {code: requireInteger(result.code, 'local action result code')};
     }
 
     const code = readResponseErrorCode(response);
@@ -1339,6 +1354,53 @@ function validateProperty(property: MiotProperty): void {
   validateDid(property.did);
   requirePositiveInteger(property.siid, 'MIoT property SIID');
   requirePositiveInteger(property.piid, 'MIoT property PIID');
+}
+
+function createSetPropertiesRpc(
+  request: MiotSetPropertyRequest,
+  id: number,
+): {
+  readonly id: number;
+  readonly method: 'set_properties';
+  readonly params: readonly [Record<string, unknown>];
+} {
+  validateProperty(request.property);
+
+  return {
+    id,
+    method: 'set_properties',
+    params: [{...request.property, value: request.value}],
+  };
+}
+
+function createInvokeActionRpc(
+  request: MiotInvokeActionRequest,
+  id: number,
+): {
+  readonly id: number;
+  readonly method: 'action';
+  readonly params: {
+    readonly did: string;
+    readonly siid: number;
+    readonly aiid: number;
+    readonly in: readonly {readonly piid: number; readonly value: unknown}[];
+  };
+} {
+  const {did, siid, aiid} = request.action;
+
+  validateDid(did);
+  requirePositiveInteger(siid, 'MIoT action SIID');
+  requirePositiveInteger(aiid, 'MIoT action AIID');
+
+  for (const input of request.inputs) {
+    requirePositiveInteger(input.piid, 'MIoT action input PIID');
+  }
+
+  return {
+    id,
+    method: 'action',
+    params: {did, siid, aiid, in: request.inputs},
+  };
 }
 
 function validateTimeout(timeoutMilliseconds: number): void {

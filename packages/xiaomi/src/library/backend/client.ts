@@ -1,6 +1,10 @@
 import * as x from 'x-value';
 
-import type {MiotProperty, MiotSetPropertyRequest} from '../miot/index.js';
+import type {
+  MiotInvokeActionRequest,
+  MiotProperty,
+  MiotSetPropertyRequest,
+} from '../miot/index.js';
 
 import {
   BACKEND_API_TIMEOUT,
@@ -25,6 +29,10 @@ const BackendPropertyResultValue = x.object({
   siid: x.number,
   piid: x.number,
   value: x.unknown.optional(),
+  code: x.number,
+});
+
+const BackendActionResultValue = x.object({
   code: x.number,
 });
 
@@ -143,6 +151,20 @@ export class BackendClient {
     });
 
     return x.array(BackendPropertyResultValue).satisfies(result);
+  }
+
+  async invokeAction(
+    request: MiotInvokeActionRequest,
+  ): Promise<BackendActionResult> {
+    const result = await this.post('/app/v2/miotspec/action', {
+      params: {
+        ...request.action,
+        // The Xiaomi cloud API accepts action input values without PIIDs.
+        in: request.inputs.map(input => input.value),
+      },
+    });
+
+    return BackendActionResultValue.satisfies(result);
   }
 
   async getCentralCertificate(certificateRequest: string): Promise<string> {
@@ -373,6 +395,8 @@ export type BackendClientOptions = {
 };
 
 export type BackendPropertyResult = x.TypeOf<typeof BackendPropertyResultValue>;
+
+export type BackendActionResult = x.TypeOf<typeof BackendActionResultValue>;
 
 export type BackendHomeSource = 'owned' | 'shared-home' | 'shared-device';
 

@@ -5,10 +5,11 @@ import {
   MiotEndpointConnectionTransport,
   MiotEndpointConnectionTransportUnavailableError,
 } from '../endpoint-connection.js';
-import type {
-  MiotExecutionRequest,
-  MiotExecutionResult,
-  MiotProperty,
+import {
+  type MiotExecutionRequest,
+  type MiotExecutionResult,
+  type MiotProperty,
+  getMiotExecutionRequestDid,
 } from '../miot/index.js';
 
 import {
@@ -188,7 +189,7 @@ export class LocalController extends MiotEndpointConnectionTransport {
   override async executeRequest(
     request: MiotExecutionRequest,
   ): Promise<MiotExecutionResult> {
-    const did = request.property.did;
+    const did = getMiotExecutionRequestDid(request);
     const client = this.getRequestSource(did);
 
     if (client !== undefined) {

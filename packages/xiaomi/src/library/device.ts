@@ -18,11 +18,15 @@ import {
   createMiotEndpointConnectionResolvedMetadata,
 } from './endpoint-connection.js';
 import {
+  type MiotActionSchema,
   type MiotPropertySchema,
+  type MiotSpecAction,
   type MiotSpecMatchContext,
   type MiotSpecProperty,
   type MiotSpecService,
+  assertMiotActionSchema,
   assertMiotPropertySchema,
+  matchesMiotActionSchema,
   resolveMiotPropertySchema,
 } from './miot/index.js';
 import type {MiotProvider} from './provider.js';
@@ -47,6 +51,7 @@ export type MiotEndpointConnectionConstructor<
   TEndpoint extends ErasedMiotEndpoint = ErasedMiotEndpoint,
 > = {
   readonly Endpoint: MiotEndpointConstructor<TEndpoint>;
+  readonly actions?: MiotActionSchema;
   readonly properties: MiotPropertySchema;
   new (
     provider: MiotProvider,
@@ -147,6 +152,10 @@ export class MiotDeviceRegistry {
       }
 
       assertMiotPropertySchema(Connection.properties);
+
+      if (Connection.actions !== undefined) {
+        assertMiotActionSchema(Connection.actions);
+      }
 
       if (endpointSet.has(Connection.Endpoint)) {
         throw new TypeError(
@@ -347,16 +356,28 @@ export function resolveMiotEndpointConnectionResources(
   Connection: MiotEndpointConnectionConstructor,
   spec: MiotSpecMatchContext,
 ): readonly MiotEndpointConnectionResolvedResource[] | undefined {
-  return resolveMiotPropertySchema(spec, Connection.properties);
+  const resources = resolveMiotPropertySchema(spec, Connection.properties);
+
+  return resources !== undefined &&
+    (Connection.actions === undefined ||
+      matchesMiotActionSchema(resources, Connection.actions))
+    ? resources
+    : undefined;
 }
 
 export function resolvePersistedMiotEndpointConnectionResources(
   Connection: MiotEndpointConnectionConstructor,
   spec: MiotSpecMatchContext,
 ): readonly MiotEndpointConnectionResolvedResource[] | undefined {
-  return resolveMiotPropertySchema(spec, Connection.properties, {
+  const resources = resolveMiotPropertySchema(spec, Connection.properties, {
     allowMultipleOptionalServices: true,
   });
+
+  return resources !== undefined &&
+    (Connection.actions === undefined ||
+      matchesMiotActionSchema(resources, Connection.actions))
+    ? resources
+    : undefined;
 }
 
 export function resolveMiotEndpointConnectionMetadata(
@@ -444,7 +465,18 @@ function serviceEqual(left: MiotSpecService, right: MiotSpecService): boolean {
     left.iid === right.iid &&
     left.type === right.type &&
     left.description === right.description &&
-    optionalPropertyArraysEqual(left.properties, right.properties)
+    optionalPropertyArraysEqual(left.properties, right.properties) &&
+    optionalActionArraysEqual(left.actions, right.actions)
+  );
+}
+
+function actionEqual(left: MiotSpecAction, right: MiotSpecAction): boolean {
+  return (
+    left.iid === right.iid &&
+    left.type === right.type &&
+    left.description === right.description &&
+    numberArraysEqual(left.in, right.in) &&
+    numberArraysEqual(left.out, right.out)
   );
 }
 
@@ -473,6 +505,27 @@ function optionalPropertyArraysEqual(
   }
 
   return unorderedArraysEqual(left, right, propertyEqual);
+}
+
+function optionalActionArraysEqual(
+  left: readonly MiotSpecAction[] | undefined,
+  right: readonly MiotSpecAction[] | undefined,
+): boolean {
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+
+  return unorderedArraysEqual(left, right, actionEqual);
+}
+
+function numberArraysEqual(
+  left: readonly number[],
+  right: readonly number[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function valueRangesEqual(

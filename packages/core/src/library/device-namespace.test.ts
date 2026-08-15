@@ -5,6 +5,7 @@ import {
   Dehumidifier,
   Fan,
   Light,
+  PetFeeder,
   TemperatureHumiditySensor,
 } from './devices/index.js';
 import {getDeviceConstructor} from './registry.js';
@@ -14,6 +15,7 @@ test.each([
   ['dehumidifier', Dehumidifier],
   ['fan', Fan],
   ['light', Light],
+  ['petFeeder', PetFeeder],
   ['temperatureHumiditySensor', TemperatureHumiditySensor],
 ])('registers the %s device constructor', (name, Constructor) => {
   expect(getDeviceConstructor(name)).toBe(Constructor);

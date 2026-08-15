@@ -3,7 +3,10 @@ import {EventEmitter} from 'node:events';
 import type {IClientOptions, MqttClient} from 'mqtt';
 
 import {MiotEndpointConnectionTransportUnavailableError} from '../endpoint-connection.js';
-import {MiotSetPropertyRequest} from '../miot/index.js';
+import {
+  MiotInvokeActionRequest,
+  MiotSetPropertyRequest,
+} from '../miot/index.js';
 
 import {decodeMipsMessage, encodeMipsMessage} from './message.js';
 import {
@@ -169,6 +172,44 @@ test('executes a set-property request through proxy/rpcReq', async () => {
   mqttClient.reply(0, {
     result: [{did: 'device-1', siid: 2, piid: 1, code: 0}],
   });
+
+  await expect(resultPromise).resolves.toEqual({code: 0});
+  await client.disconnect();
+});
+
+test('invokes an action through proxy/rpcReq', async () => {
+  const mqttClient = new TestMqttClient();
+  const client = createClient(mqttClient);
+  await client.connect();
+  const request = new MiotInvokeActionRequest(
+    {did: 'device-1', siid: 2, aiid: 1},
+    [
+      {piid: 8, value: 10},
+      {piid: 9, value: 20},
+    ],
+  );
+
+  const resultPromise = client.executeRequest(request);
+  await waitFor(() => mqttClient.publishCalls.length === 1);
+  const published = readPublishedRequest(mqttClient, 0);
+  expect(published.topic).toBe('master/proxy/rpcReq');
+  expect(published.body).toEqual({
+    did: 'device-1',
+    rpc: {
+      id: expect.any(Number),
+      method: 'action',
+      params: {
+        did: 'device-1',
+        siid: 2,
+        aiid: 1,
+        in: [
+          {piid: 8, value: 10},
+          {piid: 9, value: 20},
+        ],
+      },
+    },
+  });
+  mqttClient.reply(0, {result: {code: 0, out: []}});
 
   await expect(resultPromise).resolves.toEqual({code: 0});
   await client.disconnect();

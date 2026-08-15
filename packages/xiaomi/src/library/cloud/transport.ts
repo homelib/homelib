@@ -1,6 +1,10 @@
 import type {BackendClient} from '../backend/index.js';
 import {MiotEndpointConnectionTransport} from '../endpoint-connection.js';
-import type {MiotExecutionRequest, MiotExecutionResult} from '../miot/index.js';
+import {
+  type MiotExecutionRequest,
+  type MiotExecutionResult,
+  MiotSetPropertyRequest,
+} from '../miot/index.js';
 
 export class MiotEndpointConnectionCloudTransport extends MiotEndpointConnectionTransport {
   private readonly backendClient: BackendClient;
@@ -13,6 +17,10 @@ export class MiotEndpointConnectionCloudTransport extends MiotEndpointConnection
   override async executeRequest(
     request: MiotExecutionRequest,
   ): Promise<MiotExecutionResult> {
+    if (!(request instanceof MiotSetPropertyRequest)) {
+      return this.backendClient.invokeAction(request);
+    }
+
     const results = await this.backendClient.setProperties([request]);
 
     if (results.length !== 1) {

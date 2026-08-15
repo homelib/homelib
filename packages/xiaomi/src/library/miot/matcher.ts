@@ -1,4 +1,5 @@
 import type {
+  MiotSpecAction,
   MiotSpecProperty,
   MiotSpecService,
   MiotSpecValueList,
@@ -31,17 +32,38 @@ export type MiotEnumMapping = Readonly<
   Record<MiotUrnPattern, MiotEnumValueMapping>
 >;
 
+/** Selects a physical property IID from the complete device URN. */
+export type MiotPropertyIidMapping = Readonly<Record<MiotUrnPattern, number>>;
+
 export type MiotPropertyMapping =
   | string
   | {
       readonly name: string;
       readonly enum?: MiotEnumMapping;
+      readonly iid?: MiotPropertyIidMapping;
       readonly optional?: true;
     };
 
 export type MiotPropertySchema = Readonly<
   Record<string, Readonly<Record<string, MiotPropertyMapping>>>
 >;
+
+export type MiotActionMapping = {
+  readonly in: readonly MiotUrnPattern[];
+  readonly out?: readonly MiotUrnPattern[];
+};
+
+/** Required actions grouped by their owning service URN pattern. */
+export type MiotActionSchema = Readonly<
+  Record<MiotUrnPattern, Readonly<Record<MiotUrnPattern, MiotActionMapping>>>
+>;
+
+export type MiotActionSchemaMatch = {
+  readonly service: MiotSpecService;
+  readonly action: MiotSpecAction;
+  readonly in: readonly MiotSpecProperty[];
+  readonly out: readonly MiotSpecProperty[] | undefined;
+};
 
 export type MiotSpecMatchContext = {
   readonly type: string;
@@ -139,7 +161,15 @@ export function assertMiotPropertySchema(schema: MiotPropertySchema): void {
         throw new TypeError('Invalid MIoT property schema property.');
       }
 
-      const {name, enum: enumMapping} = getPropertyMapping(mapping);
+      const {
+        name,
+        enum: enumMapping,
+        iid: iidMapping,
+      } = getPropertyMapping(mapping);
+
+      if (iidMapping !== undefined && !isValidIidMapping(iidMapping)) {
+        throw new TypeError('Invalid MIoT property schema IID.');
+      }
 
       if (name.length === 0 || name === '__proto__' || nameSet.has(name)) {
         throw new TypeError('Invalid MIoT property schema name.');
@@ -152,6 +182,100 @@ export function assertMiotPropertySchema(schema: MiotPropertySchema): void {
       }
     }
   }
+}
+
+export function assertMiotActionSchema(schema: MiotActionSchema): void {
+  const services = Object.entries(schema);
+
+  if (services.length === 0) {
+    throw new TypeError('A MIoT action schema requires a service.');
+  }
+
+  for (const [serviceType, actions] of services) {
+    if (
+      !isValidMiotUrnPattern(serviceType) ||
+      Object.keys(actions).length === 0
+    ) {
+      throw new TypeError('Invalid MIoT action schema service.');
+    }
+
+    for (const [actionType, mapping] of Object.entries(actions)) {
+      if (
+        !isValidMiotUrnPattern(actionType) ||
+        !mapping.in.every(isValidMiotUrnPattern) ||
+        (mapping.out !== undefined && !mapping.out.every(isValidMiotUrnPattern))
+      ) {
+        throw new TypeError('Invalid MIoT action schema action.');
+      }
+    }
+  }
+}
+
+export function matchesMiotActionSchema(
+  resources: readonly MiotPropertySchemaResource[],
+  schema: MiotActionSchema,
+): boolean {
+  return resolveMiotActionSchema(resources, schema) !== undefined;
+}
+
+export function resolveMiotActionSchema(
+  resources: readonly MiotPropertySchemaResource[],
+  schema: MiotActionSchema,
+): readonly MiotActionSchemaMatch[] | undefined {
+  assertMiotActionSchema(schema);
+  const matches: MiotActionSchemaMatch[] = [];
+
+  for (const [serviceType, actionSchema] of Object.entries(schema)) {
+    const matchingResources = resources.filter(resource =>
+      matchesMiotUrnPattern(resource.service.type, serviceType),
+    );
+    const [resource] = matchingResources;
+
+    if (matchingResources.length !== 1 || resource === undefined) {
+      return undefined;
+    }
+
+    for (const [actionType, mapping] of Object.entries(actionSchema)) {
+      const matchingActions = (resource.service.actions ?? []).filter(action =>
+        matchesMiotUrnPattern(action.type, actionType),
+      );
+      const [matchedAction] = matchingActions;
+      const inputProperties =
+        matchedAction === undefined
+          ? undefined
+          : resolveActionProperties(
+              resource.service,
+              matchedAction.in,
+              mapping.in,
+            );
+      const outputProperties =
+        matchedAction === undefined || mapping.out === undefined
+          ? undefined
+          : resolveActionProperties(
+              resource.service,
+              matchedAction.out,
+              mapping.out,
+            );
+
+      if (
+        matchingActions.length !== 1 ||
+        matchedAction === undefined ||
+        inputProperties === undefined ||
+        (mapping.out !== undefined && outputProperties === undefined)
+      ) {
+        return undefined;
+      }
+
+      matches.push({
+        service: resource.service,
+        action: matchedAction,
+        in: inputProperties,
+        out: outputProperties,
+      });
+    }
+  }
+
+  return matches;
 }
 
 export function resolveMiotPropertySchema(
@@ -280,12 +404,20 @@ function resolveServiceProperties(
       mapping.enum === undefined
         ? undefined
         : selectMiotUrnPatternValue(deviceType, mapping.enum);
-    const candidates = findPropertyCandidates(
-      service,
-      propertyType,
-      enumMapping,
-      mapping.enum !== undefined,
-    );
+    const iid =
+      mapping.iid === undefined
+        ? undefined
+        : selectMiotUrnPatternValue(deviceType, mapping.iid);
+    const candidates =
+      mapping.iid !== undefined && iid === undefined
+        ? []
+        : findPropertyCandidates(
+            service,
+            propertyType,
+            enumMapping,
+            mapping.enum !== undefined,
+            iid,
+          );
     const [property] = candidates;
 
     if (!mapping.optional) {
@@ -337,9 +469,13 @@ function findPropertyCandidates(
   propertyType: string,
   enumMapping: MiotEnumValueMapping | undefined,
   requiresEnumMapping: boolean,
+  iid: number | undefined,
 ): readonly MiotSpecProperty[] {
   return (service.properties ?? []).filter(property => {
-    if (!matchesMiotUrnPattern(property.type, propertyType)) {
+    if (
+      !matchesMiotUrnPattern(property.type, propertyType) ||
+      (iid !== undefined && property.iid !== iid)
+    ) {
       return false;
     }
 
@@ -369,6 +505,39 @@ function findPropertyCandidates(
   });
 }
 
+function resolveActionProperties(
+  service: MiotSpecService,
+  propertyIids: readonly number[],
+  propertyTypes: readonly MiotUrnPattern[],
+): readonly MiotSpecProperty[] | undefined {
+  if (propertyIids.length !== propertyTypes.length) {
+    return undefined;
+  }
+
+  const properties: MiotSpecProperty[] = [];
+
+  for (const [index, iid] of propertyIids.entries()) {
+    const propertyType = propertyTypes[index];
+    const candidates = (service.properties ?? []).filter(
+      property => property.iid === iid,
+    );
+    const [property] = candidates;
+
+    if (
+      candidates.length !== 1 ||
+      property === undefined ||
+      propertyType === undefined ||
+      !matchesMiotUrnPattern(property.type, propertyType)
+    ) {
+      return undefined;
+    }
+
+    properties.push(property);
+  }
+
+  return properties;
+}
+
 function resolveProperty(
   property: MiotSpecProperty,
   enumMapping: MiotEnumValueMapping | undefined,
@@ -381,6 +550,7 @@ function resolveProperty(
 function getPropertyMapping(mapping: MiotPropertyMapping): {
   readonly name: string;
   readonly enum?: MiotEnumMapping;
+  readonly iid?: MiotPropertyIidMapping;
   readonly optional: boolean;
 } {
   return typeof mapping === 'string'
@@ -388,6 +558,7 @@ function getPropertyMapping(mapping: MiotPropertyMapping): {
     : {
         name: mapping.name,
         enum: mapping.enum,
+        iid: mapping.iid,
         optional: mapping.optional === true,
       };
 }
@@ -400,6 +571,18 @@ function isValidEnumMapping(mapping: MiotEnumMapping): boolean {
     entries.every(
       ([pattern, valueMapping]) =>
         isValidMiotUrnPattern(pattern) && isValidEnumValueMapping(valueMapping),
+    )
+  );
+}
+
+function isValidIidMapping(mapping: MiotPropertyIidMapping): boolean {
+  const entries = Object.entries(mapping);
+
+  return (
+    entries.length > 0 &&
+    entries.every(
+      ([pattern, iid]) =>
+        isValidMiotUrnPattern(pattern) && Number.isInteger(iid) && iid > 0,
     )
   );
 }

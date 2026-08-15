@@ -1,8 +1,22 @@
 import {
+  MiotSpecAction,
   MiotSpecClient,
   type MiotSpecInstance,
   MiotSpecProperty,
 } from './spec.js';
+
+test('preserves typed action input and output property identifiers', () => {
+  const action = MiotSpecAction.satisfies({
+    iid: 1,
+    type: 'urn:miot-spec-v2:action:pet-food-out:0000282B:test:1',
+    description: 'Pet Food Out',
+    in: [8],
+    out: [9],
+  });
+
+  expect(action.in).toEqual([8]);
+  expect(action.out).toEqual([9]);
+});
 
 test('preserves a property unit and value range', () => {
   const property = MiotSpecProperty.satisfies({

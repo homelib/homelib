@@ -3,6 +3,7 @@ import {
   Dehumidifier,
   Fan,
   Light,
+  PetFeeder,
   TemperatureHumiditySensor,
   register,
 } from '@homelib/core';
@@ -17,6 +18,7 @@ import {
   MiotDehumidifierEndpointConnection,
   MiotFanEndpointConnection,
   MiotLightEndpointConnection,
+  MiotPetFeederEndpointConnection,
   MiotPlaceholderDevice,
   MiotTemperatureHumiditySensorEndpointConnection,
 } from './devices/index.js';
@@ -30,6 +32,7 @@ registerMiotDevice(AirConditioner, MiotAirConditionerEndpointConnection);
 registerMiotDevice(Dehumidifier, MiotDehumidifierEndpointConnection);
 registerMiotDevice(Fan, MiotFanEndpointConnection);
 registerMiotDevice(Light, MiotLightEndpointConnection);
+registerMiotDevice(PetFeeder, MiotPetFeederEndpointConnection);
 registerMiotDevice(
   TemperatureHumiditySensor,
   MiotTemperatureHumiditySensorEndpointConnection,

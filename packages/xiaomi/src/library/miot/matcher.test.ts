@@ -4,6 +4,7 @@ import {
   type MiotPropertySchemaResource,
   isValidMiotSpecValueList,
   isValidMiotSpecValueRange,
+  matchesMiotActionSchema,
   matchesMiotUrnPattern,
   resolveMiotPropertySchema,
 } from './matcher.js';
@@ -266,6 +267,83 @@ test('rejects an ambiguous required property', () => {
   });
 
   expect(resolveTestSchema([service], LIGHT_SCHEMA)).toBeUndefined();
+});
+
+test('uses a property IID to disambiguate duplicate property types', () => {
+  const schema = {
+    [LIGHT_SERVICE_TYPE]: {
+      [ON_PROPERTY_TYPE]: {
+        name: 'on',
+        iid: {[ZHIMI_FAN_DEVICE_PATTERN]: 2},
+      },
+    },
+  } as const satisfies MiotPropertySchema;
+  const service = createLightService({
+    properties: [
+      createProperty(1, ON_PROPERTY_TYPE),
+      createProperty(2, `${ON_PROPERTY_TYPE}:vendor:1`),
+    ],
+  });
+
+  expect(resolveTestSchema([service], schema)).toBeUndefined();
+  expect(
+    resolveTestSchema([service], schema, {
+      deviceType: ZHIMI_FAN_DEVICE_TYPE,
+    }),
+  ).toMatchObject([{service: {iid: 2}, properties: {on: {iid: 2}}}]);
+});
+
+test('matches a required action and its ordered input and output properties', () => {
+  const actionType = 'urn:miot-spec-v2:action:test:00002801';
+  const service = createLightService({
+    properties: [
+      createProperty(1, ON_PROPERTY_TYPE),
+      createProperty(2, BRIGHTNESS_PROPERTY_TYPE),
+    ],
+    actions: [
+      {
+        iid: 1,
+        type: actionType,
+        description: 'Test',
+        in: [2, 1],
+        out: [1],
+      },
+    ],
+  });
+  const resources = resolveTestSchema([service], LIGHT_SCHEMA) ?? [];
+  const actionSchema = {
+    [LIGHT_SERVICE_TYPE]: {
+      [actionType]: {
+        in: [BRIGHTNESS_PROPERTY_TYPE, ON_PROPERTY_TYPE],
+        out: [ON_PROPERTY_TYPE],
+      },
+    },
+  } as const;
+
+  expect(matchesMiotActionSchema(resources, actionSchema)).toBe(true);
+  expect(
+    matchesMiotActionSchema(resources, {
+      [LIGHT_SERVICE_TYPE]: {
+        [actionType]: {
+          in: [ON_PROPERTY_TYPE, BRIGHTNESS_PROPERTY_TYPE],
+        },
+      },
+    }),
+  ).toBe(false);
+
+  service.actions?.push({...service.actions[0]!, iid: 2});
+  expect(matchesMiotActionSchema(resources, actionSchema)).toBe(false);
+});
+
+test('rejects an invalid action schema', () => {
+  const resources =
+    resolveTestSchema([createLightService()], LIGHT_SCHEMA) ?? [];
+
+  expect(() =>
+    matchesMiotActionSchema(resources, {
+      [LIGHT_SERVICE_TYPE]: {'': {in: []}},
+    }),
+  ).toThrow(TypeError);
 });
 
 test('omits an ambiguous optional property without rejecting the service', () => {
@@ -668,6 +746,34 @@ test.each([
   [
     'an empty object name',
     {[LIGHT_SERVICE_TYPE]: {[ON_PROPERTY_TYPE]: {name: ''}}},
+  ],
+  [
+    'an empty property IID mapping',
+    {[LIGHT_SERVICE_TYPE]: {[ON_PROPERTY_TYPE]: {name: 'on', iid: {}}}},
+  ],
+  [
+    'an empty property IID pattern',
+    {
+      [LIGHT_SERVICE_TYPE]: {
+        [ON_PROPERTY_TYPE]: {name: 'on', iid: {'': 1}},
+      },
+    },
+  ],
+  [
+    'a non-positive property IID',
+    {
+      [LIGHT_SERVICE_TYPE]: {
+        [ON_PROPERTY_TYPE]: {name: 'on', iid: {'*': 0}},
+      },
+    },
+  ],
+  [
+    'a non-integer property IID',
+    {
+      [LIGHT_SERVICE_TYPE]: {
+        [ON_PROPERTY_TYPE]: {name: 'on', iid: {'*': 1.5}},
+      },
+    },
   ],
   [
     'a duplicate name',

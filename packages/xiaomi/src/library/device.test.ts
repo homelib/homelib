@@ -342,6 +342,52 @@ test('compares value-list descriptions and value-range tuple positions', () => {
   ).toBe(false);
 });
 
+test('compares persisted action definitions', () => {
+  const Connection = createConnection();
+  const metadata = createMiotEndpointConnectionMetadata(
+    TEST_DEVICE,
+    DEVICE_TYPE,
+    requireResources(Connection, [createLightService(2)]),
+  );
+  const withAction = MiotEndpointConnectionMetadata.satisfies({
+    ...metadata,
+    resources: metadata.resources.map(resource => ({
+      service: {
+        ...resource.service,
+        actions: [
+          {
+            iid: 1,
+            type: 'urn:miot-spec-v2:action:toggle:00002803:test:1',
+            description: 'Toggle',
+            in: [1, 2],
+            out: [],
+          },
+        ],
+      },
+    })),
+  });
+  const reorderedInputs = MiotEndpointConnectionMetadata.satisfies({
+    ...withAction,
+    resources: withAction.resources.map(resource => ({
+      service: {
+        ...resource.service,
+        actions: resource.service.actions?.map(action => ({
+          ...action,
+          in: action.in.toReversed(),
+        })),
+      },
+    })),
+  });
+
+  expect(miotEndpointConnectionMetadataEqual(metadata, withAction)).toBe(false);
+  expect(miotEndpointConnectionMetadataEqual(withAction, withAction)).toBe(
+    true,
+  );
+  expect(miotEndpointConnectionMetadataEqual(withAction, reorderedInputs)).toBe(
+    false,
+  );
+});
+
 test('rejects duplicate devices but allows device-specific connections', () => {
   class SpecializedLightEndpoint extends LightEndpoint {}
   class FirstDevice extends Device {}
