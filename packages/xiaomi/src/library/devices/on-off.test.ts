@@ -20,7 +20,7 @@ import {
   resolveMiotEndpointConnectionResources,
 } from '../device.js';
 import {
-  type MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionIdentityMetadata,
   type MiotEndpointConnectionResolvedMetadata,
   MiotEndpointConnectionTransport,
   type MiotPropertyUpdate,
@@ -143,14 +143,16 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
 
       expect(options.Connection.Endpoint).toBe(options.Endpoint);
       expect(metadata).toMatchObject({
+        version: 1,
         device: {did: 'device-1', urn: spec.type},
-        resources: [{service: {iid: 2}}],
       });
-      expect(metadata.resources[0]).not.toHaveProperty('properties');
+      expect(metadata).not.toHaveProperty('resources');
       const resolvedMetadata = resolveMiotEndpointConnectionMetadata(
         options.Connection,
         metadata,
+        spec,
       );
+      expect(resolvedMetadata.resources).toMatchObject([{service: {iid: 2}}]);
       const binding = createMiotDeviceEndpointConnectionBinding(
         options.Connection,
         new MiotProvider('provider'),
@@ -178,14 +180,16 @@ function defineOnOffEndpointTests<TConnection extends OnOffConnection>(
     });
 
     test('persists and resolves the deterministic property mapping', () => {
+      const spec = createSpec(options);
       const metadata = findPersistedMetadata(
         options.Connection,
-        createSpec(options),
+        spec,
         options.name,
       );
       const resolvedMetadata = resolveMiotEndpointConnectionMetadata(
         options.Connection,
         metadata,
+        spec,
       );
 
       expect(resolvedMetadata.resources[0]?.properties).toEqual({
@@ -313,20 +317,25 @@ function createMetadata(
     'Connection' | 'deviceType' | 'name' | 'serviceType'
   >,
 ): MiotEndpointConnectionResolvedMetadata {
+  const spec = createSpec(options);
   const metadata = findPersistedMetadata(
     options.Connection,
-    createSpec(options),
+    spec,
     options.name,
   );
 
-  return resolveMiotEndpointConnectionMetadata(options.Connection, metadata);
+  return resolveMiotEndpointConnectionMetadata(
+    options.Connection,
+    metadata,
+    spec,
+  );
 }
 
 function findPersistedMetadata(
   Connection: MiotEndpointConnectionConstructor,
   spec: MiotSpecInstance,
   name: string,
-): MiotEndpointConnectionMetadata {
+): MiotEndpointConnectionIdentityMetadata {
   const resources = resolveMiotEndpointConnectionResources(Connection, spec);
 
   if (resources === undefined) {
@@ -335,8 +344,7 @@ function findPersistedMetadata(
 
   return createMiotEndpointConnectionMetadata(
     {did: 'device-1', model: `test.${name}`},
-    spec.type,
-    resources,
+    spec,
   );
 }
 

@@ -9,13 +9,16 @@ import {
 } from '@homelib/core';
 
 import {
+  type LegacyMiotEndpointConnectionMetadata,
   type MiotEndpointConnection,
-  MiotEndpointConnectionMetadata,
+  MiotEndpointConnectionIdentityMetadata,
+  type MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionResolvedResource,
   type MiotEndpointConnectionResource,
   type MiotEndpointConnectionTransports,
   createMiotEndpointConnectionResolvedMetadata,
+  isLegacyMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import {
   type MiotActionSchema,
@@ -26,6 +29,7 @@ import {
   type MiotResolvedSpecProperty,
   type MiotSpecAction,
   type MiotSpecEvent,
+  type MiotSpecInstance,
   type MiotSpecMatchContext,
   type MiotSpecProperty,
   type MiotSpecService,
@@ -466,8 +470,32 @@ function mergeMiotEndpointConnectionResources(
 
 export function resolveMiotEndpointConnectionMetadata(
   Connection: MiotEndpointConnectionConstructor,
+  metadata: MiotEndpointConnectionIdentityMetadata,
+  spec: MiotSpecInstance,
+): MiotEndpointConnectionResolvedMetadata;
+export function resolveMiotEndpointConnectionMetadata(
+  Connection: MiotEndpointConnectionConstructor,
+  metadata: LegacyMiotEndpointConnectionMetadata,
+): MiotEndpointConnectionResolvedMetadata;
+export function resolveMiotEndpointConnectionMetadata(
+  Connection: MiotEndpointConnectionConstructor,
   metadata: MiotEndpointConnectionMetadata,
+  spec?: MiotSpecInstance,
 ): MiotEndpointConnectionResolvedMetadata {
+  if (!isLegacyMiotEndpointConnectionMetadata(metadata)) {
+    if (spec === undefined || spec.type !== metadata.device.urn) {
+      throw new TypeError('Invalid MIoT endpoint metadata spec.');
+    }
+
+    const resources = resolveMiotEndpointConnectionResources(Connection, spec);
+
+    if (resources === undefined || resources.length === 0) {
+      throw new TypeError('Invalid MIoT endpoint metadata.');
+    }
+
+    return createMiotEndpointConnectionResolvedMetadata(metadata, resources);
+  }
+
   const resources = resolvePersistedMiotEndpointConnectionResources(
     Connection,
     {
@@ -489,14 +517,11 @@ export function resolveMiotEndpointConnectionMetadata(
 
 export function createMiotEndpointConnectionMetadata(
   device: MiotPhysicalDevice,
-  urn: string,
-  resources: readonly MiotEndpointConnectionResolvedResource[],
-): MiotEndpointConnectionMetadata {
-  return MiotEndpointConnectionMetadata.satisfies({
-    device: {did: device.did, model: device.model, urn},
-    resources: resources
-      .toSorted(compareResources)
-      .map(resource => ({service: resource.service})),
+  spec: MiotSpecInstance,
+): MiotEndpointConnectionIdentityMetadata {
+  return MiotEndpointConnectionIdentityMetadata.satisfies({
+    version: 1,
+    device: {did: device.did, model: device.model, urn: spec.type},
   });
 }
 
@@ -504,12 +529,22 @@ export function miotEndpointConnectionMetadataEqual(
   left: MiotEndpointConnectionMetadata,
   right: MiotEndpointConnectionMetadata,
 ): boolean {
-  return (
-    left.device.did === right.device.did &&
-    left.device.model === right.device.model &&
-    left.device.urn === right.device.urn &&
-    endpointResourcesEqual(left.resources, right.resources)
-  );
+  if (
+    left.device.did !== right.device.did ||
+    left.device.model !== right.device.model ||
+    left.device.urn !== right.device.urn
+  ) {
+    return false;
+  }
+
+  if (isLegacyMiotEndpointConnectionMetadata(left)) {
+    return (
+      isLegacyMiotEndpointConnectionMetadata(right) &&
+      endpointResourcesEqual(left.resources, right.resources)
+    );
+  }
+
+  return !isLegacyMiotEndpointConnectionMetadata(right);
 }
 
 function resolvedResourcesMatchMetadata(
@@ -696,11 +731,4 @@ function unorderedArraysEqual<T>(
   }
 
   return true;
-}
-
-function compareResources(
-  left: MiotEndpointConnectionResolvedResource,
-  right: MiotEndpointConnectionResolvedResource,
-): number {
-  return left.service.iid - right.service.iid;
 }

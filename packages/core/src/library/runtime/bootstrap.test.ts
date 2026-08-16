@@ -52,10 +52,27 @@ test('validates metadata before creating an endpoint connection', async () => {
 
   expect(provider.endpointConnections).toHaveLength(0);
 
-  await plan.create();
+  const preparedPlan = await plan.prepare();
+
+  expect(preparedPlan.persistedMetadata).toEqual({
+    value: 'metadata canonical',
+  });
+  expect(provider.endpointConnections).toHaveLength(0);
+
+  await preparedPlan.create();
 
   expect(provider.endpointConnections).toHaveLength(1);
   expect(provider.receivedDeviceConstructors).toEqual([TestDevice]);
+
+  provider.returnInvalidPersistedMetadata = true;
+
+  await expect(
+    provider
+      .createEndpointConnectionBindingPlan(endpoint, [TestDevice], {
+        value: 'invalid canonical metadata',
+      })
+      .prepare(),
+  ).rejects.toThrow('Value does not satisfy the type');
 });
 
 test('binds configured endpoints before resolving', async () => {
@@ -133,13 +150,46 @@ test('binds configured endpoints before resolving', async () => {
       ]);
       expect(context.initialBindingFile.bindings).toHaveLength(3);
 
-      await context.updateBindingFile(bindingFile => ({
-        ...bindingFile,
-        bindings: bindingFile.bindings.map(binding => ({
-          ...binding,
-          metadata: {value: 'updated metadata'},
-        })),
-      }));
+      let continueFirstUpdate!: () => void;
+      let secondUpdateStarted = false;
+      const firstUpdate = context.updateBindingFile(async bindingFile => {
+        await new Promise<void>(resolve => {
+          continueFirstUpdate = resolve;
+        });
+
+        return {
+          ...bindingFile,
+          bindings: bindingFile.bindings.map(binding => ({
+            ...binding,
+            metadata: {value: 'intermediate metadata'},
+          })),
+        };
+      });
+      const secondUpdate = context.updateBindingFile(bindingFile => {
+        secondUpdateStarted = true;
+        expect(
+          bindingFile.bindings.every(
+            binding =>
+              typeof binding.metadata === 'object' &&
+              binding.metadata !== null &&
+              'value' in binding.metadata &&
+              binding.metadata.value === 'intermediate metadata',
+          ),
+        ).toBe(true);
+
+        return {
+          ...bindingFile,
+          bindings: bindingFile.bindings.map(binding => ({
+            ...binding,
+            metadata: {value: 'updated metadata'},
+          })),
+        };
+      });
+
+      await Promise.resolve();
+      expect(secondUpdateStarted).toBe(false);
+      continueFirstUpdate();
+      await Promise.all([firstUpdate, secondUpdate]);
     });
 
     await bootstrap();
@@ -161,7 +211,15 @@ test('binds configured endpoints before resolving', async () => {
 
     expect(provider.processedValues).toEqual([1, 2]);
     expect(provider.receivedMetadata).toEqual({value: 'updated metadata'});
+    expect(provider.metadataWhenCreating).toEqual({
+      value: 'updated metadata canonical',
+    });
     expect(provider.receivedDeviceConstructors).toEqual([TestDevice]);
+    expect(
+      persistedBindingFile.bindings.find(
+        binding => binding.endpoint.deviceName === 'device',
+      )?.metadata,
+    ).toEqual({value: 'updated metadata canonical'});
 
     if (bootstrapContext === undefined) {
       throw new Error('Bootstrap frontend was not presented.');
@@ -217,6 +275,10 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
 
   receivedDeviceConstructors: readonly DeviceConstructor<Device>[] | undefined;
 
+  metadataWhenCreating: unknown;
+
+  returnInvalidPersistedMetadata = false;
+
   private readonly connectionValues: TestEndpointConnection[] = [];
 
   override get endpointConnections(): readonly TestEndpointConnection[] {
@@ -233,7 +295,7 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
     endpoint: EndpointReference,
     deviceConstructors: readonly DeviceConstructor<Device>[],
     metadata: TestEndpointConnectionMetadata,
-  ): EndpointConnectionBindingPlan {
+  ): EndpointConnectionBindingPlan<TestEndpointConnectionMetadata> {
     if (!(endpoint instanceof TestEndpoint)) {
       throw new TypeError('Unexpected test endpoint.');
     }
@@ -242,14 +304,27 @@ class TestProvider extends Provider<TestEndpointConnectionMetadata> {
     this.receivedDeviceConstructors = deviceConstructors;
 
     return {
-      resourceKeys: [],
-      create: () => {
-        const connection = new TestEndpointConnection(this);
-        this.connectionValues.push(connection);
+      prepare: async () => {
+        await Promise.resolve();
 
-        return Promise.resolve(
-          createEndpointConnectionBinding(endpoint, connection),
-        );
+        return {
+          resourceKeys: [metadata.value],
+          persistedMetadata: this.returnInvalidPersistedMetadata
+            ? ({value: 1} as unknown as TestEndpointConnectionMetadata)
+            : {value: `${metadata.value} canonical`},
+          create: async () => {
+            const bindingFile = await readBindingFile();
+
+            this.metadataWhenCreating = bindingFile.bindings.find(
+              binding => binding.provider.name === this.name,
+            )?.metadata;
+
+            const connection = new TestEndpointConnection(this);
+            this.connectionValues.push(connection);
+
+            return createEndpointConnectionBinding(endpoint, connection);
+          },
+        };
       },
     };
   }

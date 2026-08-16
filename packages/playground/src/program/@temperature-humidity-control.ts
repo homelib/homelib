@@ -13,7 +13,10 @@ import {
 import _ from 'lodash';
 
 const VERY_HIGH_TEMPERATURE_OFFSET = 2;
-const FULL_FAN_SPEED_TEMPERATURE_DIFFERENCE = 4;
+
+const DRY_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE = 2;
+const COOL_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE = 4;
+const HEAT_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE = 4;
 
 // 很多垃圾空调到了指定温度后还会继续制冷，所以需要一个后退值。
 const TEMPERATURE_BACKOFF = 4;
@@ -188,7 +191,14 @@ export function setupTemperatureHumidityControl(
       airConditioner
         .setMode('dry')
         .setTargetHumidity(idealRelativeHumidityLowerLimit)
-        .setFanSpeed('auto');
+        .setFanSpeed(
+          _.clamp(
+            (temperature - idealTemperatureUpperLimit) /
+              DRY_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE,
+            0,
+            1,
+          ),
+        );
     };
 
     const setAirConditionerCoolMode = (targetTemperature: number): void => {
@@ -198,7 +208,7 @@ export function setupTemperatureHumidityControl(
         .setFanSpeed(
           _.clamp(
             (temperature - idealTemperatureUpperLimit) /
-              FULL_FAN_SPEED_TEMPERATURE_DIFFERENCE,
+              COOL_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE,
             0,
             1,
           ),
@@ -212,7 +222,7 @@ export function setupTemperatureHumidityControl(
         .setFanSpeed(
           _.clamp(
             (idealTemperatureLowerLimit - temperature) /
-              FULL_FAN_SPEED_TEMPERATURE_DIFFERENCE,
+              HEAT_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE,
             0,
             1,
           ),

@@ -3,6 +3,7 @@ import type {Device, DeviceConstructor} from '../device.js';
 import type {EndpointReference} from '../endpoint.js';
 import type {RuntimeProvider} from '../provider.js';
 
+import {prepareEndpointConnectionBindingPlans} from './@binding-creation.js';
 import {
   type BindingFile,
   type EndpointBinding,
@@ -22,7 +23,9 @@ export type BootstrapContext = {
   readonly bindingScopes: readonly BootstrapBindingScope[];
   readonly initialBindingFile: BindingFile;
   readonly updateBindingFile: (
-    createNextBindingFile: (currentBindingFile: BindingFile) => BindingFile,
+    createNextBindingFile: (
+      currentBindingFile: BindingFile,
+    ) => BindingFile | PromiseLike<BindingFile>,
   ) => Promise<BindingFile>;
 };
 
@@ -60,6 +63,8 @@ export type ProviderBindingDevice = {
 
 export type ProviderBindingRecord = {
   readonly endpoint: EndpointPath;
+  readonly endpointReference: EndpointReference;
+  readonly deviceConstructors: readonly DeviceConstructor<Device>[];
   readonly metadata: unknown;
 };
 
@@ -84,14 +89,14 @@ export function getBootstrapFrontend(): BootstrapFrontend | undefined {
   return bootstrapFrontend;
 }
 
-export function applyProviderBindingRequests(
+export async function applyProviderBindingRequests(
   bindingFile: BindingFile,
   requests: readonly ProviderBindingRequest[],
   providerReference: EndpointBinding['provider'],
   provider: RuntimeProvider,
   device: ProviderBindingDevice,
   scopes: readonly BootstrapBindingScope[],
-): BindingFile {
+): Promise<BindingFile> {
   const endpointPathKeySet = new Set<string>();
   const resolvedRequests = requests.map(request => {
     const endpointPathKey = getEndpointPathKey(request.endpoint);
@@ -135,23 +140,21 @@ export function applyProviderBindingRequests(
     });
   }
 
-  assertProviderResourceBindingsUnique(
+  return prepareProviderResourceBindings(
     nextBindingFile,
     providerReference,
     provider,
     scopes,
   );
-
-  return nextBindingFile;
 }
 
-function assertProviderResourceBindingsUnique(
+async function prepareProviderResourceBindings(
   bindingFile: BindingFile,
   providerReference: EndpointBinding['provider'],
   provider: RuntimeProvider,
   scopes: readonly BootstrapBindingScope[],
-): void {
-  const resourceKeySet = new Set<string>();
+): Promise<BindingFile> {
+  const planEntries = [];
 
   for (const binding of bindingFile.bindings) {
     if (
@@ -175,6 +178,22 @@ function assertProviderResourceBindingsUnique(
       binding.metadata,
     );
 
+    planEntries.push({binding, plan});
+  }
+
+  const preparedPlans = await prepareEndpointConnectionBindingPlans(
+    planEntries.map(({plan}) => plan),
+  );
+  const resourceKeySet = new Set<string>();
+  let nextBindingFile = bindingFile;
+
+  for (const [index, {binding}] of planEntries.entries()) {
+    const plan = preparedPlans[index];
+
+    if (plan === undefined) {
+      throw new Error('Prepared endpoint connection binding plan is missing.');
+    }
+
     for (const resourceKey of plan.resourceKeys) {
       if (resourceKeySet.has(resourceKey)) {
         throw new Error(`Provider resource is already bound: ${resourceKey}.`);
@@ -182,7 +201,14 @@ function assertProviderResourceBindingsUnique(
 
       resourceKeySet.add(resourceKey);
     }
+
+    nextBindingFile = upsertEndpointBinding(nextBindingFile, {
+      ...binding,
+      metadata: plan.persistedMetadata,
+    });
   }
+
+  return nextBindingFile;
 }
 
 function findProviderBindingEndpoint(

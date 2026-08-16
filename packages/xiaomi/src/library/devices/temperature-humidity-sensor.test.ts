@@ -106,12 +106,12 @@ test('reads temperature and relative humidity from MIoT state', () => {
 
   const persistedMetadata = createMiotEndpointConnectionMetadata(
     {did: 'sensor-1', model: 'lumi.sensor_ht.agl02'},
-    spec.type,
-    resources,
+    spec,
   );
   const metadata = resolveMiotEndpointConnectionMetadata(
     MiotTemperatureHumiditySensorEndpointConnection,
     persistedMetadata,
+    spec,
   );
   const connection = new MiotTemperatureHumiditySensorEndpointConnection(
     new MiotProvider('provider'),
@@ -127,10 +127,8 @@ test('reads temperature and relative humidity from MIoT state', () => {
     'relative-humidity',
   );
 
-  expect(persistedMetadata.resources).toEqual([
-    {service: expect.objectContaining({iid: 2})},
-  ]);
-  expect(persistedMetadata.resources[0]).not.toHaveProperty('properties');
+  expect(persistedMetadata).not.toHaveProperty('resources');
+  expect(metadata.resources.map(({service}) => service.iid)).toEqual([2]);
   expect(connection.stateProperties).toHaveLength(2);
 
   connection.handleStateUpdate({

@@ -16,6 +16,7 @@ import {
   resolveMiotEndpointConnectionResources,
 } from './device.js';
 import {
+  LegacyMiotEndpointConnectionMetadata,
   MiotEndpointConnection,
   MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionResolvedResource,
@@ -23,6 +24,7 @@ import {
 } from './endpoint-connection.js';
 import type {
   MiotPropertySchema,
+  MiotSpecInstance,
   MiotSpecProperty,
   MiotSpecService,
 } from './miot/index.js';
@@ -143,27 +145,29 @@ test('rejects two declarations that resolve to the same service', () => {
   ).toBeUndefined();
 });
 
-test('persists only physical services and derives aliases on restore', () => {
+test('persists only device identity and derives resources from the full spec', () => {
   const Connection = createConnection();
   const services = [createLightService(2), createEnvironmentService(4, 'both')];
-  const resources = requireResources(Connection, services);
-  const metadata = createMiotEndpointConnectionMetadata(
-    TEST_DEVICE,
-    DEVICE_TYPE,
-    resources,
+  const spec = createSpec(services);
+  const metadata = createMiotEndpointConnectionMetadata(TEST_DEVICE, spec);
+  const resolved = resolveMiotEndpointConnectionMetadata(
+    Connection,
+    metadata,
+    spec,
   );
 
-  expect(metadata.resources).toEqual(services.map(service => ({service})));
-  expect(
-    resolveMiotEndpointConnectionMetadata(Connection, metadata).resources,
-  ).toMatchObject([
+  expect(metadata).toEqual({
+    version: 1,
+    device: {...TEST_DEVICE, urn: DEVICE_TYPE},
+  });
+  expect(resolved.resources).toMatchObject([
     {service: {iid: 2}, properties: {on: {iid: 1}, mode: {iid: 2}}},
     {
       service: {iid: 4},
       properties: {temperature: {iid: 1}, relativeHumidity: {iid: 2}},
     },
   ]);
-  expect(getMiotEndpointConnectionResourceKeys(metadata)).toEqual([
+  expect(getMiotEndpointConnectionResourceKeys(resolved)).toEqual([
     JSON.stringify(['physical', 2]),
     JSON.stringify(['physical', 4]),
   ]);
@@ -176,10 +180,7 @@ test('restores a previously selected split environment without discovery', () =>
     createEnvironmentService(4, 'temperature'),
     createEnvironmentService(5, 'relativeHumidity'),
   ];
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
-    device: {...TEST_DEVICE, urn: DEVICE_TYPE},
-    resources: services.map(service => ({service})),
-  });
+  const metadata = createLegacyMetadata(services);
 
   expect(
     resolveMiotEndpointConnectionResources(Connection, createSpec(services)),
@@ -195,10 +196,10 @@ test('restores a previously selected split environment without discovery', () =>
 
 test('restores the enum mapping selected by the persisted device URN', () => {
   const Connection = createConnection();
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
-    device: {...TEST_DEVICE, urn: ALTERNATE_DEVICE_TYPE},
-    resources: [{service: createLightService(2)}],
-  });
+  const metadata = createLegacyMetadata(
+    [createLightService(2)],
+    ALTERNATE_DEVICE_TYPE,
+  );
   const resolved = resolveMiotEndpointConnectionMetadata(Connection, metadata);
 
   expect(resolved.resources[0]?.properties.mode?.enum).toEqual({off: 1, on: 0});
@@ -212,21 +213,63 @@ test('derives newly supported optional properties from persisted services', () =
   });
   const withMode = createConnection();
   const services = [createLightService(2)];
-  const metadata = createMiotEndpointConnectionMetadata(
-    TEST_DEVICE,
-    DEVICE_TYPE,
-    requireResources(withoutMode, services),
-  );
+  const spec = createSpec(services);
+  const metadata = createMiotEndpointConnectionMetadata(TEST_DEVICE, spec);
 
   expect(
-    resolveMiotEndpointConnectionMetadata(withMode, metadata).resources[0]
+    resolveMiotEndpointConnectionMetadata(withoutMode, metadata, spec)
+      .resources[0]?.properties,
+  ).toEqual({on: expect.objectContaining({iid: 1})});
+
+  expect(
+    resolveMiotEndpointConnectionMetadata(withMode, metadata, spec).resources[0]
       ?.properties,
   ).toMatchObject({on: {iid: 1}, mode: {iid: 2}});
 });
 
+test('derives a newly supported optional physical service from the full spec', () => {
+  const withoutEnvironment = createConnection(LIGHT_PROPERTIES);
+  const withEnvironment = createConnection();
+  const spec = createSpec([
+    createLightService(2),
+    createEnvironmentService(4, 'both'),
+  ]);
+  const metadata = createMiotEndpointConnectionMetadata(TEST_DEVICE, spec);
+  const before = resolveMiotEndpointConnectionMetadata(
+    withoutEnvironment,
+    metadata,
+    spec,
+  );
+  const after = resolveMiotEndpointConnectionMetadata(
+    withEnvironment,
+    metadata,
+    spec,
+  );
+
+  expect(before.resources.map(resource => resource.service.iid)).toEqual([2]);
+  expect(after.resources.map(resource => resource.service.iid)).toEqual([2, 4]);
+  expect(getMiotEndpointConnectionResourceKeys(after)).toEqual([
+    JSON.stringify(['physical', 2]),
+    JSON.stringify(['physical', 4]),
+  ]);
+});
+
+test('requires the full spec for current identity metadata', () => {
+  const spec = createSpec([createLightService(2)]);
+  const metadata = createMiotEndpointConnectionMetadata(TEST_DEVICE, spec);
+
+  expect(() =>
+    resolveMiotEndpointConnectionMetadata(
+      createConnection(),
+      metadata,
+      createSpec([createLightService(2)], ALTERNATE_DEVICE_TYPE),
+    ),
+  ).toThrow('Invalid MIoT endpoint metadata spec.');
+});
+
 test('rejects metadata whose selected services no longer resolve', () => {
   const Connection = createConnection();
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
+  const metadata = LegacyMiotEndpointConnectionMetadata.satisfies({
     device: {...TEST_DEVICE, urn: DEVICE_TYPE},
     resources: [{service: createEnvironmentService(4, 'temperature')}],
   });
@@ -236,17 +279,12 @@ test('rejects metadata whose selected services no longer resolve', () => {
   ).toThrow('Invalid MIoT endpoint metadata.');
 });
 
-test('compares service and property collections without order', () => {
-  const Connection = createConnection();
-  const metadata = createMiotEndpointConnectionMetadata(
-    TEST_DEVICE,
-    DEVICE_TYPE,
-    requireResources(Connection, [
-      createLightService(2),
-      createEnvironmentService(4, 'both'),
-    ]),
-  );
-  const reordered = MiotEndpointConnectionMetadata.satisfies({
+test('compares legacy service and property collections without order', () => {
+  const metadata = createLegacyMetadata([
+    createLightService(2),
+    createEnvironmentService(4, 'both'),
+  ]);
+  const reordered = LegacyMiotEndpointConnectionMetadata.satisfies({
     ...metadata,
     resources: metadata.resources.toReversed().map(resource => ({
       service: {
@@ -277,11 +315,9 @@ test('compares service and property collections without order', () => {
 test.each(['did', 'model', 'urn'] as const)(
   'compares metadata device %s exactly',
   field => {
-    const Connection = createConnection();
     const metadata = createMiotEndpointConnectionMetadata(
       TEST_DEVICE,
-      DEVICE_TYPE,
-      requireResources(Connection, [createLightService(2)]),
+      createSpec([createLightService(2)]),
     );
     const different = MiotEndpointConnectionMetadata.satisfies({
       ...metadata,
@@ -297,16 +333,26 @@ test.each(['did', 'model', 'urn'] as const)(
   },
 );
 
-test('compares value-list descriptions and value-range tuple positions', () => {
-  const Connection = createConnection();
-  const metadata = createMiotEndpointConnectionMetadata(
-    TEST_DEVICE,
-    DEVICE_TYPE,
-    requireResources(Connection, [
-      createLightService(2),
-      createEnvironmentService(4, 'both'),
-    ]),
-  );
+test('compares current metadata by identity and distinguishes legacy metadata', () => {
+  const spec = createSpec([createLightService(2)]);
+  const current = createMiotEndpointConnectionMetadata(TEST_DEVICE, spec);
+  const sameIdentity = createMiotEndpointConnectionMetadata(TEST_DEVICE, {
+    ...spec,
+    description: 'Changed description',
+    services: [...spec.services, createEnvironmentService(4, 'both')],
+  });
+  const legacy = createLegacyMetadata(spec.services);
+
+  expect(miotEndpointConnectionMetadataEqual(current, sameIdentity)).toBe(true);
+  expect(miotEndpointConnectionMetadataEqual(current, legacy)).toBe(false);
+  expect(miotEndpointConnectionMetadataEqual(legacy, current)).toBe(false);
+});
+
+test('compares legacy value-list descriptions and value-range tuple positions', () => {
+  const metadata = createLegacyMetadata([
+    createLightService(2),
+    createEnvironmentService(4, 'both'),
+  ]);
   const differentValueList = mapMetadataProperties(metadata, property => {
     const valueList = property['value-list'];
 
@@ -344,14 +390,9 @@ test('compares value-list descriptions and value-range tuple positions', () => {
   ).toBe(false);
 });
 
-test('compares persisted action definitions', () => {
-  const Connection = createConnection();
-  const metadata = createMiotEndpointConnectionMetadata(
-    TEST_DEVICE,
-    DEVICE_TYPE,
-    requireResources(Connection, [createLightService(2)]),
-  );
-  const withAction = MiotEndpointConnectionMetadata.satisfies({
+test('compares legacy persisted action definitions', () => {
+  const metadata = createLegacyMetadata([createLightService(2)]);
+  const withAction = LegacyMiotEndpointConnectionMetadata.satisfies({
     ...metadata,
     resources: metadata.resources.map(resource => ({
       service: {
@@ -368,7 +409,7 @@ test('compares persisted action definitions', () => {
       },
     })),
   });
-  const reorderedInputs = MiotEndpointConnectionMetadata.satisfies({
+  const reorderedInputs = LegacyMiotEndpointConnectionMetadata.satisfies({
     ...withAction,
     resources: withAction.resources.map(resource => ({
       service: {
@@ -511,9 +552,11 @@ test('disposes local connection state after asynchronous subscription cleanup', 
   const resources = requireResources(DisposableConnection, [
     createLightService(2),
   ]);
+  const spec = createSpec(resources.map(resource => resource.service));
   const metadata = resolveMiotEndpointConnectionMetadata(
     DisposableConnection,
-    createMiotEndpointConnectionMetadata(TEST_DEVICE, DEVICE_TYPE, resources),
+    createMiotEndpointConnectionMetadata(TEST_DEVICE, spec),
+    spec,
   );
   const {binding} = createMiotDeviceEndpointConnectionBinding(
     DisposableConnection,
@@ -573,8 +616,18 @@ function requireResources(
 function createSpec(
   services: readonly MiotSpecService[],
   type = DEVICE_TYPE,
-): {readonly type: string; readonly services: readonly MiotSpecService[]} {
-  return {type, services};
+): MiotSpecInstance {
+  return {type, description: 'Test device', services: [...services]};
+}
+
+function createLegacyMetadata(
+  services: readonly MiotSpecService[],
+  urn = DEVICE_TYPE,
+): LegacyMiotEndpointConnectionMetadata {
+  return LegacyMiotEndpointConnectionMetadata.satisfies({
+    device: {...TEST_DEVICE, urn},
+    resources: services.map(service => ({service})),
+  });
 }
 
 class TestLightEndpointConnection
@@ -675,10 +728,10 @@ function reversePropertyCollections(
 }
 
 function mapMetadataProperties(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: LegacyMiotEndpointConnectionMetadata,
   callback: (property: MiotSpecProperty) => MiotSpecProperty,
-): MiotEndpointConnectionMetadata {
-  return MiotEndpointConnectionMetadata.satisfies({
+): LegacyMiotEndpointConnectionMetadata {
+  return LegacyMiotEndpointConnectionMetadata.satisfies({
     ...metadata,
     resources: metadata.resources.map(resource => ({
       service: {

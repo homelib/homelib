@@ -31,24 +31,42 @@ import {
 } from './miot/index.js';
 import type {MiotProvider} from './provider.js';
 
-/** A MIoT service snapshot claimed by one logical endpoint. */
+/** A legacy MIoT service snapshot claimed by one logical endpoint. */
 export const MiotEndpointConnectionResource = x.object({
   service: MiotSpecService,
 });
 
-export const MiotEndpointConnectionMetadata = x
+const MiotEndpointConnectionDevice = x.object({
+  did: x.string,
+  model: x.string.optional(),
+  urn: x.string,
+});
+
+/**
+ * Stable binding identity. Runtime resources are derived from the current
+ * connection schema and the cached complete MIoT spec instead of being saved
+ * in the binding file.
+ */
+export const MiotEndpointConnectionIdentityMetadata = x.object({
+  version: x.literal(1),
+  device: MiotEndpointConnectionDevice,
+});
+
+export const LegacyMiotEndpointConnectionMetadata = x
   .object({
-    device: x.object({
-      did: x.string,
-      model: x.string.optional(),
-      urn: x.string,
-    }),
+    version: x.undefined.optional(),
+    device: MiotEndpointConnectionDevice,
     resources: x.array(MiotEndpointConnectionResource),
   })
   .refined(metadata => {
     assertMiotEndpointConnectionResources(metadata.resources);
     return metadata;
   });
+
+export const MiotEndpointConnectionMetadata = x.union([
+  MiotEndpointConnectionIdentityMetadata,
+  LegacyMiotEndpointConnectionMetadata,
+]);
 
 export function normalizeMiotEndpointConnectionMetadata(
   value: unknown,
@@ -93,9 +111,9 @@ export function getMiotEndpointConnectionEvent(
 }
 
 export function getMiotEndpointConnectionResourceKeys(
-  metadata: MiotEndpointConnectionMetadata,
+  metadata: MiotEndpointConnectionResolvedMetadata,
 ): readonly string[] {
-  // Every service selected by one endpoint is exclusive for now.
+  // Every service resolved for one endpoint is exclusive for now.
   return metadata.resources
     .toSorted(compareMiotEndpointResources)
     .map(resource => getMiotResourceKey(metadata.device.did, resource));
@@ -797,6 +815,13 @@ export type MiotEndpointConnectionTransports = readonly [
 export type MiotEndpointConnectionMetadata = EndpointConnectionMetadata &
   Readonly<x.TypeOf<typeof MiotEndpointConnectionMetadata>>;
 
+export type MiotEndpointConnectionIdentityMetadata =
+  EndpointConnectionMetadata &
+    Readonly<x.TypeOf<typeof MiotEndpointConnectionIdentityMetadata>>;
+
+export type LegacyMiotEndpointConnectionMetadata = EndpointConnectionMetadata &
+  Readonly<x.TypeOf<typeof LegacyMiotEndpointConnectionMetadata>>;
+
 export type MiotEndpointConnectionResource = Readonly<
   x.TypeOf<typeof MiotEndpointConnectionResource>
 >;
@@ -810,10 +835,8 @@ export type MiotEndpointConnectionResolvedResource = Omit<
   readonly events?: Readonly<Record<string, MiotSpecEvent>>;
 };
 
-export type MiotEndpointConnectionResolvedMetadata = Omit<
-  MiotEndpointConnectionMetadata,
-  'resources'
-> & {
+export type MiotEndpointConnectionResolvedMetadata = {
+  readonly device: Readonly<x.TypeOf<typeof MiotEndpointConnectionDevice>>;
   readonly resources: readonly MiotEndpointConnectionResolvedResource[];
 };
 
@@ -874,8 +897,11 @@ export function createMiotEndpointConnectionResolvedMetadata(
   metadata: MiotEndpointConnectionMetadata,
   resources: readonly MiotEndpointConnectionResolvedResource[],
 ): MiotEndpointConnectionResolvedMetadata {
+  const physicalResources = isLegacyMiotEndpointConnectionMetadata(metadata)
+    ? metadata.resources
+    : resources;
   const physicalResourceMap = new Map(
-    metadata.resources.map(resource => [resource.service.iid, resource]),
+    physicalResources.map(resource => [resource.service.iid, resource]),
   );
   const resolvedServiceIidSet = new Set<number>();
   const stateNameSet = new Set<string>();
@@ -883,7 +909,10 @@ export function createMiotEndpointConnectionResolvedMetadata(
   const eventNameSet = new Set<string>();
   const eventKeySet = new Set<string>();
 
-  if (resources.length !== metadata.resources.length) {
+  if (
+    isLegacyMiotEndpointConnectionMetadata(metadata) &&
+    resources.length !== metadata.resources.length
+  ) {
     throw new TypeError('Invalid resolved MIoT endpoint resources.');
   }
 
@@ -949,6 +978,12 @@ export function createMiotEndpointConnectionResolvedMetadata(
   });
 
   return {device: metadata.device, resources: resolvedResources};
+}
+
+export function isLegacyMiotEndpointConnectionMetadata(
+  metadata: MiotEndpointConnectionMetadata,
+): metadata is LegacyMiotEndpointConnectionMetadata {
+  return metadata.version === undefined;
 }
 
 export type MiotPropertyUpdate = MiotProperty & {

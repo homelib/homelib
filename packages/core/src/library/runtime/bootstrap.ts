@@ -1,3 +1,5 @@
+import {isDeepStrictEqual} from 'node:util';
+
 import {
   beginBootstrap,
   completeBootstrap,
@@ -6,20 +8,26 @@ import {
 import type {Device, DeviceConstructor} from '../device.js';
 import type {EndpointReference} from '../endpoint.js';
 import {setEndpointLogTarget} from '../log.js';
-import type {EndpointConnectionBindingPlan} from '../provider.js';
+import type {
+  EndpointConnectionBindingPlan,
+  PreparedEndpointConnectionBindingPlan,
+} from '../provider.js';
 import {getProvider, getProviderEntries, getRootScopes} from '../registry.js';
 import type {Scope} from '../scope.js';
 
 import {
   createEndpointConnectionBindings,
   disposeEndpointConnectionBindings,
+  prepareEndpointConnectionBindingPlans,
 } from './@binding-creation.js';
 import {
   BindingFile,
+  type EndpointBinding,
   type EndpointPath,
   getEndpointPath,
   getEndpointPathKey,
   readBindingFile,
+  upsertEndpointBinding,
   writeBindingFile,
 } from './binding.js';
 import {
@@ -64,10 +72,17 @@ async function bootstrapInternal(): Promise<void> {
   }
 
   const bindingFile = await readBindingFile();
-  const connectionBindingPlans = createConnectionBindingPlans(
-    bindingFile,
-    endpointMap,
+  const connectionBindingPlans = await prepareConnectionBindingPlans(
+    createConnectionBindingPlans(bindingFile, endpointMap),
   );
+  const canonicalBindingFile = applyPreparedBindingMetadata(
+    bindingFile,
+    connectionBindingPlans,
+  );
+
+  if (!isDeepStrictEqual(canonicalBindingFile, bindingFile)) {
+    await writeBindingFile(canonicalBindingFile);
+  }
 
   const bindings = await createEndpointConnectionBindings(
     connectionBindingPlans.map(({plan}) => plan),
@@ -161,7 +176,6 @@ function createConnectionBindingPlans(
   endpointMap: ReadonlyMap<string, BindingTopologyEndpoint>,
 ): readonly EndpointConnectionBindingPlanEntry[] {
   const bindingPathSet = new Set<string>();
-  const providerResourceKeySet = new Set<string>();
   const plans: EndpointConnectionBindingPlanEntry[] = [];
 
   for (const binding of bindingFile.bindings) {
@@ -198,10 +212,36 @@ function createConnectionBindingPlans(
       binding.metadata,
     );
 
-    for (const resourceKey of plan.resourceKeys) {
+    plans.push({
+      binding,
+      path: binding.endpoint,
+      endpoint: target.endpoint,
+      plan,
+    });
+  }
+
+  return plans;
+}
+
+async function prepareConnectionBindingPlans(
+  entries: readonly EndpointConnectionBindingPlanEntry[],
+): Promise<readonly PreparedEndpointConnectionBindingPlanEntry[]> {
+  const preparedPlans = await prepareEndpointConnectionBindingPlans(
+    entries.map(({plan}) => plan),
+  );
+  const providerResourceKeySet = new Set<string>();
+
+  return entries.map((entry, index) => {
+    const preparedPlan = preparedPlans[index];
+
+    if (preparedPlan === undefined) {
+      throw new Error('Prepared endpoint connection binding plan is missing.');
+    }
+
+    for (const resourceKey of preparedPlan.resourceKeys) {
       const providerResourceKey = JSON.stringify([
-        binding.provider.namespace,
-        binding.provider.name,
+        entry.binding.provider.namespace,
+        entry.binding.provider.name,
         resourceKey,
       ]);
 
@@ -214,16 +254,38 @@ function createConnectionBindingPlans(
       providerResourceKeySet.add(providerResourceKey);
     }
 
-    plans.push({path: binding.endpoint, endpoint: target.endpoint, plan});
+    return {...entry, plan: preparedPlan};
+  });
+}
+
+function applyPreparedBindingMetadata(
+  bindingFile: BindingFile,
+  entries: readonly PreparedEndpointConnectionBindingPlanEntry[],
+): BindingFile {
+  let nextBindingFile = bindingFile;
+
+  for (const {binding, plan} of entries) {
+    nextBindingFile = upsertEndpointBinding(nextBindingFile, {
+      ...binding,
+      metadata: plan.persistedMetadata,
+    });
   }
 
-  return plans;
+  return nextBindingFile;
 }
 
 type EndpointConnectionBindingPlanEntry = {
+  readonly binding: EndpointBinding;
   readonly path: EndpointPath;
   readonly endpoint: EndpointReference;
   readonly plan: EndpointConnectionBindingPlan;
+};
+
+type PreparedEndpointConnectionBindingPlanEntry = Omit<
+  EndpointConnectionBindingPlanEntry,
+  'plan'
+> & {
+  readonly plan: PreparedEndpointConnectionBindingPlan;
 };
 
 type BindingTopologyEndpoint = {
@@ -260,7 +322,7 @@ function createBootstrapContext(
 
       const operation = bindingFileUpdateQueue.then(async () => {
         const nextBindingFile = BindingFile.satisfies(
-          createNextBindingFile(bindingFile),
+          await createNextBindingFile(bindingFile),
         );
 
         await writeBindingFile(nextBindingFile);

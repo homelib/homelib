@@ -6,19 +6,25 @@ import {
   LightEndpoint,
   type ProviderBindingDevice,
   type ProviderBindingEndpoint,
+  type ProviderBindingRecord,
   ProviderName,
+  type RuntimeProvider,
 } from '@homelib/core';
 
 import {
   type MiotBindingDeviceCandidate,
   type MiotBindingDiscoveryProvider,
   type MiotBindingEndpointCandidate,
+  type MiotBindingResourceBinding,
   discoverMiotBindingDevices,
+  prepareMiotBindingResourceBindings,
   resolveMiotBindingDeviceProposal,
 } from './binding.js';
 import {createMiotEndpointConnectionMetadata} from './device.js';
 import {
   type MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionResolvedMetadata,
+  createMiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
 import type {
@@ -28,7 +34,7 @@ import type {
 } from './miot/index.js';
 import './index.js';
 
-test('discovers one exact whole-device mapping and persists services', async () => {
+test('discovers one exact whole-device mapping and persists only identity', async () => {
   const endpoint = createLogicalEndpoint('', new LightEndpoint());
   const logicalDevice = createLogicalDevice(Light, [endpoint]);
   const provider = createDiscoveryProvider([
@@ -50,17 +56,17 @@ test('discovers one exact whole-device mapping and persists services', async () 
   expect(candidate?.device.did).toBe('physical-light');
   expect(physicalEndpoint?.endpoint).toBe(endpoint);
   expect(physicalEndpoint?.metadata).toMatchObject({
+    version: 1,
     device: {
       did: 'physical-light',
       model: 'test.light',
       urn: LIGHT_SPEC.type,
     },
-    resources: [
-      {
-        service: {iid: 2},
-      },
-    ],
   });
+  expect(physicalEndpoint?.metadata).not.toHaveProperty('resources');
+  expect(physicalEndpoint?.resourceKeys).toEqual([
+    JSON.stringify(['physical-light', 2]),
+  ]);
 });
 
 test('requires the registered endpoint set but not endpoint names to match', async () => {
@@ -224,12 +230,44 @@ test('automatically proposes the complete available physical mapping', () => {
   ]);
 });
 
+test('rejects duplicate resources resolved from active binding records', async () => {
+  const first = createLogicalEndpoint('', new LightEndpoint());
+  const second = createLogicalEndpoint('accent', new LightEndpoint('accent'));
+  const provider: RuntimeProvider = {
+    name: ProviderName.satisfies('test'),
+    endpointConnections: [],
+    createEndpointConnectionBindingPlan() {
+      return {
+        prepare: async () => ({
+          resourceKeys: ['shared-resource'],
+          persistedMetadata: {},
+          create: async () => ({bind() {}, async dispose() {}}),
+        }),
+      };
+    },
+  };
+  const bindings: readonly ProviderBindingRecord[] = [first, second].map(
+    endpoint => ({
+      endpoint: endpoint.path,
+      endpointReference: endpoint.endpoint,
+      deviceConstructors: [Light],
+      metadata: {},
+    }),
+  );
+
+  await expect(
+    prepareMiotBindingResourceBindings(provider, bindings),
+  ).rejects.toThrow(
+    'Duplicate active MIoT provider resource binding: shared-resource',
+  );
+});
+
 test('preserves equal existing bindings and proposes only missing endpoints', () => {
   const first = createCandidateEndpoint('', 2);
   const second = createCandidateEndpoint('accent', 3);
   const proposal = resolveMiotBindingDeviceProposal(
     createCandidate([first, second]),
-    [{endpoint: first.endpoint.path, metadata: first.metadata}],
+    [createResourceBinding(first)],
   );
 
   expect(proposal.status).toBe('automatic');
@@ -246,7 +284,7 @@ test('reports a completely existing mapping without resubmitting it', () => {
   const endpoint = createCandidateEndpoint('', 2);
   const proposal = resolveMiotBindingDeviceProposal(
     createCandidate([endpoint]),
-    [{endpoint: endpoint.endpoint.path, metadata: endpoint.metadata}],
+    [createResourceBinding(endpoint)],
   );
 
   expect(proposal.status).toBe('existing');
@@ -264,7 +302,7 @@ test('makes the whole physical mapping unavailable when one resource is used els
   });
   const proposal = resolveMiotBindingDeviceProposal(
     createCandidate([first, second]),
-    [{endpoint: externalEndpoint, metadata: second.metadata}],
+    [createResourceBinding(second, externalEndpoint)],
   );
 
   expect(proposal.status).toBe('unavailable');
@@ -278,6 +316,7 @@ test('makes the whole physical mapping unavailable when one resource is used els
 test('allows the complete mapping to replace resources held by its own endpoints', () => {
   const first = createCandidateEndpoint('', 2);
   const second = createCandidateEndpoint('accent', 3);
+  const previousMetadata = createMetadata('previous.test.light');
   const device = createCandidate([
     {
       ...first,
@@ -286,7 +325,7 @@ test('allows the complete mapping to replace resources held by its own endpoints
         binding: {
           endpoint: first.endpoint.path,
           provider: {namespace: 'xiaomi', name: ProviderName.satisfies('test')},
-          metadata: createMetadata(3),
+          metadata: previousMetadata,
         },
       },
     },
@@ -297,14 +336,22 @@ test('allows the complete mapping to replace resources held by its own endpoints
         binding: {
           endpoint: second.endpoint.path,
           provider: {namespace: 'xiaomi', name: ProviderName.satisfies('test')},
-          metadata: createMetadata(2),
+          metadata: previousMetadata,
         },
       },
     },
   ]);
   const proposal = resolveMiotBindingDeviceProposal(device, [
-    {endpoint: first.endpoint.path, metadata: createMetadata(3)},
-    {endpoint: second.endpoint.path, metadata: createMetadata(2)},
+    {
+      endpoint: first.endpoint.path,
+      metadata: previousMetadata,
+      resourceKeys: second.resourceKeys,
+    },
+    {
+      endpoint: second.endpoint.path,
+      metadata: previousMetadata,
+      resourceKeys: first.resourceKeys,
+    },
   ]);
 
   expect(proposal.status).toBe('automatic');
@@ -337,6 +384,7 @@ test('does not steal resources from another logical device using this provider',
           endpointName: '',
         }),
         metadata: endpoint.metadata,
+        resourceKeys: endpoint.resourceKeys,
       },
     ],
   );
@@ -408,17 +456,28 @@ function createCandidateEndpoint(
   name: string,
   serviceIid: number,
 ): MiotBindingEndpointCandidate {
-  const metadata = createMetadata(serviceIid);
+  const metadata = createMetadata();
+  const resolvedMetadata = createResolvedMetadata(metadata, serviceIid);
 
   return {
     endpoint: createLogicalEndpoint(name, new LightEndpoint(name)),
     metadata,
-    resourceKeys: getMiotEndpointConnectionResourceKeys(metadata),
+    resourceKeys: getMiotEndpointConnectionResourceKeys(resolvedMetadata),
     label: `Light ${serviceIid}`,
   };
 }
 
-function createMetadata(serviceIid: number): MiotEndpointConnectionMetadata {
+function createMetadata(model = 'test.light'): MiotEndpointConnectionMetadata {
+  return createMiotEndpointConnectionMetadata(
+    {did: 'physical', model},
+    LIGHT_SPEC,
+  );
+}
+
+function createResolvedMetadata(
+  metadata: MiotEndpointConnectionMetadata,
+  serviceIid: number,
+): MiotEndpointConnectionResolvedMetadata {
   const property = createOnProperty();
   const service: MiotSpecService = {
     iid: serviceIid,
@@ -427,11 +486,20 @@ function createMetadata(serviceIid: number): MiotEndpointConnectionMetadata {
     properties: [property],
   };
 
-  return createMiotEndpointConnectionMetadata(
-    {did: 'physical', model: 'test.light'},
-    LIGHT_SPEC.type,
-    [{service, properties: {on: property}}],
-  );
+  return createMiotEndpointConnectionResolvedMetadata(metadata, [
+    {service, properties: {on: property}},
+  ]);
+}
+
+function createResourceBinding(
+  candidate: MiotBindingEndpointCandidate,
+  endpoint: EndpointPath = candidate.endpoint.path,
+): MiotBindingResourceBinding {
+  return {
+    endpoint,
+    metadata: candidate.metadata,
+    resourceKeys: candidate.resourceKeys,
+  };
 }
 
 function createOnProperty(): MiotSpecProperty {

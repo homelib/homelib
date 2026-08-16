@@ -2,6 +2,8 @@ import {
   type EndpointPath,
   type ProviderBindingDevice,
   type ProviderBindingEndpoint,
+  type ProviderBindingRecord,
+  type RuntimeProvider,
   getEndpointPathKey,
 } from '@homelib/core';
 
@@ -14,6 +16,7 @@ import {
 } from './device.js';
 import {
   type MiotEndpointConnectionMetadata,
+  createMiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionResourceKeys,
   normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
@@ -25,7 +28,7 @@ const DEFAULT_MIOT_SPEC_CLIENT = new MiotSpecClient();
 export async function discoverMiotBindingDevices(
   provider: MiotBindingDiscoveryProvider,
   logicalDevice: ProviderBindingDevice,
-  specClient: Pick<MiotSpecClient, 'getInstance'> = DEFAULT_MIOT_SPEC_CLIENT,
+  specClient?: Pick<MiotSpecClient, 'getInstance'>,
 ): Promise<MiotBindingDiscovery> {
   const {endpoints} = logicalDevice;
   const discovery = await provider.configuration.discoverDevices();
@@ -44,7 +47,7 @@ export async function discoverMiotBindingDevices(
 
   const specMap = await loadSpecInstances(
     [...specTypeSet],
-    specClient,
+    specClient ?? getDiscoverySpecClient(provider),
     SPEC_REQUEST_CONCURRENCY,
   );
   const devices: MiotBindingDeviceCandidate[] = [];
@@ -92,6 +95,7 @@ export type MiotBindingDiscovery = {
 
 export type MiotBindingDiscoveryProvider = {
   readonly configuration: Pick<MiotProviderConfiguration, 'discoverDevices'>;
+  readonly getSpecInstance?: (urn: string) => Promise<MiotSpecInstance>;
 };
 
 export type MiotBindingDeviceCandidate = {
@@ -110,7 +114,33 @@ export type MiotBindingEndpointCandidate = {
 export type MiotBindingResourceBinding = {
   readonly endpoint: EndpointPath;
   readonly metadata: unknown;
+  readonly resourceKeys: readonly string[];
 };
+
+export async function prepareMiotBindingResourceBindings(
+  provider: RuntimeProvider,
+  bindings: readonly ProviderBindingRecord[],
+): Promise<readonly MiotBindingResourceBinding[]> {
+  const preparedBindings = await Promise.all(
+    bindings.map(async binding => {
+      const plan = provider.createEndpointConnectionBindingPlan(
+        binding.endpointReference,
+        binding.deviceConstructors,
+        binding.metadata,
+      );
+      const preparedPlan = await plan.prepare();
+
+      return {
+        endpoint: binding.endpoint,
+        metadata: preparedPlan.persistedMetadata,
+        resourceKeys: preparedPlan.resourceKeys,
+      };
+    }),
+  );
+
+  getOccupiedResourceMap(preparedBindings);
+  return preparedBindings;
+}
 
 export type MiotBindingDeviceProposal = {
   readonly status: 'automatic' | 'existing' | 'unavailable';
@@ -252,12 +282,13 @@ function createBindingDeviceCandidate(
   const endpointCandidates: MiotBindingEndpointCandidate[] = [];
 
   for (const {endpoint, resources} of match.endpoints) {
-    const metadata = createMiotEndpointConnectionMetadata(
-      device,
-      spec.type,
+    const metadata = createMiotEndpointConnectionMetadata(device, spec);
+    const resolvedMetadata = createMiotEndpointConnectionResolvedMetadata(
+      metadata,
       resources,
     );
-    const resourceKeys = getMiotEndpointConnectionResourceKeys(metadata);
+    const resourceKeys =
+      getMiotEndpointConnectionResourceKeys(resolvedMetadata);
 
     if (resourceKeys.some(resourceKey => resourceKeySet.has(resourceKey))) {
       return undefined;
@@ -284,15 +315,17 @@ function getOccupiedResourceMap(
   const occupiedResourceMap = new Map<string, string>();
 
   for (const binding of providerBindings) {
-    const metadata = normalizeMetadata(binding.metadata);
-
-    if (metadata === undefined) {
-      continue;
-    }
-
     const endpointPathKey = getEndpointPathKey(binding.endpoint);
 
-    for (const resourceKey of getMiotEndpointConnectionResourceKeys(metadata)) {
+    for (const resourceKey of binding.resourceKeys) {
+      const existingEndpointPathKey = occupiedResourceMap.get(resourceKey);
+
+      if (existingEndpointPathKey !== undefined) {
+        throw new Error(
+          `Duplicate active MIoT provider resource binding: ${resourceKey} (${existingEndpointPathKey} and ${endpointPathKey}).`,
+        );
+      }
+
       occupiedResourceMap.set(resourceKey, endpointPathKey);
     }
   }
@@ -384,4 +417,14 @@ async function loadSpecInstances(
   );
 
   return specMap;
+}
+
+function getDiscoverySpecClient(
+  provider: MiotBindingDiscoveryProvider,
+): Pick<MiotSpecClient, 'getInstance'> {
+  const {getSpecInstance} = provider;
+
+  return getSpecInstance === undefined
+    ? DEFAULT_MIOT_SPEC_CLIENT
+    : {getInstance: urn => getSpecInstance.call(provider, urn)};
 }

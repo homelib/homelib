@@ -1,9 +1,7 @@
 import type {
-  EndpointBinding,
   ProviderBindingDevice,
   ProviderBindingRecord,
   ProviderBindingRequest,
-  ProviderReference,
   RuntimeProvider,
 } from '@homelib/core';
 import {Box, Text, useInput} from 'ink';
@@ -101,9 +99,8 @@ export function registerProviderBindingComponent<
 
 export type ProviderBindingOutletProps = {
   readonly provider: RuntimeProvider;
-  readonly providerReference: ProviderReference;
   readonly device: ProviderBindingDevice;
-  readonly bindings: readonly EndpointBinding[];
+  readonly providerBindings: readonly ProviderBindingRecord[];
   readonly onBind: (
     requests: readonly ProviderBindingRequest[],
   ) => Promise<void>;
@@ -113,9 +110,8 @@ export type ProviderBindingOutletProps = {
 
 export function ProviderBindingOutlet({
   provider,
-  providerReference,
   device,
-  bindings: endpointBindings,
+  providerBindings,
   onBind,
   onBack,
   onComplete,
@@ -125,14 +121,6 @@ export function ProviderBindingOutlet({
   if (renderer === undefined) {
     return <UnavailableProviderBinding onBack={onBack} />;
   }
-
-  const providerBindings = endpointBindings
-    .filter(
-      binding =>
-        binding.provider.namespace === providerReference.namespace &&
-        binding.provider.name === providerReference.name,
-    )
-    .map(({endpoint, metadata}) => ({endpoint, metadata}));
 
   return renderer({
     provider,

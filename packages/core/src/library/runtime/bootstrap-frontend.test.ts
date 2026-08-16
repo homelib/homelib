@@ -79,10 +79,26 @@ const PROVIDER: RuntimeProvider = {
       throw new TypeError('Invalid test metadata.');
     }
 
+    const resourceKey = metadata.resourceKey;
+
     return {
-      resourceKeys: [metadata.resourceKey],
-      create() {
-        return Promise.resolve({bind() {}, async dispose() {}});
+      prepare: async () => {
+        await Promise.resolve();
+
+        if (resourceKey === 'preparation failure') {
+          throw new Error('test preparation failed');
+        }
+
+        return {
+          resourceKeys: [resourceKey],
+          persistedMetadata: {
+            resourceKey,
+            canonical: true,
+          },
+          create() {
+            return Promise.resolve({bind() {}, async dispose() {}});
+          },
+        };
       },
     };
   },
@@ -96,81 +112,106 @@ test('rejects duplicate bootstrap frontend registration', () => {
   );
 });
 
-test('applies a complete provider binding batch atomically', () => {
+test('applies a complete provider binding batch atomically', async () => {
   const bindingFile = createBindingFile([
     createBinding(MAIN_PATH, PROVIDER_REFERENCE, 'main resource'),
     createBinding(AMBIENT_PATH, PROVIDER_REFERENCE, 'ambient resource'),
   ]);
-  const nextBindingFile = applyRequests(bindingFile, [
+  const nextBindingFile = await applyRequests(bindingFile, [
     createRequest(MAIN_PATH, 'ambient resource'),
     createRequest(AMBIENT_PATH, 'main resource'),
   ]);
 
   expect(getResourceKey(nextBindingFile, MAIN_PATH)).toBe('ambient resource');
   expect(getResourceKey(nextBindingFile, AMBIENT_PATH)).toBe('main resource');
+  expect(getMetadata(nextBindingFile, MAIN_PATH)).toEqual({
+    resourceKey: 'ambient resource',
+    canonical: true,
+  });
   expect(getResourceKey(bindingFile, MAIN_PATH)).toBe('main resource');
 });
 
-test('rejects duplicate endpoints and provider resources', () => {
+test('rejects duplicate endpoints and provider resources', async () => {
   const bindingFile = createBindingFile([]);
 
-  expect(() =>
+  await expect(
     applyRequests(bindingFile, [
       createRequest(MAIN_PATH, 'first'),
       createRequest(MAIN_PATH, 'second'),
     ]),
-  ).toThrow('Duplicate endpoint binding request');
-  expect(() =>
+  ).rejects.toThrow('Duplicate endpoint binding request');
+  await expect(
     applyRequests(bindingFile, [
       createRequest(MAIN_PATH, 'shared'),
       createRequest(AMBIENT_PATH, 'shared'),
     ]),
-  ).toThrow('Provider resource is already bound: shared.');
+  ).rejects.toThrow('Provider resource is already bound: shared.');
   expect(bindingFile.bindings).toEqual([]);
 });
 
-test('ignores stale bindings when validating provider resources', () => {
-  const staleBinding = createBinding(STALE_PATH, PROVIDER_REFERENCE, 'shared');
-  const nextBindingFile = applyRequests(createBindingFile([staleBinding]), [
-    createRequest(MAIN_PATH, 'shared'),
+test('leaves the input untouched when asynchronous preparation fails', async () => {
+  const bindingFile = createBindingFile([
+    createBinding(MAIN_PATH, PROVIDER_REFERENCE, 'original'),
   ]);
+
+  await expect(
+    applyRequests(bindingFile, [
+      createRequest(MAIN_PATH, 'preparation failure'),
+    ]),
+  ).rejects.toThrow('test preparation failed');
+  expect(getMetadata(bindingFile, MAIN_PATH)).toEqual({
+    resourceKey: 'original',
+  });
+});
+
+test('ignores stale bindings when validating provider resources', async () => {
+  const staleBinding = createBinding(STALE_PATH, PROVIDER_REFERENCE, 'shared');
+  const nextBindingFile = await applyRequests(
+    createBindingFile([staleBinding]),
+    [createRequest(MAIN_PATH, 'shared')],
+  );
 
   expect(nextBindingFile.bindings).toContainEqual(staleBinding);
   expect(getResourceKey(nextBindingFile, MAIN_PATH)).toBe('shared');
 });
 
-test('requires confirmation before replacing another provider', () => {
+test('requires confirmation before replacing another provider', async () => {
   const bindingFile = createBindingFile([
     createBinding(MAIN_PATH, OTHER_PROVIDER_REFERENCE, 'resource'),
   ]);
 
-  expect(() =>
+  await expect(
     applyRequests(bindingFile, [createRequest(MAIN_PATH, 'resource')]),
-  ).toThrow('Replacing another provider binding requires confirmation.');
+  ).rejects.toThrow(
+    'Replacing another provider binding requires confirmation.',
+  );
   expect(
-    applyRequests(bindingFile, [createRequest(MAIN_PATH, 'resource', true)])
-      .bindings[0]?.provider,
+    (
+      await applyRequests(bindingFile, [
+        createRequest(MAIN_PATH, 'resource', true),
+      ])
+    ).bindings[0]?.provider,
   ).toEqual(PROVIDER_REFERENCE);
 });
 
-test('rejects a provider request outside its logical device', () => {
+test('rejects a provider request outside its logical device', async () => {
   const unknownPath = EndpointPath.satisfies({
     scopePath: ['home'],
     deviceName: 'other light',
     endpointName: 'main',
   });
 
-  expect(() =>
+  await expect(
     applyRequests(createBindingFile([]), [
       createRequest(unknownPath, 'resource'),
     ]),
-  ).toThrow('Unknown endpoint selected for binding.');
+  ).rejects.toThrow('Unknown endpoint selected for binding.');
 });
 
 function applyRequests(
   bindingFile: BindingFile,
   requests: readonly ProviderBindingRequest[],
-): BindingFile {
+): Promise<BindingFile> {
   return applyProviderBindingRequests(
     bindingFile,
     requests,
@@ -227,4 +268,15 @@ function getResourceKey(
     'resourceKey' in metadata
     ? metadata.resourceKey
     : undefined;
+}
+
+function getMetadata(
+  bindingFile: BindingFile,
+  endpoint: EndpointPath,
+): unknown {
+  const endpointPathKey = getEndpointPathKey(endpoint);
+
+  return bindingFile.bindings.find(
+    binding => getEndpointPathKey(binding.endpoint) === endpointPathKey,
+  )?.metadata;
 }

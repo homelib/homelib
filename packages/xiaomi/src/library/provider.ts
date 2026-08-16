@@ -32,14 +32,17 @@ import {
 import {
   type MiotEndpointConnectionConstructor,
   createMiotDeviceEndpointConnectionBinding,
+  createMiotEndpointConnectionMetadata,
   getMiotEndpointConnectionConstructor,
   resolveMiotEndpointConnectionMetadata,
 } from './device.js';
 import {
   type MiotEndpointConnection,
+  type MiotEndpointConnectionIdentityMetadata,
   MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionResourceKeys,
+  isLegacyMiotEndpointConnectionMetadata,
   normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import {
@@ -47,6 +50,7 @@ import {
   type LocalControllerDiscovery,
   RoutedDeviceMessageClient,
 } from './local/index.js';
+import {MiotSpecClient, type MiotSpecInstance} from './miot/index.js';
 import {OAuthSessionManager} from './session-manager.js';
 import {
   type OAuthSession,
@@ -105,6 +109,8 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
 
   private readonly providerDirectory: string;
 
+  private readonly specClient: MiotSpecClient;
+
   private readonly sessionManager: OAuthSessionManager;
 
   constructor(name: string) {
@@ -128,6 +134,9 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
       'certificates',
       name,
     );
+    this.specClient = new MiotSpecClient({
+      cacheDirectory: join(this.providerDirectory, 'specs'),
+    });
     this.sessionManager = new OAuthSessionManager({
       sessionPath: this.sessionPath,
       applyAccessToken: accessToken => {
@@ -154,11 +163,19 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
     return this.endpointConnectionValues;
   }
 
+  getSpecInstance(urn: string): Promise<MiotSpecInstance> {
+    return this.specClient.getInstance(urn);
+  }
+
+  refreshSpecInstance(urn: string): Promise<MiotSpecInstance> {
+    return this.specClient.refreshInstance(urn);
+  }
+
   protected override createEndpointConnectionBindingPlanFromMetadata(
     endpoint: EndpointReference,
     deviceConstructors: readonly DeviceConstructor<Device>[],
     metadata: MiotEndpointConnectionMetadata,
-  ): EndpointConnectionBindingPlan {
+  ): EndpointConnectionBindingPlan<MiotEndpointConnectionMetadata> {
     const Connection = getMiotEndpointConnectionConstructor(
       deviceConstructors,
       endpoint,
@@ -170,20 +187,97 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
 
     const normalizedMetadata =
       normalizeMiotEndpointConnectionMetadata(metadata);
-    const resolvedMetadata = resolveMiotEndpointConnectionMetadata(
-      Connection,
-      normalizedMetadata,
-    );
 
     return {
-      resourceKeys: getMiotEndpointConnectionResourceKeys(normalizedMetadata),
-      create: () =>
-        this.createEndpointConnectionBinding(
-          Connection,
-          endpoint,
-          resolvedMetadata,
-        ),
+      prepare: async () => {
+        let persistedMetadata = normalizedMetadata;
+        let resolvedMetadata: MiotEndpointConnectionResolvedMetadata;
+
+        if (isLegacyMiotEndpointConnectionMetadata(normalizedMetadata)) {
+          try {
+            const preparedMetadata =
+              await this.resolveCurrentEndpointConnectionMetadata(
+                Connection,
+                normalizedMetadata.device.urn,
+                spec =>
+                  createMiotEndpointConnectionMetadata(
+                    normalizedMetadata.device,
+                    spec,
+                  ),
+              );
+
+            resolvedMetadata = preparedMetadata.resolvedMetadata;
+            persistedMetadata = preparedMetadata.persistedMetadata;
+          } catch {
+            resolvedMetadata = resolveMiotEndpointConnectionMetadata(
+              Connection,
+              normalizedMetadata,
+            );
+          }
+        } else {
+          const preparedMetadata =
+            await this.resolveCurrentEndpointConnectionMetadata(
+              Connection,
+              normalizedMetadata.device.urn,
+              () => normalizedMetadata,
+            );
+
+          resolvedMetadata = preparedMetadata.resolvedMetadata;
+          persistedMetadata = preparedMetadata.persistedMetadata;
+        }
+
+        return {
+          resourceKeys: getMiotEndpointConnectionResourceKeys(resolvedMetadata),
+          persistedMetadata,
+          create: () =>
+            this.createEndpointConnectionBinding(
+              Connection,
+              endpoint,
+              resolvedMetadata,
+            ),
+        };
+      },
     };
+  }
+
+  private async resolveCurrentEndpointConnectionMetadata(
+    Connection: MiotEndpointConnectionConstructor,
+    urn: string,
+    createMetadata: (
+      spec: MiotSpecInstance,
+    ) => MiotEndpointConnectionIdentityMetadata,
+  ): Promise<{
+    readonly persistedMetadata: MiotEndpointConnectionIdentityMetadata;
+    readonly resolvedMetadata: MiotEndpointConnectionResolvedMetadata;
+  }> {
+    const resolveSpec = (
+      spec: MiotSpecInstance,
+    ): {
+      readonly persistedMetadata: MiotEndpointConnectionIdentityMetadata;
+      readonly resolvedMetadata: MiotEndpointConnectionResolvedMetadata;
+    } => {
+      if (spec.type !== urn) {
+        throw new TypeError('Invalid MIoT endpoint metadata spec.');
+      }
+
+      const persistedMetadata = createMetadata(spec);
+
+      return {
+        persistedMetadata,
+        resolvedMetadata: resolveMiotEndpointConnectionMetadata(
+          Connection,
+          persistedMetadata,
+          spec,
+        ),
+      };
+    };
+    const spec = await this.getSpecInstance(urn);
+
+    try {
+      return resolveSpec(spec);
+    } catch {
+      return resolveSpec(await this.refreshSpecInstance(urn));
+    }
   }
 
   private async createEndpointConnectionBinding(

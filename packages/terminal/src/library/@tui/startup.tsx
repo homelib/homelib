@@ -8,6 +8,8 @@ import {
   type EndpointBinding,
   type EndpointPath,
   type ProviderBindingDevice,
+  type ProviderBindingRecord,
+  type ProviderReference,
   applyProviderBindingRequests,
   getEndpointPathKey,
   removeEndpointBinding,
@@ -114,7 +116,9 @@ export function Startup({model}: StartupProps): React.JSX.Element {
   };
 
   const mutateBindingFile = (
-    createNextBindingFile: (currentBindingFile: BindingFile) => BindingFile,
+    createNextBindingFile: (
+      currentBindingFile: BindingFile,
+    ) => BindingFile | PromiseLike<BindingFile>,
   ): Promise<void> => {
     const operation = bindingMutationQueueReference.current.then(async () => {
       const nextBindingFile = await model.updateBindingFile(
@@ -304,9 +308,10 @@ export function Startup({model}: StartupProps): React.JSX.Element {
       device,
       bindingFile,
     );
-    const activeBindings = getActiveEndpointBindings(
+    const providerBindings = createProviderBindingRecords(
       model.bindingScopes,
       bindingFile,
+      providerReference,
     );
 
     return (
@@ -319,10 +324,9 @@ export function Startup({model}: StartupProps): React.JSX.Element {
         }}
       >
         <ProviderBindingOutlet
-          bindings={activeBindings}
           device={providerBindingDevice}
           provider={page.provider.provider}
-          providerReference={providerReference}
+          providerBindings={providerBindings}
           onBack={() => {
             setPage({
               type: 'binding-device',
@@ -478,14 +482,32 @@ function createStaleBindingItems(
 }
 
 /** @internal */
-export function getActiveEndpointBindings(
+export function createProviderBindingRecords(
   scopes: readonly BootstrapBindingScope[],
   bindingFile: BindingFile,
-): readonly EndpointBinding[] {
-  return bindingFile.bindings.filter(
-    binding =>
-      findStartupBindingEndpoint(scopes, binding.endpoint) !== undefined,
-  );
+  providerReference: ProviderReference,
+): readonly ProviderBindingRecord[] {
+  return bindingFile.bindings.flatMap(binding => {
+    if (
+      binding.provider.namespace !== providerReference.namespace ||
+      binding.provider.name !== providerReference.name
+    ) {
+      return [];
+    }
+
+    const target = findStartupBindingEndpointTarget(scopes, binding.endpoint);
+
+    return target === undefined
+      ? []
+      : [
+          {
+            endpoint: binding.endpoint,
+            endpointReference: target.endpoint.endpoint,
+            deviceConstructors: target.deviceConstructors,
+            metadata: binding.metadata,
+          },
+        ];
+  });
 }
 
 /** @internal */
@@ -608,6 +630,13 @@ function findStartupBindingEndpoint(
   scopes: readonly BootstrapBindingScope[],
   path: EndpointPath,
 ): BootstrapBindingEndpoint | undefined {
+  return findStartupBindingEndpointTarget(scopes, path)?.endpoint;
+}
+
+function findStartupBindingEndpointTarget(
+  scopes: readonly BootstrapBindingScope[],
+  path: EndpointPath,
+): StartupBindingEndpointTarget | undefined {
   const pathKey = getEndpointPathKey(path);
 
   for (const scope of scopes) {
@@ -617,11 +646,11 @@ function findStartupBindingEndpoint(
       );
 
       if (endpoint !== undefined) {
-        return endpoint;
+        return {endpoint, deviceConstructors: device.deviceConstructors};
       }
     }
 
-    const endpoint = findStartupBindingEndpoint(scope.scopes, path);
+    const endpoint = findStartupBindingEndpointTarget(scope.scopes, path);
 
     if (endpoint !== undefined) {
       return endpoint;
@@ -630,6 +659,11 @@ function findStartupBindingEndpoint(
 
   return undefined;
 }
+
+type StartupBindingEndpointTarget = {
+  readonly endpoint: BootstrapBindingEndpoint;
+  readonly deviceConstructors: BootstrapBindingDevice['deviceConstructors'];
+};
 
 function getProviderBoundEndpointCount(
   scopePath: readonly string[],

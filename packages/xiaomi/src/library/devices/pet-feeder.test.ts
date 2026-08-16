@@ -217,12 +217,12 @@ function createConnection(
 
   const persistedMetadata = createMiotEndpointConnectionMetadata(
     {did: 'feeder-1', model: fixture.model},
-    spec.type,
-    resources,
+    spec,
   );
   const metadata = resolveMiotEndpointConnectionMetadata(
     MiotPetFeederEndpointConnection,
     persistedMetadata,
+    spec,
   );
 
   return new MiotPetFeederEndpointConnection(

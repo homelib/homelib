@@ -14,7 +14,9 @@ import {
   type MiotBindingDiscovery,
   type MiotBindingEndpointCandidate,
   type MiotBindingEndpointProposal,
+  type MiotBindingResourceBinding,
   discoverMiotBindingDevices,
+  prepareMiotBindingResourceBindings,
   resolveMiotBindingDeviceProposal,
 } from '../binding.js';
 import type {MiotProvider} from '../provider.js';
@@ -32,7 +34,9 @@ export function MiotProviderBindings({
   const [state, setState] = useState<BindingState>({type: 'loading'});
   const operationReference = useRef<object | undefined>(undefined);
   const deviceReference = useRef(device);
+  const providerBindingsReference = useRef(providerBindings);
   deviceReference.current = device;
+  providerBindingsReference.current = providerBindings;
 
   const load = useCallback(
     (notice?: DevicesState['notice']): void => {
@@ -40,8 +44,14 @@ export function MiotProviderBindings({
 
       operationReference.current = operation;
       setState({type: 'loading'});
-      void discoverMiotBindingDevices(provider, deviceReference.current).then(
-        discovery => {
+      void Promise.all([
+        discoverMiotBindingDevices(provider, deviceReference.current),
+        prepareMiotBindingResourceBindings(
+          provider,
+          providerBindingsReference.current,
+        ),
+      ]).then(
+        ([discovery, preparedProviderBindings]) => {
           if (operationReference.current !== operation) {
             return;
           }
@@ -53,6 +63,7 @@ export function MiotProviderBindings({
               ...discovery,
               devices: orderDevicesByLocation(discovery.devices),
             },
+            providerBindings: preparedProviderBindings,
             cursor: 0,
             notice,
           });
@@ -112,7 +123,7 @@ export function MiotProviderBindings({
   };
 
   const prepareSave = (source: DeviceMatchState): void => {
-    const proposal = getProposal(source, providerBindings);
+    const proposal = getProposal(source);
 
     if (proposal.status === 'unavailable') {
       return;
@@ -126,7 +137,7 @@ export function MiotProviderBindings({
       metadata,
       replaceExisting:
         findCandidateEndpoint(proposal.device, endpoint)?.endpoint.binding !==
-          undefined && !hasProviderBinding(endpoint, providerBindings),
+          undefined && !hasProviderBinding(endpoint, source.providerBindings),
     }));
 
     if (requests.some(request => request.replaceExisting)) {
@@ -172,6 +183,7 @@ export function MiotProviderBindings({
           setState({
             type: 'device-match',
             discovery: state.discovery,
+            providerBindings: state.providerBindings,
             deviceKey: selectedDevice.key,
           });
         }
@@ -181,12 +193,13 @@ export function MiotProviderBindings({
         setState(clearedState);
       }
     } else if (state.type === 'device-match') {
-      const proposal = getProposal(state, providerBindings);
+      const proposal = getProposal(state);
 
       if (key.escape) {
         setState({
           type: 'devices',
           discovery: state.discovery,
+          providerBindings: state.providerBindings,
           cursor: getCandidateDeviceIndex(state.discovery, state.deviceKey),
         });
       } else if (key.return && proposal.status !== 'unavailable') {
@@ -207,21 +220,14 @@ export function MiotProviderBindings({
     }
   });
 
-  return <BindingView providerBindings={providerBindings} state={state} />;
+  return <BindingView state={state} />;
 }
 
 type BindingViewProps = {
   readonly state: BindingState;
-  readonly providerBindings: readonly {
-    readonly endpoint: EndpointPath;
-    readonly metadata: unknown;
-  }[];
 };
 
-function BindingView({
-  state,
-  providerBindings,
-}: BindingViewProps): React.JSX.Element {
+function BindingView({state}: BindingViewProps): React.JSX.Element {
   if (state.type === 'loading') {
     return (
       <Box flexDirection="column">
@@ -234,9 +240,9 @@ function BindingView({
       <ErrorView message={state.message}>enter/r retry · esc back</ErrorView>
     );
   } else if (state.type === 'devices') {
-    return <DevicesView providerBindings={providerBindings} state={state} />;
+    return <DevicesView state={state} />;
   } else if (state.type === 'device-match') {
-    return <DeviceMatchView proposal={getProposal(state, providerBindings)} />;
+    return <DeviceMatchView proposal={getProposal(state)} />;
   } else if (state.type === 'confirm-save') {
     const replacementCount = state.requests.filter(
       request => request.replaceExisting,
@@ -267,10 +273,8 @@ function BindingView({
 
 function DevicesView({
   state,
-  providerBindings,
 }: {
   readonly state: DevicesState;
-  readonly providerBindings: BindingViewProps['providerBindings'];
 }): React.JSX.Element {
   const {discovery} = state;
   const visibleDevices = getVisibleItems(
@@ -311,7 +315,7 @@ function DevicesView({
                     getCandidateDeviceIndex(discovery, device.key) ===
                     state.cursor
                   }
-                  status={getDeviceMatchStatus(device, providerBindings)}
+                  status={getDeviceMatchStatus(device, state.providerBindings)}
                 />
               ))}
             </Box>
@@ -531,6 +535,7 @@ type BindingState =
 type DevicesState = {
   readonly type: 'devices';
   readonly discovery: MiotBindingDiscovery;
+  readonly providerBindings: readonly MiotBindingResourceBinding[];
   readonly cursor: number;
   readonly notice?: 'reloaded';
 };
@@ -538,6 +543,7 @@ type DevicesState = {
 type DeviceMatchState = {
   readonly type: 'device-match';
   readonly discovery: MiotBindingDiscovery;
+  readonly providerBindings: readonly MiotBindingResourceBinding[];
   readonly deviceKey: string;
 };
 
@@ -560,17 +566,14 @@ type SaveErrorState = {
   readonly message: string;
 };
 
-function getProposal(
-  state: DeviceMatchState,
-  providerBindings: BindingViewProps['providerBindings'],
-): MiotBindingDeviceProposal {
+function getProposal(state: DeviceMatchState): MiotBindingDeviceProposal {
   const device = getCandidateDevice(state.discovery, state.deviceKey);
 
   if (device === undefined) {
     throw new TypeError('Unknown MIoT binding device.');
   }
 
-  return resolveMiotBindingDeviceProposal(device, providerBindings);
+  return resolveMiotBindingDeviceProposal(device, state.providerBindings);
 }
 
 function getCandidateDevice(
@@ -625,7 +628,7 @@ function getDeviceLocation(device: BackendDevice): string | undefined {
 
 function getDeviceMatchStatus(
   device: MiotBindingDeviceCandidate,
-  providerBindings: BindingViewProps['providerBindings'],
+  providerBindings: readonly MiotBindingResourceBinding[],
 ): MiotBindingDeviceProposal['status'] {
   return resolveMiotBindingDeviceProposal(device, providerBindings).status;
 }

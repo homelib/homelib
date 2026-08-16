@@ -77,12 +77,8 @@ test('confirms the default device match as one batch and returns after saving', 
       },
       replaceExisting: false,
       metadata: {
+        version: 1,
         device: {did: 'physical-light', urn: spec.type},
-        resources: [
-          {
-            service: {iid: 2},
-          },
-        ],
       },
     });
     expect(terminal.frame()).toContain('saving device match…');
@@ -171,6 +167,10 @@ test('groups devices by location and emphasizes binding status', async () => {
       })),
     ],
   });
+  const createBindingPlan = import.meta.jest.spyOn(
+    provider,
+    'createEndpointConnectionBindingPlan',
+  );
   const device = createLogicalDevice();
   const endpoint = device.endpoints[0];
 
@@ -185,6 +185,8 @@ test('groups devices by location and emphasizes binding status', async () => {
       providerBindings: [
         {
           endpoint: endpoint.path,
+          endpointReference: endpoint.endpoint,
+          deviceConstructors: device.deviceConstructors,
           metadata: createTestMetadata('bound-light', spec),
         },
         {
@@ -193,6 +195,8 @@ test('groups devices by location and emphasizes binding status', async () => {
             deviceName: 'Other Light',
             endpointName: '',
           }),
+          endpointReference: new LightEndpoint(),
+          deviceConstructors: [Light],
           metadata: createTestMetadata('used-light', spec),
         },
       ],
@@ -222,6 +226,13 @@ test('groups devices by location and emphasizes binding status', async () => {
     ]);
     expect(frame).not.toContain('endpoint ready');
     expect(lines[rangeIndex - 1]).toBe('');
+    expect(createBindingPlan).toHaveBeenCalledTimes(2);
+    expect(createBindingPlan).toHaveBeenNthCalledWith(
+      1,
+      endpoint.endpoint,
+      device.deviceConstructors,
+      createTestMetadata('bound-light', spec),
+    );
   } finally {
     await terminal.close();
     restoreFetch();
@@ -320,20 +331,18 @@ function createFakeProvider(
     configurable: true,
     value: () => Promise.resolve(discovery),
   });
+  Object.defineProperty(provider, 'getSpecInstance', {
+    configurable: true,
+    value: () => Promise.resolve(spec),
+  });
 
   return provider;
 }
 
 function createTestMetadata(did: string, spec: MiotSpecInstance): unknown {
-  const service = spec.services[0];
-
-  if (service === undefined) {
-    throw new Error('Missing test service.');
-  }
-
   return {
+    version: 1,
     device: {did, model: 'test.light', urn: spec.type},
-    resources: [{service}],
   };
 }
 

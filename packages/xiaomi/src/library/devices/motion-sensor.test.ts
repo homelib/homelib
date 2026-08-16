@@ -671,12 +671,12 @@ function createConnection(spec: MiotSpecInstance = createSpec()): {
 
   const persistedMetadata = createMiotEndpointConnectionMetadata(
     {did: 'sensor-1', model: 'lumi.motion.bmgl01'},
-    spec.type,
-    resources,
+    spec,
   );
   const metadata = resolveMiotEndpointConnectionMetadata(
     MiotMotionSensorEndpointConnection,
     persistedMetadata,
+    spec,
   );
   const connection = new MiotMotionSensorEndpointConnection(
     new MiotProvider('provider'),
@@ -684,11 +684,8 @@ function createConnection(spec: MiotSpecInstance = createSpec()): {
     [new TestTransport()],
   );
 
-  expect(persistedMetadata.resources).toEqual([
-    {service: expect.objectContaining({iid: 2})},
-  ]);
-  expect(persistedMetadata.resources[0]).not.toHaveProperty('properties');
-  expect(persistedMetadata.resources[0]).not.toHaveProperty('events');
+  expect(persistedMetadata).not.toHaveProperty('resources');
+  expect(metadata.resources.map(({service}) => service.iid)).toEqual([2]);
 
   return {
     connection,

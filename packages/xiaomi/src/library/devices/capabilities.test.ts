@@ -30,7 +30,7 @@ import {
 } from '../device.js';
 import {
   type MiotEndpointConnection,
-  type MiotEndpointConnectionMetadata,
+  type MiotEndpointConnectionIdentityMetadata,
   type MiotEndpointConnectionResolvedMetadata,
   MiotEndpointConnectionTransport,
   getMiotEndpointConnectionProperty,
@@ -52,11 +52,14 @@ const READ_WRITE_NOTIFY = ['read', 'write', 'notify'] as const;
 
 describe('MIoT air conditioner capabilities', () => {
   test('matches and projects optional mode, fan speed, target temperature, and target humidity', () => {
-    const persistedMetadata = findPersistedMetadata(
+    const spec = createAirConditionerSpec();
+    const persistedMetadata = findPersistedMetadata(spec);
+    const metadata = resolveMiotEndpointConnectionMetadata(
       MiotAirConditionerEndpointConnection,
-      createAirConditionerSpec(),
+      persistedMetadata,
+      spec,
     );
-    const controlService = persistedMetadata.resources.find(
+    const controlService = metadata.resources.find(
       resource => resource.service.iid === 2,
     )?.service;
 
@@ -66,14 +69,7 @@ describe('MIoT air conditioner capabilities', () => {
         type: expect.stringContaining('property:target-humidity:'),
       }),
     );
-    expect(persistedMetadata.resources).not.toContainEqual(
-      expect.objectContaining({properties: expect.anything()}),
-    );
-
-    const metadata = resolveMiotEndpointConnectionMetadata(
-      MiotAirConditionerEndpointConnection,
-      persistedMetadata,
-    );
+    expect(persistedMetadata).not.toHaveProperty('resources');
     const connection = new MiotAirConditionerEndpointConnection(
       new MiotProvider('provider'),
       metadata,
@@ -1505,24 +1501,17 @@ function findMetadata(
 ): MiotEndpointConnectionResolvedMetadata {
   return resolveMiotEndpointConnectionMetadata(
     Connection,
-    findPersistedMetadata(Connection, spec),
+    findPersistedMetadata(spec),
+    spec,
   );
 }
 
 function findPersistedMetadata(
-  Connection: MiotEndpointConnectionConstructor,
   spec: MiotSpecInstance,
-): MiotEndpointConnectionMetadata {
-  const resources = resolveMiotEndpointConnectionResources(Connection, spec);
-
-  if (resources === undefined) {
-    throw new Error('Test connection did not resolve endpoint resources.');
-  }
-
+): MiotEndpointConnectionIdentityMetadata {
   return createMiotEndpointConnectionMetadata(
     {did: 'device-1', model: 'test.device'},
-    spec.type,
-    resources,
+    spec,
   );
 }
 

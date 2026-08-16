@@ -7,6 +7,7 @@ import {
   Device,
   EndpointPath,
   type EndpointReference,
+  ProviderReference,
 } from '@homelib/core';
 import {render} from 'ink';
 import {createElement} from 'react';
@@ -15,7 +16,7 @@ import {
   Startup,
   type StartupTuiModel,
   createProviderBindingDevice,
-  getActiveEndpointBindings,
+  createProviderBindingRecords,
 } from './startup.js';
 
 class TestDevice extends Device {}
@@ -60,7 +61,7 @@ test('preserves logical device constructor identity for provider binding', () =>
   ]);
 });
 
-test('excludes stale bindings from provider resource matching', () => {
+test('joins active provider bindings with the current topology', () => {
   const activeBinding = {
     endpoint: ENDPOINT_PATH,
     provider: {namespace: 'test', name: 'provider'},
@@ -75,16 +76,32 @@ test('excludes stale bindings from provider resource matching', () => {
     provider: {namespace: 'test', name: 'provider'},
     metadata: {resource: 'stale'},
   } as const;
+  const otherProviderBinding = {
+    endpoint: ENDPOINT_PATH,
+    provider: {namespace: 'other', name: 'provider'},
+    metadata: {resource: 'other'},
+  } as const;
   const bindingFile = BindingFile.satisfies({
     version: 0,
-    bindings: [activeBinding, staleBinding],
+    bindings: [activeBinding, staleBinding, otherProviderBinding],
   });
   const scopes: readonly BootstrapBindingScope[] = [
     {path: ['home'], scopes: [], devices: [DEVICE]},
   ];
 
-  expect(getActiveEndpointBindings(scopes, bindingFile)).toEqual([
-    activeBinding,
+  expect(
+    createProviderBindingRecords(
+      scopes,
+      bindingFile,
+      ProviderReference.satisfies({namespace: 'test', name: 'provider'}),
+    ),
+  ).toEqual([
+    {
+      endpoint: ENDPOINT_PATH,
+      endpointReference: ENDPOINT,
+      deviceConstructors: DEVICE_CONSTRUCTORS,
+      metadata: activeBinding.metadata,
+    },
   ]);
 });
 

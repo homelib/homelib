@@ -3,6 +3,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 import {
+  AirConditioner,
+  AirConditionerEndpoint,
   Dehumidifier,
   DehumidifierEndpoint,
   Device,
@@ -13,13 +15,10 @@ import {
 import {
   createMiotEndpointConnectionMetadata,
   resolveMiotEndpointConnectionMetadata,
-  resolveMiotEndpointConnectionResources,
 } from './device.js';
+import {MiotLightEndpointConnection} from './devices/index.js';
 import {
-  MiotDehumidifierEndpointConnection,
-  MiotLightEndpointConnection,
-} from './devices/index.js';
-import {
+  type LegacyMiotEndpointConnectionMetadata,
   type MiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
@@ -94,46 +93,103 @@ const DEHUMIDIFIER_SPEC: MiotSpecInstance = {
   ],
 };
 
+const AIR_CONDITIONER_SPEC: MiotSpecInstance = {
+  type: 'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00:3',
+  description: 'Test air conditioner',
+  services: [
+    {
+      iid: 2,
+      type: 'urn:miot-spec-v2:service:air-conditioner:0000780F:test:1',
+      description: 'Air Conditioner',
+      properties: [
+        {
+          iid: 1,
+          type: 'urn:miot-spec-v2:property:on:00000006:test:1',
+          description: 'Switch Status',
+          format: 'bool',
+          access: ['read', 'write', 'notify'],
+        },
+      ],
+    },
+    {
+      iid: 3,
+      type: 'urn:miot-spec-v2:service:fan-control:00007809:test:1',
+      description: 'Fan Control',
+      properties: [
+        {
+          iid: 2,
+          type: 'urn:miot-spec-v2:property:fan-level:00000016:test:1',
+          description: 'Fan Level',
+          format: 'uint8',
+          access: ['read', 'write', 'notify'],
+          'value-list': [
+            {value: 0, description: 'Auto'},
+            {value: 1, description: 'Level 1'},
+          ],
+        },
+      ],
+    },
+    {
+      iid: 4,
+      type: 'urn:miot-spec-v2:service:environment:0000780A:test:1',
+      description: 'Environment',
+      properties: [
+        {
+          iid: 7,
+          type: 'urn:miot-spec-v2:property:temperature:00000020:test:1',
+          description: 'Temperature',
+          format: 'float',
+          access: ['read', 'notify'],
+          unit: 'celsius',
+          'value-range': [-50, 150, 0.1],
+        },
+        {
+          iid: 9,
+          type: 'urn:miot-spec-v2:property:relative-humidity:0000000C:test:1',
+          description: 'Relative Humidity',
+          format: 'uint8',
+          access: ['read', 'notify'],
+          unit: 'percentage',
+          'value-range': [0, 100, 1],
+        },
+      ],
+    },
+  ],
+};
+
 test('rejects duplicate provider declarations', () => {
   $xiaomi('home');
 
   expect(() => $xiaomi('home')).toThrow('Duplicate provider: home.');
 });
 
-test('routes endpoint binding plans through the exact endpoint connection', () => {
+test('routes endpoint binding plans through the exact endpoint connection', async () => {
   class SpecializedLightEndpoint extends LightEndpoint {}
-
-  const resources = resolveMiotEndpointConnectionResources(
-    MiotLightEndpointConnection,
-    LIGHT_SPEC,
-  );
-
-  if (resources === undefined) {
-    throw new Error('Test light has no resolved MIoT resources.');
-  }
 
   const metadata = createMiotEndpointConnectionMetadata(
     {did: 'device', model: 'test.light'},
-    LIGHT_SPEC.type,
-    resources,
+    LIGHT_SPEC,
   );
-
   const provider = new MiotProvider('provider');
-  const legacyMetadata = {
-    ...metadata,
-    resources: metadata.resources.map(resource => ({
-      service: resource.service,
-    })),
-  };
+  import.meta.jest
+    .spyOn(provider, 'getSpecInstance')
+    .mockResolvedValue(LIGHT_SPEC);
   const plan = provider.createEndpointConnectionBindingPlan(
     new LightEndpoint(),
     [Light],
-    legacyMetadata,
+    metadata,
+  );
+  const preparedPlan = await plan.prepare();
+  const resolvedMetadata = resolveMiotEndpointConnectionMetadata(
+    MiotLightEndpointConnection,
+    metadata,
+    LIGHT_SPEC,
   );
 
-  expect(plan.resourceKeys).toEqual(
-    getMiotEndpointConnectionResourceKeys(metadata),
+  expect(preparedPlan.resourceKeys).toEqual(
+    getMiotEndpointConnectionResourceKeys(resolvedMetadata),
   );
+  expect(preparedPlan.persistedMetadata).toEqual(metadata);
   expect(() =>
     provider.createEndpointConnectionBindingPlan(
       new SpecializedLightEndpoint(),
@@ -150,34 +206,193 @@ test('routes endpoint binding plans through the exact endpoint connection', () =
   ).toThrow('Unsupported MIoT endpoint.');
 });
 
-test('claims every service used by a multi-service endpoint', () => {
-  const resources = resolveMiotEndpointConnectionResources(
-    MiotDehumidifierEndpointConnection,
-    DEHUMIDIFIER_SPEC,
-  );
-
-  if (resources === undefined) {
-    throw new Error('Test dehumidifier has no resolved MIoT resources.');
-  }
-
+test('claims every service used by a multi-service endpoint', async () => {
   const metadata = createMiotEndpointConnectionMetadata(
     {did: 'dehumidifier', model: 'xiaomi.derh.13l'},
-    DEHUMIDIFIER_SPEC.type,
-    resources,
+    DEHUMIDIFIER_SPEC,
   );
-
   const provider = new MiotProvider('provider');
+  import.meta.jest
+    .spyOn(provider, 'getSpecInstance')
+    .mockResolvedValue(DEHUMIDIFIER_SPEC);
   const plan = provider.createEndpointConnectionBindingPlan(
     new DehumidifierEndpoint(),
     [Dehumidifier],
     metadata,
   );
+  const preparedPlan = await plan.prepare();
 
-  expect(plan.resourceKeys).toEqual([
+  expect(preparedPlan.resourceKeys).toEqual([
     JSON.stringify(['dehumidifier', 2]),
     JSON.stringify(['dehumidifier', 3]),
   ]);
 });
+
+test('migrates a legacy endpoint from selected service snapshots to current schema', async () => {
+  const legacyMetadata = createLegacyAirConditionerMetadata();
+  const provider = new MiotProvider('provider');
+  const getSpecInstance = import.meta.jest
+    .spyOn(provider, 'getSpecInstance')
+    .mockResolvedValue(AIR_CONDITIONER_SPEC);
+  const getCloud = import.meta.jest.fn(async (): Promise<TestCloud> => {
+    throw new Error('Cloud must not be loaded while preparing a binding.');
+  });
+
+  getProviderCleanupInternals(provider).getCloud = getCloud;
+
+  const preparedPlan = await provider
+    .createEndpointConnectionBindingPlan(
+      new AirConditionerEndpoint(),
+      [AirConditioner],
+      legacyMetadata,
+    )
+    .prepare();
+
+  expect(getSpecInstance).toHaveBeenCalledWith(AIR_CONDITIONER_SPEC.type);
+  expect(getCloud).not.toHaveBeenCalled();
+  expect(preparedPlan.resourceKeys).toEqual([
+    JSON.stringify(['air-conditioner', 2]),
+    JSON.stringify(['air-conditioner', 3]),
+    JSON.stringify(['air-conditioner', 4]),
+  ]);
+  expect(preparedPlan.persistedMetadata).toEqual({
+    version: 1,
+    device: legacyMetadata.device,
+  });
+});
+
+test('force refreshes a stale full spec before migrating legacy metadata', async () => {
+  const legacyMetadata = createLegacyAirConditionerMetadata();
+  const provider = new MiotProvider('provider');
+  const staleSpec = {...AIR_CONDITIONER_SPEC, services: []};
+  const getSpecInstance = import.meta.jest
+    .spyOn(provider, 'getSpecInstance')
+    .mockResolvedValue(staleSpec);
+  const refreshSpecInstance = import.meta.jest
+    .spyOn(provider, 'refreshSpecInstance')
+    .mockResolvedValue(AIR_CONDITIONER_SPEC);
+
+  const preparedPlan = await provider
+    .createEndpointConnectionBindingPlan(
+      new AirConditionerEndpoint(),
+      [AirConditioner],
+      legacyMetadata,
+    )
+    .prepare();
+
+  expect(getSpecInstance).toHaveBeenCalledTimes(1);
+  expect(refreshSpecInstance).toHaveBeenCalledWith(AIR_CONDITIONER_SPEC.type);
+  expect(preparedPlan.resourceKeys).toEqual([
+    JSON.stringify(['air-conditioner', 2]),
+    JSON.stringify(['air-conditioner', 3]),
+    JSON.stringify(['air-conditioner', 4]),
+  ]);
+  expect(preparedPlan.persistedMetadata).toEqual({
+    version: 1,
+    device: legacyMetadata.device,
+  });
+});
+
+test('force refreshes a stale full spec for current metadata', async () => {
+  const metadata = createMiotEndpointConnectionMetadata(
+    {did: 'air-conditioner', model: 'xiaomi.aircondition.rr6r00'},
+    AIR_CONDITIONER_SPEC,
+  );
+  const provider = new MiotProvider('provider');
+  const staleSpec = {...AIR_CONDITIONER_SPEC, services: []};
+
+  import.meta.jest
+    .spyOn(provider, 'getSpecInstance')
+    .mockResolvedValue(staleSpec);
+  const refreshSpecInstance = import.meta.jest
+    .spyOn(provider, 'refreshSpecInstance')
+    .mockResolvedValue(AIR_CONDITIONER_SPEC);
+
+  const preparedPlan = await provider
+    .createEndpointConnectionBindingPlan(
+      new AirConditionerEndpoint(),
+      [AirConditioner],
+      metadata,
+    )
+    .prepare();
+
+  expect(refreshSpecInstance).toHaveBeenCalledWith(AIR_CONDITIONER_SPEC.type);
+  expect(preparedPlan.resourceKeys).toEqual([
+    JSON.stringify(['air-conditioner', 2]),
+    JSON.stringify(['air-conditioner', 3]),
+    JSON.stringify(['air-conditioner', 4]),
+  ]);
+  expect(preparedPlan.persistedMetadata).toEqual(metadata);
+});
+
+test('rejects current metadata when a stale spec cannot be refreshed', async () => {
+  const metadata = createMiotEndpointConnectionMetadata(
+    {did: 'air-conditioner', model: 'xiaomi.aircondition.rr6r00'},
+    AIR_CONDITIONER_SPEC,
+  );
+  const provider = new MiotProvider('provider');
+
+  import.meta.jest
+    .spyOn(provider, 'getSpecInstance')
+    .mockResolvedValue({...AIR_CONDITIONER_SPEC, services: []});
+  const refreshSpecInstance = import.meta.jest
+    .spyOn(provider, 'refreshSpecInstance')
+    .mockRejectedValue(new Error('Spec refresh unavailable.'));
+
+  await expect(
+    provider
+      .createEndpointConnectionBindingPlan(
+        new AirConditionerEndpoint(),
+        [AirConditioner],
+        metadata,
+      )
+      .prepare(),
+  ).rejects.toThrow('Spec refresh unavailable.');
+  expect(refreshSpecInstance).toHaveBeenCalledWith(AIR_CONDITIONER_SPEC.type);
+});
+
+test.each([
+  {
+    name: 'spec loading fails',
+    loadSpec: () => Promise.reject(new Error('Spec unavailable.')),
+    refreshSpec: () => Promise.reject(new Error('Unexpected spec refresh.')),
+    refreshCount: 0,
+  },
+  {
+    name: 'the complete spec no longer matches',
+    loadSpec: () => Promise.resolve({...AIR_CONDITIONER_SPEC, services: []}),
+    refreshSpec: () => Promise.resolve({...AIR_CONDITIONER_SPEC, services: []}),
+    refreshCount: 1,
+  },
+])(
+  'falls back to a legacy snapshot when $name',
+  async ({loadSpec, refreshSpec, refreshCount}) => {
+    const legacyMetadata = createLegacyAirConditionerMetadata();
+    const provider = new MiotProvider('provider');
+
+    import.meta.jest
+      .spyOn(provider, 'getSpecInstance')
+      .mockImplementation(loadSpec as () => Promise<MiotSpecInstance>);
+    const refreshSpecInstance = import.meta.jest
+      .spyOn(provider, 'refreshSpecInstance')
+      .mockImplementation(refreshSpec as () => Promise<MiotSpecInstance>);
+
+    const preparedPlan = await provider
+      .createEndpointConnectionBindingPlan(
+        new AirConditionerEndpoint(),
+        [AirConditioner],
+        legacyMetadata,
+      )
+      .prepare();
+
+    expect(refreshSpecInstance).toHaveBeenCalledTimes(refreshCount);
+    expect(preparedPlan.resourceKeys).toEqual([
+      JSON.stringify(['air-conditioner', 2]),
+      JSON.stringify(['air-conditioner', 4]),
+    ]);
+    expect(preparedPlan.persistedMetadata).toEqual(legacyMetadata);
+  },
+);
 
 test('forgets the local session while preserving identity and configuration', async () => {
   const previousEnvironmentDirectory = process.env.HOMELIB_DIRECTORY;
@@ -405,23 +620,39 @@ function getProviderCleanupInternals(
   return provider as unknown as ProviderCleanupInternals;
 }
 
+function createLegacyAirConditionerMetadata(): LegacyMiotEndpointConnectionMetadata {
+  const services = [2, 4].map(iid => {
+    const service = AIR_CONDITIONER_SPEC.services.find(
+      candidate => candidate.iid === iid,
+    );
+
+    if (service === undefined) {
+      throw new Error(`Missing test MIoT service: ${iid}.`);
+    }
+
+    return {service};
+  });
+
+  return {
+    device: {
+      did: 'air-conditioner',
+      model: 'xiaomi.aircondition.rr6r00',
+      urn: AIR_CONDITIONER_SPEC.type,
+    },
+    resources: services,
+  };
+}
+
 function createTestLightResolvedMetadata(): MiotEndpointConnectionResolvedMetadata {
-  const resources = resolveMiotEndpointConnectionResources(
-    MiotLightEndpointConnection,
+  const metadata = createMiotEndpointConnectionMetadata(
+    {did: 'device', model: 'test.light'},
     LIGHT_SPEC,
   );
 
-  if (resources === undefined) {
-    throw new Error('Test light has no resolved MIoT resources.');
-  }
-
   return resolveMiotEndpointConnectionMetadata(
     MiotLightEndpointConnection,
-    createMiotEndpointConnectionMetadata(
-      {did: 'device', model: 'test.light'},
-      LIGHT_SPEC.type,
-      resources,
-    ),
+    metadata,
+    LIGHT_SPEC,
   );
 }
 

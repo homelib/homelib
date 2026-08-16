@@ -1,7 +1,68 @@
 import type {EndpointConnectionBinding} from '../endpoint.js';
-import type {EndpointConnectionBindingPlan} from '../provider.js';
+import type {
+  EndpointConnectionBindingPlan,
+  PreparedEndpointConnectionBindingPlan,
+} from '../provider.js';
 
-import {createEndpointConnectionBindings} from './@binding-creation.js';
+import {
+  createEndpointConnectionBindings,
+  prepareEndpointConnectionBindingPlans,
+} from './@binding-creation.js';
+
+test('waits for every preparation and preserves plan order', async () => {
+  const firstPlan = createPlan(() => createTestBinding());
+  const secondPlan = createPlan(() => createTestBinding());
+  const firstPreparation =
+    createDeferred<PreparedEndpointConnectionBindingPlan>();
+  const preparation = prepareEndpointConnectionBindingPlans([
+    createUnpreparedPlan(() => firstPreparation.promise),
+    createUnpreparedPlan(() => Promise.resolve(secondPlan)),
+  ]);
+  let settled = false;
+
+  void preparation.finally(() => {
+    settled = true;
+  });
+  await Promise.resolve();
+  expect(settled).toBe(false);
+
+  firstPreparation.resolve(firstPlan);
+
+  await expect(preparation).resolves.toEqual([firstPlan, secondPlan]);
+});
+
+test('waits for every preparation before reporting failures', async () => {
+  const preparationError = new Error('preparation failed');
+  const remainingPreparation =
+    createDeferred<PreparedEndpointConnectionBindingPlan>();
+  const preparation = prepareEndpointConnectionBindingPlans([
+    createUnpreparedPlan(() => Promise.reject(preparationError)),
+    createUnpreparedPlan(() => remainingPreparation.promise),
+  ]);
+  let settled = false;
+
+  void preparation.catch(() => {
+    settled = true;
+  });
+  await Promise.resolve();
+  expect(settled).toBe(false);
+
+  remainingPreparation.resolve(createPlan(() => createTestBinding()));
+
+  await expect(preparation).rejects.toBe(preparationError);
+});
+
+test('reports multiple preparation failures together', async () => {
+  const firstError = new Error('first preparation failed');
+  const secondError = new Error('second preparation failed');
+
+  await expect(
+    prepareEndpointConnectionBindingPlans([
+      createUnpreparedPlan(() => Promise.reject(firstError)),
+      createUnpreparedPlan(() => Promise.reject(secondError)),
+    ]),
+  ).rejects.toMatchObject({errors: [firstError, secondError]});
+});
 
 test('waits for every creation and disposes successful bindings on failure', async () => {
   const firstBinding = createTestBinding();
@@ -81,8 +142,18 @@ test('returns successful bindings in plan order without binding them', async () 
 function createPlan(
   create: () =>
     PromiseLike<EndpointConnectionBinding> | EndpointConnectionBinding,
+): PreparedEndpointConnectionBindingPlan {
+  return {
+    resourceKeys: [],
+    persistedMetadata: {},
+    create: async () => create(),
+  };
+}
+
+function createUnpreparedPlan(
+  prepare: () => PromiseLike<PreparedEndpointConnectionBindingPlan>,
 ): EndpointConnectionBindingPlan {
-  return {resourceKeys: [], create: async () => create()};
+  return {prepare};
 }
 
 function createTestBinding(

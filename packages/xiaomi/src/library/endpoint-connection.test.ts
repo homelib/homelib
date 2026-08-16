@@ -23,8 +23,8 @@ import {
 import type {MiotPlaceholderCommand} from './command.js';
 import {MiotLightEndpointConnection} from './devices/index.js';
 import {
+  LegacyMiotEndpointConnectionMetadata,
   MiotEndpointConnection,
-  MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionResolvedMetadata,
   type MiotEndpointConnectionResolvedResource,
   MiotEndpointConnectionTransport,
@@ -33,6 +33,7 @@ import {
   createMiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionProperty,
   getMiotEndpointConnectionResourceKeys,
+  isLegacyMiotEndpointConnectionMetadata,
   normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import {
@@ -495,11 +496,15 @@ test('validates range, value-list, and temperature metadata in helpers', () => {
   );
 });
 
-test('normalizes persisted metadata and strips legacy property aliases', () => {
+test('normalizes legacy metadata and strips persisted property aliases', () => {
   const serialized = JSON.stringify(TEST_MULTI_RESOURCE_METADATA);
   const metadata = normalizeMiotEndpointConnectionMetadata(
     JSON.parse(serialized) as unknown,
   );
+
+  if (!isLegacyMiotEndpointConnectionMetadata(metadata)) {
+    throw new TypeError('Expected legacy test metadata.');
+  }
 
   expect(metadata.resources).toMatchObject([
     {service: {iid: 2}},
@@ -511,18 +516,40 @@ test('normalizes persisted metadata and strips legacy property aliases', () => {
         (resource as {readonly properties?: unknown}).properties === undefined,
     ),
   ).toBe(true);
-  expect(getMiotEndpointConnectionResourceKeys(metadata)).toEqual([
+  expect(
+    getMiotEndpointConnectionResourceKeys(TEST_MULTI_RESOURCE_METADATA),
+  ).toEqual([
     JSON.stringify([TEST_METADATA.device.did, 2]),
     JSON.stringify([TEST_METADATA.device.did, 3]),
   ]);
 });
 
-test('resource keys are canonical regardless of metadata order', () => {
-  const metadata = MiotEndpointConnectionMetadata.satisfies({
+test('normalizes current identity metadata without legacy resources', () => {
+  expect(
+    normalizeMiotEndpointConnectionMetadata({
+      version: 1,
+      device: TEST_METADATA.device,
+      resources: [{service: TEST_PRIMARY_RESOURCE.service}],
+    }),
+  ).toEqual({version: 1, device: TEST_METADATA.device});
+});
+
+test('does not treat an unknown metadata version as legacy', () => {
+  expect(() =>
+    normalizeMiotEndpointConnectionMetadata({
+      version: 2,
+      device: TEST_METADATA.device,
+      resources: [{service: TEST_PRIMARY_RESOURCE.service}],
+    }),
+  ).toThrow();
+});
+
+test('resource keys are canonical regardless of resolved resource order', () => {
+  const metadata = createTestResolvedMetadata({
     ...TEST_MULTI_RESOURCE_METADATA,
     resources: TEST_MULTI_RESOURCE_METADATA.resources
       .toReversed()
-      .map(resource => ({service: resource.service})),
+      .map(resource => ({...resource})),
   });
 
   expect(getMiotEndpointConnectionResourceKeys(metadata)).toEqual([
@@ -533,7 +560,7 @@ test('resource keys are canonical regardless of metadata order', () => {
 
 test('rejects metadata without any resources', () => {
   expect(() =>
-    MiotEndpointConnectionMetadata.satisfies({
+    LegacyMiotEndpointConnectionMetadata.satisfies({
       ...TEST_METADATA,
       resources: [],
     }),
@@ -542,7 +569,7 @@ test('rejects metadata without any resources', () => {
 
 test('rejects legacy single-service endpoint metadata', () => {
   expect(() =>
-    MiotEndpointConnectionMetadata.satisfies({
+    LegacyMiotEndpointConnectionMetadata.satisfies({
       device: TEST_METADATA.device,
       service: TEST_PRIMARY_RESOURCE.service,
       properties: TEST_PRIMARY_RESOURCE.properties,
@@ -826,7 +853,7 @@ test('resolves state aliases by service and property iid', () => {
 
 test('rejects duplicate physical services and derived state aliases', () => {
   expect(() =>
-    MiotEndpointConnectionMetadata.satisfies({
+    LegacyMiotEndpointConnectionMetadata.satisfies({
       ...TEST_MULTI_RESOURCE_METADATA,
       resources: [
         {service: TEST_PRIMARY_RESOURCE.service},
