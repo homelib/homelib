@@ -28,8 +28,8 @@ import {$xiaomi} from '@homelib/xiaomi';
 
 $xiaomi('home');
 
-const home = $home('home', tree =>
-  tree.$scope('livingRoom', room =>
+const home = $home('home', home =>
+  home.$scope('livingRoom', room =>
     room.$light('light').$motionSensor('motionSensor'),
   ),
 );
@@ -45,6 +45,8 @@ autorun(() => {
 
 The declaration callback creates a fully type-safe tree: only scopes and
 devices declared at each level are available as properties.
+See the [playground home](./packages/playground/src/program/home.ts) for a more
+complete example.
 
 The terminal frontend handles setup and device binding during `bootstrap()`.
 Use `--run` to run directly with existing bindings.
