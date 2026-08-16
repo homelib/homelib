@@ -3,7 +3,25 @@
 
 # @homelib/playground
 
-Just another awesome magic.
+Working-tree examples for trying HomeLib against real providers and devices.
+
+The current program demonstrates:
+
+- logical device and provider declarations in `home.ts`;
+- reactive temperature/humidity control using device-scoped sensor
+  capabilities;
+- automatic pet feeding; and
+- observing a read-only motion sensor with MobX `autorun`.
+
+Build and run the playground from the repository root:
+
+```sh
+npm run build
+node packages/playground/bld/program/home.js
+```
+
+After providers and bindings are configured, pass `--run` to reuse them
+without opening the setup flow.
 
 ## License
 

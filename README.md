@@ -8,7 +8,7 @@
 
 ## Introduction
 
-HomeLib let you write home automations in full-featured JavaScript/TypeScript:
+HomeLib lets you write home automations in full-featured JavaScript/TypeScript:
 
 You can now utilize the power of JavaScript ecosystem and enjoy a functional version management with zero noise.
 
@@ -23,15 +23,22 @@ Create a new script and run it directly with Node.js:
 
 ```ts
 import {$home, bootstrap} from '@homelib/core';
+import {autorun} from '@homelib/core/mobx';
 import {$xiaomi} from '@homelib/xiaomi';
 
 $xiaomi('home');
 
-const light = $home('home').$scope('living room').$light('light');
+const livingRoom = $home('home').$scope('living room');
+const light = livingRoom.$light('light');
+const motionSensor = livingRoom.$motionSensor('motion sensor');
 
 await bootstrap();
 
-light.turnOn();
+autorun(() => {
+  if (motionSensor.motionDetected) {
+    light.turnOn();
+  }
+});
 ```
 
 The terminal frontend handles setup and device binding during `bootstrap()`.
