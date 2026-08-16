@@ -61,6 +61,28 @@ const MODE_PROPERTY = {
   ...MODE_SPEC_PROPERTY,
   enum: {cool: 2, dry: 3, heat: 5},
 } as const satisfies MiotResolvedSpecProperty;
+const FAN_LEVEL_SPEC_PROPERTY = {
+  iid: 8,
+  type: 'urn:miot-spec-v2:property:fan-level:00000016:test:1',
+  description: 'Fan Level',
+  format: 'uint8',
+  access: ['read', 'write', 'notify'],
+  'value-list': [
+    {value: 0, description: 'Auto'},
+    {value: 1, description: 'Level 1'},
+    {value: 2, description: 'Level 2'},
+    {value: 3, description: 'Level 3'},
+    {value: 4, description: 'Level 4'},
+    {value: 5, description: 'Level 5'},
+    {value: 6, description: 'Level 6'},
+    {value: 7, description: 'Level 7'},
+    {value: 8, description: 'Level 8'},
+  ],
+} as const satisfies MiotSpecProperty;
+const FAN_LEVEL_PROPERTY = {
+  ...FAN_LEVEL_SPEC_PROPERTY,
+  enum: {auto: 0},
+} as const satisfies MiotResolvedSpecProperty;
 const UNSUPPORTED_PROPERTY = {
   iid: 6,
   type: 'urn:miot-spec-v2:property:custom:0000FFFF:test:1',
@@ -93,6 +115,7 @@ const METADATA = {
           TARGET_TEMPERATURE_PROPERTY,
           LEVEL_PROPERTY,
           MODE_SPEC_PROPERTY,
+          FAN_LEVEL_SPEC_PROPERTY,
           UNSUPPORTED_PROPERTY,
           READ_ONLY_PROPERTY,
         ],
@@ -103,6 +126,7 @@ const METADATA = {
         targetTemperature: TARGET_TEMPERATURE_PROPERTY,
         level: LEVEL_PROPERTY,
         mode: MODE_PROPERTY,
+        'fan-level': FAN_LEVEL_PROPERTY,
         unsupported: UNSUPPORTED_PROPERTY,
         readOnly: READ_ONLY_PROPERTY,
       },
@@ -220,6 +244,35 @@ test('uses one enum mapping for requests, equality, and state matching', () => {
   );
   expect(() => new TestEffect({mode: 'dry'})).toThrow(CommandError);
   expect(() => new TestEffect({mode: 'auto'})).toThrow(CommandError);
+  expect(() => new TestEffect({mode: 2})).toThrow(
+    'Invalid MIoT enum command effect value.',
+  );
+});
+
+test('supports enum and manual values on a hybrid fan level', () => {
+  const autoConnection = new TestConnection({'fan-level': 0});
+  const autoEffect = new TestEffect({'fan-level': 'auto'}, autoConnection);
+
+  expect(autoEffect.request).toEqual(
+    new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 0),
+  );
+  expect(autoEffect.toLogString()).toBe('set fan-level=0 (auto)');
+  expect(autoEffect.matches(new TestEndpoint())).toBe(true);
+
+  expect(new TestEffect({'fan-level': 0}).request).toEqual(
+    new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 1),
+  );
+  expect(new TestEffect({'fan-level': 6 / 7}).request).toEqual(
+    new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 7),
+  );
+  expect(new TestEffect({'fan-level': 1}).request).toEqual(
+    new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 8),
+  );
+
+  const manualConnection = new TestConnection({'fan-level': 7});
+  const manualEffect = new TestEffect({'fan-level': 6 / 7}, manualConnection);
+
+  expect(manualEffect.matches(new TestEndpoint())).toBe(true);
 });
 
 test('describes canonical values after clamping and unit conversion', () => {
@@ -270,6 +323,7 @@ type TestEffectPropertyName =
   | 'targetTemperature'
   | 'level'
   | 'mode'
+  | 'fan-level'
   | 'readOnly'
   | 'unsupported';
 

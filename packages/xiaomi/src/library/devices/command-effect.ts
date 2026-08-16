@@ -222,11 +222,13 @@ function canonicalizeMiotObservedEffectValue(
   value: unknown,
 ): boolean | number | string {
   const canonicalValue = canonicalizeMiotObservedValue(property, value);
+  const manualFanLevels = getMiotManualFanLevels(property);
 
   if (
     property.enum !== undefined &&
     (typeof canonicalValue !== 'number' ||
-      !Object.values(property.enum).includes(canonicalValue))
+      (!Object.values(property.enum).includes(canonicalValue) &&
+        !manualFanLevels?.includes(canonicalValue)))
   ) {
     throw new TypeError(`Unknown MIoT enum property state: ${name}=${value}.`);
   }
@@ -310,18 +312,22 @@ function getMiotEffectValue(
   property: MiotResolvedSpecProperty,
   value: unknown,
 ): unknown {
+  const manualFanLevels = getMiotManualFanLevels(property);
+
   if (property.enum !== undefined) {
-    if (typeof value !== 'string') {
+    if (typeof value !== 'string' && manualFanLevels === undefined) {
       throw new TypeError('Invalid MIoT enum command effect value.');
     }
 
-    if (!Object.hasOwn(property.enum, value)) {
-      throw new CommandError(`Unsupported MIoT enum value: ${value}.`);
+    if (typeof value === 'string') {
+      if (!Object.hasOwn(property.enum, value)) {
+        throw new CommandError(`Unsupported MIoT enum value: ${value}.`);
+      }
+
+      const enumValue = property.enum[value];
+
+      return enumValue;
     }
-
-    const enumValue = property.enum[value];
-
-    return enumValue;
   }
 
   if (value instanceof Temperature) {
@@ -371,30 +377,57 @@ function getMiotEffectValue(
     return value * 100;
   }
 
-  if (
-    matchesMiotUrnPattern(
-      property.type,
-      'urn:miot-spec-v2:property:fan-level:00000016',
-    )
-  ) {
+  if (isMiotFanLevelProperty(property)) {
     const valueList = property['value-list'];
 
     if (!isValidMiotSpecValueList(valueList)) {
       throw new TypeError('Invalid MIoT fan-level value list.');
     }
 
-    const levels = valueList
-      .map(entry => entry.value)
-      .toSorted((a, b) => a - b);
-    const index = Math.min(
-      levels.length - 1,
-      Math.max(0, Math.round(value * levels.length) - 1),
-    );
+    const levels =
+      manualFanLevels ??
+      valueList.map(entry => entry.value).toSorted((a, b) => a - b);
+    // Hybrid fan levels reserve enum values such as Auto, so their remaining
+    // manual levels span the closed normalized interval from 0 to 1.
+    const scaledIndex =
+      manualFanLevels === undefined
+        ? Math.round(value * levels.length) - 1
+        : Math.round(value * (levels.length - 1));
+    const index = Math.min(levels.length - 1, Math.max(0, scaledIndex));
 
     return levels[index];
   }
 
   return value;
+}
+
+function getMiotManualFanLevels(
+  property: MiotResolvedSpecProperty,
+): readonly number[] | undefined {
+  if (property.enum === undefined || !isMiotFanLevelProperty(property)) {
+    return undefined;
+  }
+
+  const valueList = property['value-list'];
+
+  if (!isValidMiotSpecValueList(valueList)) {
+    return undefined;
+  }
+
+  const enumValues = new Set(Object.values(property.enum));
+  const manualLevels = valueList
+    .map(entry => entry.value)
+    .filter(value => !enumValues.has(value))
+    .toSorted((a, b) => a - b);
+
+  return manualLevels.length === 0 ? undefined : manualLevels;
+}
+
+function isMiotFanLevelProperty(property: MiotResolvedSpecProperty): boolean {
+  return matchesMiotUrnPattern(
+    property.type,
+    'urn:miot-spec-v2:property:fan-level:00000016',
+  );
 }
 
 function compareMiotCommandEffectProperties(

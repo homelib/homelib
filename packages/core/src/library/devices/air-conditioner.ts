@@ -12,6 +12,8 @@ import {
 
 export type AirConditionerMode = 'auto' | 'cool' | 'dry' | 'fan' | 'heat';
 
+export type AirConditionerFanSpeed = 'auto' | number;
+
 export class AirConditioner
   extends Device
   implements TemperatureSensor, HumiditySensor
@@ -26,6 +28,12 @@ export class AirConditioner
   @computed
   get mode(): AirConditionerMode | undefined {
     return this.endpoint.mode;
+  }
+
+  /** Automatic fan speed or a normalized manual speed from 0 to 1. */
+  @computed
+  get fanSpeed(): AirConditionerFanSpeed | undefined {
+    return this.endpoint.fanSpeed;
   }
 
   @computed
@@ -70,6 +78,11 @@ export class AirConditioner
     return this;
   }
 
+  setFanSpeed(value: AirConditionerFanSpeed): this {
+    this.endpoint.setFanSpeed(value);
+    return this;
+  }
+
   setTargetTemperature(value: Temperature): this {
     this.endpoint.setTargetTemperature(value);
     return this;
@@ -94,6 +107,12 @@ export class AirConditionerEndpoint<
   @computed
   get mode(): AirConditionerMode | undefined {
     return this.connection?.mode;
+  }
+
+  /** Automatic fan speed or a normalized manual speed from 0 to 1. */
+  @computed
+  get fanSpeed(): AirConditionerFanSpeed | undefined {
+    return this.connection?.fanSpeed;
   }
 
   @computed
@@ -127,6 +146,7 @@ export class AirConditionerEndpoint<
       ready: true,
       on: this.on,
       mode: this.mode,
+      fanSpeed: this.fanSpeed,
       targetTemperatureCelsius: this.targetTemperature?.celsius,
       targetRelativeHumidity: this.targetRelativeHumidity,
       temperatureCelsius: this.temperature?.celsius,
@@ -144,6 +164,10 @@ export class AirConditionerEndpoint<
 
   setMode(value: AirConditionerMode): this {
     return this.enqueueCommand(new SetAirConditionerModeCommand(value));
+  }
+
+  setFanSpeed(value: AirConditionerFanSpeed): this {
+    return this.enqueueCommand(new SetAirConditionerFanSpeedCommand(value));
   }
 
   setTargetTemperature(value: Temperature): this {
@@ -166,6 +190,8 @@ export type AirConditionerEndpointConnection =
     readonly relativeHumidity: number | undefined;
     readonly on: boolean;
     readonly mode: AirConditionerMode | undefined;
+    /** Automatic fan speed or a normalized manual speed from 0 to 1. */
+    readonly fanSpeed: AirConditionerFanSpeed | undefined;
     readonly targetTemperature: Temperature | undefined;
     /** Target relative humidity as a normalized ratio from 0 to 1. */
     readonly targetRelativeHumidity: number | undefined;
@@ -190,6 +216,32 @@ export class SetAirConditionerModeCommand extends AirConditionerCommand {
 
   override toLogString(): string {
     return `set mode=${this.value}`;
+  }
+}
+
+export class SetAirConditionerFanSpeedCommand extends AirConditionerCommand {
+  /** Automatic fan speed or a normalized manual speed from 0 to 1. */
+  constructor(readonly value: AirConditionerFanSpeed) {
+    super();
+
+    if (value !== 'auto' && typeof value !== 'number') {
+      throw new TypeError(
+        'Air conditioner fan speed must be "auto" or a number.',
+      );
+    }
+
+    if (
+      typeof value === 'number' &&
+      (!Number.isFinite(value) || value < 0 || value > 1)
+    ) {
+      throw new RangeError(
+        'Air conditioner fan speed must be "auto" or a finite number from 0 to 1.',
+      );
+    }
+  }
+
+  override toLogString(): string {
+    return `set fanSpeed=${this.value}`;
   }
 }
 
@@ -227,5 +279,6 @@ export class SetAirConditionerTargetHumidityCommand extends AirConditionerComman
 export type AirConditionerEndpointCommand =
   | SetAirConditionerOnCommand
   | SetAirConditionerModeCommand
+  | SetAirConditionerFanSpeedCommand
   | SetAirConditionerTargetTemperatureCommand
   | SetAirConditionerTargetHumidityCommand;

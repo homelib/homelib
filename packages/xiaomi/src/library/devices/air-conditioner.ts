@@ -2,9 +2,11 @@ import {
   AirConditionerEndpoint,
   type AirConditionerEndpointCommand,
   type AirConditionerEndpointConnection,
+  type AirConditionerFanSpeed,
   type AirConditionerMode,
   CommandError,
   type CommandExecution,
+  SetAirConditionerFanSpeedCommand,
   SetAirConditionerModeCommand,
   SetAirConditionerOnCommand,
   SetAirConditionerTargetHumidityCommand,
@@ -54,6 +56,20 @@ export class MiotAirConditionerEndpointConnection
         optional: true,
       },
     },
+    'urn:miot-spec-v2:service:fan-control:00007809': {
+      'urn:miot-spec-v2:property:fan-level:00000016': {
+        name: 'fan-level',
+        enum: {
+          'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-mt*': {
+            auto: 0,
+          },
+          'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00': {
+            auto: 0,
+          },
+        },
+        optional: true,
+      },
+    },
     'urn:miot-spec-v2:service:environment:0000780A': {
       'urn:miot-spec-v2:property:temperature:00000020': {
         name: 'temperature',
@@ -75,6 +91,38 @@ export class MiotAirConditionerEndpointConnection
   get mode(): AirConditionerMode | undefined {
     const mode = this.getEnumPropertyState('mode');
     return mode === 'off' ? undefined : mode;
+  }
+
+  @computed
+  get fanSpeed(): AirConditionerFanSpeed | undefined {
+    const property = this.properties['fan-level'];
+
+    if (property === undefined) {
+      return undefined;
+    }
+
+    const value = this.getNumberPropertyState('fan-level');
+
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (value === property.enum.auto) {
+      return 'auto';
+    }
+
+    const enumValues = new Set<number>(Object.values(property.enum));
+    const levels = this.getPropertyValueList(property)
+      .map(entry => entry.value)
+      .filter(level => !enumValues.has(level))
+      .toSorted((left, right) => left - right);
+    const levelIndex = levels.indexOf(value);
+
+    if (levelIndex < 0) {
+      throw new TypeError(`Unknown MIoT fan-level property state: ${value}.`);
+    }
+
+    return levels.length === 1 ? 0 : levelIndex / (levels.length - 1);
   }
 
   @computed
@@ -127,6 +175,16 @@ export class MiotAirConditionerEndpointConnection
 
       effect = new MiotAirConditionerCommandEffect(this, {
         mode: command.value,
+      });
+    } else if (command instanceof SetAirConditionerFanSpeedCommand) {
+      if (this.properties['fan-level'] === undefined) {
+        throw new CommandError(
+          'MIoT air conditioner does not support fan speed.',
+        );
+      }
+
+      effect = new MiotAirConditionerCommandEffect(this, {
+        'fan-level': command.value,
       });
     } else if (command instanceof SetAirConditionerTargetTemperatureCommand) {
       if (this.properties['target-temperature'] === undefined) {

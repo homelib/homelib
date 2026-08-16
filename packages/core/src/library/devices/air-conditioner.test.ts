@@ -7,6 +7,7 @@ import {
   AirConditionerEndpoint,
   type AirConditionerEndpointCommand,
   type AirConditionerEndpointConnection,
+  SetAirConditionerFanSpeedCommand,
   SetAirConditionerModeCommand,
   SetAirConditionerOnCommand,
   SetAirConditionerTargetHumidityCommand,
@@ -19,6 +20,7 @@ test('commands return their receiver', () => {
 
   expect(airConditioner.turnOn()).toBe(airConditioner);
   expect(airConditioner.setMode('cool')).toBe(airConditioner);
+  expect(airConditioner.setFanSpeed('auto')).toBe(airConditioner);
   expect(airConditioner.setTargetTemperature(targetTemperature)).toBe(
     airConditioner,
   );
@@ -27,6 +29,7 @@ test('commands return their receiver', () => {
 
   expect(endpoint.turnOn()).toBe(endpoint);
   expect(endpoint.setMode('dry')).toBe(endpoint);
+  expect(endpoint.setFanSpeed(0.5)).toBe(endpoint);
   expect(endpoint.setTargetTemperature(targetTemperature)).toBe(endpoint);
   expect(endpoint.setTargetHumidity(0.6)).toBe(endpoint);
   expect(endpoint.turnOff()).toBe(endpoint);
@@ -42,6 +45,7 @@ test('turnOn enqueues on before chained setters when off', async () => {
   airConditioner
     .turnOn()
     .setMode('cool')
+    .setFanSpeed(0)
     .setTargetTemperature(targetTemperature)
     .setTargetHumidity(0.5);
   await flushMicrotasks();
@@ -49,6 +53,7 @@ test('turnOn enqueues on before chained setters when off', async () => {
   expect(connection.commands).toEqual([
     new SetAirConditionerOnCommand(true),
     new SetAirConditionerModeCommand('cool'),
+    new SetAirConditionerFanSpeedCommand(0),
     new SetAirConditionerTargetTemperatureCommand(targetTemperature),
     new SetAirConditionerTargetHumidityCommand(0.5),
   ]);
@@ -75,6 +80,8 @@ class TestAirConditionerEndpointConnection implements AirConditionerEndpointConn
   readonly stateRevision = 0;
 
   readonly mode = undefined;
+
+  readonly fanSpeed = undefined;
 
   readonly targetTemperature = undefined;
 
