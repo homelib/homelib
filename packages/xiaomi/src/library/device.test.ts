@@ -9,6 +9,7 @@ import {
 import {
   MiotDeviceRegistry,
   type MiotEndpointConnectionConstructor,
+  createMiotDeviceEndpointConnectionBinding,
   createMiotEndpointConnectionMetadata,
   miotEndpointConnectionMetadataEqual,
   resolveMiotEndpointConnectionMetadata,
@@ -25,6 +26,7 @@ import type {
   MiotSpecProperty,
   MiotSpecService,
 } from './miot/index.js';
+import {MiotProvider} from './provider.js';
 
 const DEVICE_TYPE = 'urn:miot-spec-v2:device:light:0000A001:test-light:1';
 const ALTERNATE_DEVICE_TYPE =
@@ -487,6 +489,57 @@ test('allows one connection to be reused across devices but not duplicated withi
   expect(() =>
     registry.register(InvalidDevice, Connection, Connection),
   ).toThrow('Duplicate MIoT endpoint connection registration.');
+});
+
+test('disposes local connection state after asynchronous subscription cleanup', async () => {
+  const order: string[] = [];
+  const cleanupError = new Error('Subscription cleanup failed.');
+  let releaseCleanup: (() => void) | undefined;
+  const cleanupGate = new Promise<void>(resolve => {
+    releaseCleanup = resolve;
+  });
+
+  class DisposableConnection extends TestLightEndpointConnection {
+    static readonly Endpoint = LightEndpoint;
+    static readonly properties = LIGHT_PROPERTIES;
+
+    override dispose(): void {
+      order.push('connection');
+    }
+  }
+
+  const resources = requireResources(DisposableConnection, [
+    createLightService(2),
+  ]);
+  const metadata = resolveMiotEndpointConnectionMetadata(
+    DisposableConnection,
+    createMiotEndpointConnectionMetadata(TEST_DEVICE, DEVICE_TYPE, resources),
+  );
+  const {binding} = createMiotDeviceEndpointConnectionBinding(
+    DisposableConnection,
+    new MiotProvider('provider'),
+    new LightEndpoint(),
+    metadata,
+    [
+      {
+        executeRequest: () => Promise.resolve({code: 0}),
+      },
+    ],
+    async () => {
+      order.push('cleanup-start');
+      await cleanupGate;
+      order.push('cleanup-end');
+      throw cleanupError;
+    },
+  );
+
+  binding.bind();
+  const disposal = binding.dispose();
+
+  expect(order).toEqual(['cleanup-start']);
+  releaseCleanup?.();
+  await expect(disposal).rejects.toBe(cleanupError);
+  expect(order).toEqual(['cleanup-start', 'cleanup-end', 'connection']);
 });
 
 function createConnection(

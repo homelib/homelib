@@ -36,10 +36,12 @@ import {
   normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import {
+  type MiotEventArgument,
   type MiotExecutionRequest,
   type MiotExecutionResult,
   type MiotPropertySchema,
   MiotSetPropertyRequest,
+  type MiotSpecEvent,
   type MiotSpecProperty,
   type MiotSpecValueList,
   type MiotSpecValueRange,
@@ -222,6 +224,41 @@ const TEST_ENVIRONMENT_RESOURCE: MiotEndpointConnectionResolvedResource = {
 const TEST_MULTI_RESOURCE_METADATA = createTestResolvedMetadata({
   ...TEST_METADATA,
   resources: [TEST_PRIMARY_RESOURCE, TEST_ENVIRONMENT_RESOURCE],
+});
+
+const TEST_EVENT_ARGUMENT_PROPERTY = {
+  iid: 2,
+  type: 'urn:miot-spec-v2:property:brightness:0000000D',
+  description: 'Level',
+  format: 'uint8',
+  access: ['read', 'notify'],
+  'value-range': [0, 100, 1],
+} satisfies MiotSpecProperty;
+const TEST_EVENT = {
+  iid: 1,
+  type: 'urn:miot-spec-v2:event:changed:00005FFF:test:1',
+  description: 'Changed',
+  arguments: [1, 2],
+} satisfies MiotSpecEvent;
+const TEST_EVENT_METADATA = createTestResolvedMetadata({
+  ...TEST_METADATA,
+  resources: [
+    {
+      service: {
+        ...TEST_PRIMARY_RESOURCE.service,
+        properties: [
+          ...(TEST_PRIMARY_RESOURCE.service.properties ?? []),
+          TEST_EVENT_ARGUMENT_PROPERTY,
+        ],
+        events: [TEST_EVENT],
+      },
+      properties: {
+        ...TEST_PRIMARY_RESOURCE.properties,
+        level: TEST_EVENT_ARGUMENT_PROPERTY,
+      },
+      events: {changed: TEST_EVENT},
+    },
+  ],
 });
 
 const _TEST_MULTI_RESOURCE_PROPERTIES = {
@@ -516,14 +553,222 @@ test('rejects legacy single-service endpoint metadata', () => {
   ).toThrow();
 });
 
-test('flattens state properties across all resources', () => {
+test('separates snapshot properties from all notification targets', () => {
   const connection = createMultiResourceConnection();
 
-  expect(connection.stateProperties).toEqual([
+  expect(connection.snapshotProperties).toEqual([
     {did: TEST_METADATA.device.did, siid: 2, piid: 1},
     {did: TEST_METADATA.device.did, siid: 3, piid: 1},
     {did: TEST_METADATA.device.did, siid: 3, piid: 2},
   ]);
+  expect(connection.stateProperties).toEqual(connection.snapshotProperties);
+  expect(connection.notificationTargets).toEqual([
+    {
+      type: 'property-change',
+      data: {did: TEST_METADATA.device.did, siid: 2, piid: 1},
+    },
+    {
+      type: 'property-change',
+      data: {did: TEST_METADATA.device.did, siid: 3, piid: 1},
+    },
+    {
+      type: 'property-change',
+      data: {did: TEST_METADATA.device.did, siid: 3, piid: 2},
+    },
+  ]);
+});
+
+test('can exclude a property from snapshots without dropping its notification', () => {
+  const connection = createFilteredSnapshotConnection();
+
+  expect(connection.snapshotProperties).toEqual([
+    {did: TEST_METADATA.device.did, siid: 2, piid: 1},
+    {did: TEST_METADATA.device.did, siid: 3, piid: 1},
+  ]);
+  expect(connection.notificationTargets).toContainEqual({
+    type: 'property-change',
+    data: {did: TEST_METADATA.device.did, siid: 3, piid: 2},
+  });
+
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [
+      {did: TEST_METADATA.device.did, siid: 2, piid: 1, value: true},
+      {did: TEST_METADATA.device.did, siid: 3, piid: 1, value: 24.5},
+    ],
+  });
+
+  expect(connection.ready).toBe(true);
+  expect(connection.relativeHumidity).toBe(0);
+
+  connection.handleNotification({
+    type: 'property-change',
+    data: {did: TEST_METADATA.device.did, siid: 3, piid: 2, value: 55},
+  });
+
+  expect(connection.relativeHumidity).toBe(55);
+});
+
+test('checks snapshot completeness by selected property addresses', () => {
+  const connection = createFilteredSnapshotConnection();
+
+  expect(() =>
+    connection.handleStateUpdate({
+      did: TEST_METADATA.device.did,
+      online: true,
+      properties: [
+        {did: TEST_METADATA.device.did, siid: 2, piid: 1, value: true},
+        {did: TEST_METADATA.device.did, siid: 3, piid: 2, value: 55},
+      ],
+    }),
+  ).toThrow('Incomplete MIoT endpoint state update.');
+  expect(connection.ready).toBe(false);
+  expect(connection.relativeHumidity).toBe(0);
+});
+
+test('validates and dispatches tagged event notifications once', () => {
+  const connection = createEventConnection();
+
+  expect(connection.snapshotProperties).toEqual([
+    {did: TEST_METADATA.device.did, siid: 2, piid: 1},
+    {did: TEST_METADATA.device.did, siid: 2, piid: 2},
+  ]);
+  expect(connection.notificationTargets).toEqual([
+    {
+      type: 'property-change',
+      data: {did: TEST_METADATA.device.did, siid: 2, piid: 1},
+    },
+    {
+      type: 'property-change',
+      data: {did: TEST_METADATA.device.did, siid: 2, piid: 2},
+    },
+    {
+      type: 'event',
+      data: {did: TEST_METADATA.device.did, siid: 2, eiid: 1},
+    },
+  ]);
+
+  connection.handleNotification({
+    type: 'event',
+    data: {
+      did: TEST_METADATA.device.did,
+      siid: 2,
+      eiid: 1,
+      arguments: {
+        type: 'identified',
+        data: [
+          {piid: 2, value: 42},
+          {piid: 1, value: true},
+        ],
+      },
+    },
+  });
+
+  expect(connection.stateRevision).toBe(1);
+  expect(connection.receivedEvents).toEqual([
+    {
+      name: 'changed',
+      arguments: [
+        {piid: 1, value: true},
+        {piid: 2, value: 42},
+      ],
+    },
+  ]);
+});
+
+test('zips positional event arguments in spec order', () => {
+  const connection = createEventConnection();
+
+  connection.handleNotification({
+    type: 'event',
+    data: {
+      did: TEST_METADATA.device.did,
+      siid: 2,
+      eiid: 1,
+      arguments: {type: 'positional', data: [false, 42]},
+    },
+  });
+
+  expect(connection.stateRevision).toBe(1);
+  expect(connection.receivedEvents).toEqual([
+    {
+      name: 'changed',
+      arguments: [
+        {piid: 1, value: false},
+        {piid: 2, value: 42},
+      ],
+    },
+  ]);
+});
+
+test('rejects event arguments with wrong PIIDs or property values atomically', () => {
+  const connection = createEventConnection();
+
+  expect(() =>
+    connection.handleNotification({
+      type: 'event',
+      data: {
+        did: TEST_METADATA.device.did,
+        siid: 2,
+        eiid: 1,
+        arguments: {
+          type: 'identified',
+          data: [
+            {piid: 1, value: true},
+            {piid: 3, value: 42},
+          ],
+        },
+      },
+    }),
+  ).toThrow('Invalid MIoT endpoint event notification arguments.');
+  expect(() =>
+    connection.handleNotification({
+      type: 'event',
+      data: {
+        did: TEST_METADATA.device.did,
+        siid: 2,
+        eiid: 1,
+        arguments: {
+          type: 'identified',
+          data: [
+            {piid: 1, value: true},
+            {piid: 1, value: false},
+          ],
+        },
+      },
+    }),
+  ).toThrow('Invalid MIoT endpoint event notification arguments.');
+  expect(() =>
+    connection.handleNotification({
+      type: 'event',
+      data: {
+        did: TEST_METADATA.device.did,
+        siid: 2,
+        eiid: 1,
+        arguments: {
+          type: 'identified',
+          data: [
+            {piid: 1, value: true},
+            {piid: 2, value: 101},
+          ],
+        },
+      },
+    }),
+  ).toThrow('Invalid MIoT ranged property state.');
+  expect(() =>
+    connection.handleNotification({
+      type: 'event',
+      data: {
+        did: TEST_METADATA.device.did,
+        siid: 2,
+        eiid: 1,
+        arguments: {type: 'positional', data: [true]},
+      },
+    }),
+  ).toThrow('Invalid MIoT endpoint event notification arguments.');
+  expect(connection.receivedEvents).toEqual([]);
+  expect(connection.stateRevision).toBe(0);
 });
 
 test('subscribes to derived aliases instead of every persisted property', () => {
@@ -1265,14 +1510,20 @@ test('projects snapshot and MQTT updates to observable light state', async () =>
   const disposeAutorun = autorun(() => {
     values.push([light.ready, light.on]);
   });
-  const subscription = await channel.subscribe(connection.stateProperties, {
-    onStateChanged: state => {
-      connection.handleStateUpdate(state);
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: connection.snapshotProperties,
+      notifications: connection.notificationTargets,
     },
-    onPropertyChanged: update => {
-      connection.handlePropertyUpdate(update);
+    {
+      onStateChanged: state => {
+        connection.handleStateUpdate(state);
+      },
+      onNotification: notification => {
+        connection.handleNotification(notification);
+      },
     },
-  });
+  );
 
   const handler = messageHandler;
 
@@ -1280,13 +1531,16 @@ test('projects snapshot and MQTT updates to observable light state', async () =>
     throw new Error('Cloud MQTT handler was not registered.');
   }
 
-  const [property] = connection.stateProperties;
+  const [property] = connection.snapshotProperties;
 
   if (property === undefined) {
     throw new Error('MIoT light state property is missing.');
   }
 
-  handler({...property, type: 'property', value: true});
+  handler({
+    type: 'property-change',
+    data: {...property, value: true},
+  });
 
   expect(values).toEqual([
     [false, false],
@@ -1711,6 +1965,22 @@ function createMultiResourceConnection(): TestMultiResourceEndpointConnection {
   );
 }
 
+function createFilteredSnapshotConnection(): TestFilteredSnapshotEndpointConnection {
+  return new TestFilteredSnapshotEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_MULTI_RESOURCE_METADATA,
+    [new TestTransport()],
+  );
+}
+
+function createEventConnection(): TestEventEndpointConnection {
+  return new TestEventEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_EVENT_METADATA,
+    [new TestTransport()],
+  );
+}
+
 function createHelperConnection(): TestPropertyHelperEndpointConnection {
   return new TestPropertyHelperEndpointConnection(
     new MiotProvider('provider'),
@@ -1881,6 +2151,31 @@ class TestMultiResourceEndpointConnection extends MiotEndpointConnection<
 
   get relativeHumidity(): number {
     return this.getNumberPropertyState('relativeHumidity', 0);
+  }
+
+  override prepareCommand(_command: never): CommandExecution {
+    return {execute: () => Promise.resolve()};
+  }
+}
+
+class TestFilteredSnapshotEndpointConnection extends TestMultiResourceEndpointConnection {
+  protected override isSnapshotProperty(name: string): boolean {
+    return name !== 'relativeHumidity';
+  }
+}
+
+class TestEventEndpointConnection extends MiotEndpointConnection<never> {
+  readonly receivedEvents: Array<{
+    readonly name: string;
+    readonly arguments: readonly MiotEventArgument[];
+  }> = [];
+
+  protected override handleEvent(
+    name: string,
+    _event: MiotSpecEvent,
+    arguments_: readonly MiotEventArgument[],
+  ): void {
+    this.receivedEvents.push({name, arguments: arguments_});
   }
 
   override prepareCommand(_command: never): CommandExecution {

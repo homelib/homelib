@@ -75,10 +75,7 @@ export class Dehumidifier
 export class DehumidifierEndpoint<
   TConnection extends DehumidifierEndpointConnection =
     DehumidifierEndpointConnection,
->
-  extends Endpoint<DehumidifierEndpointCommand, TConnection>
-  implements TemperatureSensor, HumiditySensor
-{
+> extends Endpoint<DehumidifierEndpointCommand, TConnection> {
   @computed
   get on(): boolean {
     return this.connection?.on ?? false;
@@ -142,14 +139,14 @@ export class DehumidifierEndpoint<
 }
 
 export type DehumidifierEndpointConnection =
-  EndpointConnection<DehumidifierEndpointCommand> &
-    TemperatureSensor &
-    HumiditySensor & {
-      readonly on: boolean;
-      readonly mode: DehumidifierMode | undefined;
-      /** Target relative humidity as a normalized ratio from 0 to 1. */
-      readonly targetRelativeHumidity: number | undefined;
-    };
+  EndpointConnection<DehumidifierEndpointCommand> & {
+    readonly temperature: Temperature | undefined;
+    readonly relativeHumidity: number | undefined;
+    readonly on: boolean;
+    readonly mode: DehumidifierMode | undefined;
+    /** Target relative humidity as a normalized ratio from 0 to 1. */
+    readonly targetRelativeHumidity: number | undefined;
+  };
 
 export abstract class DehumidifierCommand extends StatefulCommand {}
 

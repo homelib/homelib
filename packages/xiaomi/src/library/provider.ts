@@ -47,7 +47,6 @@ import {
   type LocalControllerDiscovery,
   RoutedDeviceMessageClient,
 } from './local/index.js';
-import type {MiotProperty} from './miot/index.js';
 import {OAuthSessionManager} from './session-manager.js';
 import {
   type OAuthSession,
@@ -207,7 +206,6 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
         [cloud.localController, cloud.transport],
         value => this.disposeEndpointConnection(value),
       );
-      const stateProperties = connection.stateProperties;
       const runtime: MiotEndpointConnectionRuntime = {
         active: true,
         backoff: new ExponentialBackoff(1_000, 60_000),
@@ -217,7 +215,6 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
       this.endpointConnectionRuntimeMap.set(connection, runtime);
       const subscriptionPromise = this.subscribeEndpointConnection(
         connection,
-        stateProperties,
         cloud.client,
         runtime,
       );
@@ -546,7 +543,6 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
 
   private async subscribeEndpointConnection(
     connection: MiotEndpointConnection<never>,
-    properties: readonly MiotProperty[],
     cloudClient: CloudClient,
     runtime: MiotEndpointConnectionRuntime,
   ): Promise<void> {
@@ -554,13 +550,16 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
       try {
         const subscription = await cloudClient.subscribeDevice(
           connection.metadata.device.did,
-          properties,
+          {
+            snapshotProperties: connection.snapshotProperties,
+            notifications: connection.notificationTargets,
+          },
           {
             onStateChanged: state => {
               connection.handleStateUpdate(state);
             },
-            onPropertyChanged: update => {
-              connection.handlePropertyUpdate(update);
+            onNotification: notification => {
+              connection.handleNotification(notification);
             },
             onError: console.error,
           },

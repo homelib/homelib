@@ -5,6 +5,7 @@ import {
   Dehumidifier,
   Fan,
   Light,
+  MotionSensor,
   PetFeeder,
   TemperatureHumiditySensor,
 } from './devices/index.js';
@@ -15,6 +16,7 @@ test.each([
   ['dehumidifier', Dehumidifier],
   ['fan', Fan],
   ['light', Light],
+  ['motionSensor', MotionSensor],
   ['petFeeder', PetFeeder],
   ['temperatureHumiditySensor', TemperatureHumiditySensor],
 ])('registers the %s device constructor', (name, Constructor) => {

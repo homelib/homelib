@@ -1,6 +1,7 @@
 import type {
   CloudDeviceMessageClient,
   CloudMqttConnectionStateListener,
+  CloudMqttDeviceMessage,
   CloudMqttDeviceMessageHandler,
 } from '../cloud/index.js';
 import type {MiotProperty} from '../miot/index.js';
@@ -162,12 +163,21 @@ export class RoutedDeviceMessageClient implements CloudDeviceMessageClient {
           try {
             subscriptions.push(
               await localSource.subscribeProperties(did, update => {
-                handler({...update, type: 'property'});
+                handler({type: 'property-change', data: update});
               }),
             );
             subscriptions.push(
               await localSource.subscribeEvents(did, update => {
-                handler({...update, type: 'event'});
+                handler({
+                  type: 'event',
+                  data: {
+                    ...update,
+                    arguments: {
+                      type: 'positional',
+                      data: update.arguments,
+                    },
+                  },
+                });
               }),
             );
           } catch (error) {
@@ -265,21 +275,53 @@ class RoutedSubscription {
       }
 
       const token = {};
+      const pendingMessages: CloudMqttDeviceMessage[] = [];
+      let messageState: PendingMessageState = 'buffering';
       let dispose: (() => Promise<void>) | undefined;
 
       try {
         dispose = await source.subscribe(message => {
-          if (this.sourceSubscription?.token === token) {
+          if (messageState === 'buffering' || messageState === 'flushing') {
+            pendingMessages.push(message);
+          } else if (
+            messageState === 'active' &&
+            this.sourceSubscription?.token === token
+          ) {
             this.handler(message);
           }
         });
+
+        if (
+          this.disposed ||
+          this.client.resolveSource(this.did).identity !== source.identity
+        ) {
+          messageState = 'discarded';
+          pendingMessages.length = 0;
+          await dispose().catch(console.error);
+          return;
+        }
+
         this.sourceSubscription = {
           identity: source.identity,
           token,
           dispose,
         };
+        messageState = 'flushing';
+
+        while (pendingMessages.length > 0) {
+          const message = pendingMessages.shift();
+
+          if (message !== undefined) {
+            this.handler(message);
+          }
+        }
+
+        messageState = 'active';
         changed = true;
       } catch (error) {
+        messageState = 'discarded';
+        pendingMessages.length = 0;
+
         if (dispose !== undefined) {
           await dispose().catch(console.error);
         }
@@ -353,6 +395,8 @@ type ActiveSourceSubscription = {
   readonly token: object;
   readonly dispose: () => Promise<void>;
 };
+
+type PendingMessageState = 'buffering' | 'flushing' | 'active' | 'discarded';
 
 async function disposeSubscriptions(
   subscriptions: readonly {dispose(): Promise<void>}[],

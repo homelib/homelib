@@ -35,10 +35,7 @@ export class TemperatureHumiditySensor
 export class TemperatureHumiditySensorEndpoint<
   TConnection extends TemperatureHumiditySensorEndpointConnection =
     TemperatureHumiditySensorEndpointConnection,
->
-  extends Endpoint<never, TConnection>
-  implements TemperatureSensor, HumiditySensor
-{
+> extends Endpoint<never, TConnection> {
   @computed
   get temperature(): Temperature | undefined {
     return this.connection?.temperature;
@@ -64,4 +61,7 @@ export class TemperatureHumiditySensorEndpoint<
 }
 
 export type TemperatureHumiditySensorEndpointConnection =
-  EndpointConnection<never> & TemperatureSensor & HumiditySensor;
+  EndpointConnection<never> & {
+    temperature: Temperature | undefined;
+    relativeHumidity: number | undefined;
+  };

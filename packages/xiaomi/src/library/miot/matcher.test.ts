@@ -253,6 +253,7 @@ test('includes a unique optional property and omits a missing one', () => {
     on: {iid: 1},
     brightness: {iid: 2, format: 'uint16', 'value-range': [1, 100, 1]},
   });
+  expect(complete?.properties.brightness).not.toHaveProperty('optional');
   expect(basic?.properties.on?.iid).toBe(1);
   expect(basic?.properties.brightness).toBeUndefined();
   expect(Object.hasOwn(basic?.properties ?? {}, 'brightness')).toBe(false);
@@ -498,6 +499,57 @@ test('accepts a device-supported subset of a declared enum mapping', () => {
     enum: FAN_MODE_ENUM['*'],
     'value-list': createValueList([0, 2]),
   });
+});
+
+test('preserves the physical value list when no override pattern matches', () => {
+  const physicalValueList = createValueList([2, 5]);
+  const schema = {
+    [LIGHT_SERVICE_TYPE]: {
+      [MODE_PROPERTY_TYPE]: {
+        name: 'mode',
+        'value-list': {
+          [ZHIMI_FAN_DEVICE_PATTERN]: createValueList([0, 2, 5]),
+        },
+      },
+    },
+  } as const satisfies MiotPropertySchema;
+  const service = createLightService({
+    properties: [
+      createProperty(2, MODE_PROPERTY_TYPE, {
+        format: 'uint8',
+        'value-list': physicalValueList,
+      }),
+    ],
+  });
+  const [resource] = resolveTestSchema([service], schema) ?? [];
+
+  expect(resource?.properties.mode?.['value-list']).toEqual(physicalValueList);
+});
+
+test('replaces the physical value list when an override pattern matches', () => {
+  const overrideValueList = createValueList([0, 2, 5]);
+  const schema = {
+    [LIGHT_SERVICE_TYPE]: {
+      [MODE_PROPERTY_TYPE]: {
+        name: 'mode',
+        'value-list': {[ZHIMI_FAN_DEVICE_PATTERN]: overrideValueList},
+      },
+    },
+  } as const satisfies MiotPropertySchema;
+  const service = createLightService({
+    properties: [
+      createProperty(2, MODE_PROPERTY_TYPE, {
+        format: 'uint8',
+        'value-list': createValueList([2, 5]),
+      }),
+    ],
+  });
+  const [resource] =
+    resolveTestSchema([service], schema, {
+      deviceType: ZHIMI_FAN_DEVICE_TYPE,
+    }) ?? [];
+
+  expect(resource?.properties.mode?.['value-list']).toEqual(overrideValueList);
 });
 
 test('rejects a required enum property without a known value', () => {

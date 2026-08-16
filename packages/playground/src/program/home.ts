@@ -1,4 +1,5 @@
 import {$home, bootstrap} from '@homelib/core';
+import {autorun} from '@homelib/core/mobx';
 import {$xiaomi} from '@homelib/xiaomi';
 
 import {setupAutoPetFeeding} from './@auto-pet-feeding.js';
@@ -23,6 +24,10 @@ const 主卧除湿机 = 主卧.$dehumidifier('除湿机');
 const 主卧温湿度传感器 = 主卧.$temperatureHumiditySensor('温湿度传感器');
 
 const 宠物喂食器 = 客厅.$petFeeder('宠物喂食器');
+
+const 卫生间走廊 = 美岸.$scope('卫生间走廊');
+
+const 卫生间走廊运动传感器 = 卫生间走廊.$motionSensor('运动传感器');
 
 await bootstrap();
 
@@ -50,7 +55,7 @@ setupTemperatureHumidityControl('主卧', {
   onGetter: () => 主卧空调.on,
   temperature: {
     sensor: 主卧温湿度传感器,
-    idealApparentTemperatureUpperLimit: 27,
+    idealApparentTemperatureUpperLimit: 28,
     idealApparentTemperatureLowerLimit: 20,
     idealTemperatureTolerance: 0.5,
   },
@@ -63,3 +68,13 @@ setupTemperatureHumidityControl('主卧', {
 });
 
 setupAutoPetFeeding(宠物喂食器);
+
+autorun(() => {
+  if (!卫生间走廊运动传感器.ready) {
+    return;
+  }
+
+  console.info('卫生间走廊运动传感器', {
+    motionDetected: 卫生间走廊运动传感器.motionDetected,
+  });
+});

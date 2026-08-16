@@ -64,6 +64,122 @@ test('switches cloud to local and back without accepting late old-source message
   await client.disconnect();
 });
 
+test('buffers local messages in arrival order until the source becomes active', async () => {
+  const cloud = new TestCloudMessageClient();
+  const local = new TestLocalMessageRouter();
+  const client = new RoutedDeviceMessageClient(cloud, local);
+  const messages: CloudMqttDeviceMessage[] = [];
+  await client.connect();
+  await client.subscribeDevice('device-1', message => {
+    messages.push(message);
+  });
+
+  const localSource = new TestLocalPropertySource();
+  const eventSubscription = localSource.deferNextEventSubscription();
+  local.setRoute('device-1', localSource);
+  await waitFor(() => localSource.hasEventListener);
+
+  localSource.emitProperty('device-1', 1);
+  localSource.emitEvent('device-1', 2);
+  localSource.emitProperty('device-1', 3);
+
+  expect(messages).toEqual([]);
+
+  eventSubscription.resolve();
+  await waitFor(() => messages.length === 3);
+
+  expect(messages).toEqual([
+    createPropertyMessage('device-1', 1),
+    createEventMessage('device-1', 2),
+    createPropertyMessage('device-1', 3),
+  ]);
+
+  await client.disconnect();
+});
+
+test('discards and cleans up messages from a source replaced while subscribing', async () => {
+  const cloud = new TestCloudMessageClient();
+  const local = new TestLocalMessageRouter();
+  const client = new RoutedDeviceMessageClient(cloud, local);
+  const messages: CloudMqttDeviceMessage[] = [];
+  await client.connect();
+  await client.subscribeDevice('device-1', message => {
+    messages.push(message);
+  });
+
+  const staleSource = new TestLocalPropertySource();
+  const staleSubscription = staleSource.deferNextEventSubscription();
+  local.setRoute('device-1', staleSource);
+  await waitFor(() => staleSource.hasEventListener);
+
+  staleSource.emitProperty('device-1', 1);
+  staleSource.emitEvent('device-1', 2);
+
+  const currentSource = new TestLocalPropertySource();
+  local.setRoute('device-1', currentSource);
+  staleSubscription.resolve();
+
+  await waitFor(
+    () => staleSource.disposeCalls === 1 && currentSource.hasEventListener,
+  );
+
+  expect(messages).toEqual([]);
+  expect(staleSource.hasEventListener).toBe(false);
+
+  currentSource.emitProperty('device-1', 3);
+  currentSource.emitEvent('device-1', 4);
+  await waitFor(() => messages.length === 2);
+
+  expect(messages).toEqual([
+    createPropertyMessage('device-1', 3),
+    createEventMessage('device-1', 4),
+  ]);
+
+  await client.disconnect();
+});
+
+test('discards buffered messages and cleans up after subscription failure', async () => {
+  const cloud = new TestCloudMessageClient();
+  const local = new TestLocalMessageRouter();
+  const client = new RoutedDeviceMessageClient(cloud, local);
+  const messages: CloudMqttDeviceMessage[] = [];
+  const errors: unknown[] = [];
+  const originalError = console.error;
+  console.error = error => {
+    errors.push(error);
+  };
+
+  try {
+    await client.connect();
+    await client.subscribeDevice('device-1', message => {
+      messages.push(message);
+    });
+
+    const localSource = new TestLocalPropertySource();
+    const eventSubscription = localSource.deferNextEventSubscription();
+    const subscriptionError = new Error('Local event subscription failed.');
+    local.setRoute('device-1', localSource);
+    await waitFor(() => localSource.hasEventListener);
+
+    localSource.emitProperty('device-1', 1);
+    localSource.emitEvent('device-1', 2);
+    eventSubscription.reject(subscriptionError);
+
+    await waitFor(() => errors.length === 1);
+
+    expect(errors).toEqual([subscriptionError]);
+    expect(messages).toEqual([]);
+    expect(localSource.disposeCalls).toBe(1);
+    expect(localSource.hasEventListener).toBe(false);
+
+    cloud.emitProperty('device-1', 3);
+    expect(messages).toEqual([createPropertyMessage('device-1', 3)]);
+  } finally {
+    console.error = originalError;
+    await client.disconnect();
+  }
+});
+
 test.each([
   ['cloud', undefined, new Error('local unavailable')],
   ['local', new Error('cloud unavailable'), undefined],
@@ -306,6 +422,8 @@ class TestLocalPropertySource implements LocalDeviceMessageSource {
 
   private nextDispose: Deferred<void> | undefined;
 
+  private nextEventSubscription: Deferred<void> | undefined;
+
   private eventListener:
     | ((update: {
         readonly did: string;
@@ -316,6 +434,10 @@ class TestLocalPropertySource implements LocalDeviceMessageSource {
     | undefined;
 
   disposeCalls = 0;
+
+  get hasEventListener(): boolean {
+    return this.eventListener !== undefined;
+  }
 
   async subscribeProperties(
     _did: string,
@@ -344,6 +466,15 @@ class TestLocalPropertySource implements LocalDeviceMessageSource {
     }) => void,
   ): Promise<{dispose(): Promise<void>}> {
     this.eventListener = listener;
+    const deferred = this.nextEventSubscription;
+    this.nextEventSubscription = undefined;
+
+    try {
+      await deferred?.promise;
+    } catch (error) {
+      this.eventListener = undefined;
+      throw error;
+    }
 
     return {
       dispose: async () => {
@@ -355,6 +486,12 @@ class TestLocalPropertySource implements LocalDeviceMessageSource {
   deferNextDispose(): Deferred<void> {
     const deferred = createDeferred<void>();
     this.nextDispose = deferred;
+    return deferred;
+  }
+
+  deferNextEventSubscription(): Deferred<void> {
+    const deferred = createDeferred<void>();
+    this.nextEventSubscription = deferred;
     return deferred;
   }
 
@@ -386,14 +523,22 @@ function createPropertyMessage(
   did: string,
   value: number,
 ): CloudMqttDeviceMessage {
-  return {type: 'property', ...createPropertyUpdate(did, value)};
+  return {type: 'property-change', data: createPropertyUpdate(did, value)};
 }
 
 function createEventMessage(
   did: string,
   value: number,
 ): CloudMqttDeviceMessage {
-  return {type: 'event', did, siid: 3, eiid: 1, arguments: [value]};
+  return {
+    type: 'event',
+    data: {
+      did,
+      siid: 3,
+      eiid: 1,
+      arguments: {type: 'positional', data: [value]},
+    },
+  };
 }
 
 function createPropertyUpdate(

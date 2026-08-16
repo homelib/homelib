@@ -6,6 +6,7 @@ import {
   type CloudDeviceListener,
   type CloudDeviceMessageSource,
   type CloudDeviceSubscription,
+  type CloudDeviceSubscriptionRequest,
   type CloudPropertySnapshot,
 } from './device.js';
 import {
@@ -51,11 +52,23 @@ export class CloudClient {
     await this.messageClient.disconnect();
   }
 
-  async subscribeDevice(
+  subscribeDevice(
     did: string,
     properties: readonly MiotProperty[],
     listener: CloudDeviceListener,
+  ): Promise<CloudDeviceSubscription>;
+  subscribeDevice(
+    did: string,
+    request: CloudDeviceSubscriptionRequest,
+    listener: CloudDeviceListener,
+  ): Promise<CloudDeviceSubscription>;
+  async subscribeDevice(
+    did: string,
+    requestOrProperties:
+      CloudDeviceSubscriptionRequest | readonly MiotProperty[],
+    listener: CloudDeviceListener,
   ): Promise<CloudDeviceSubscription> {
+    const request = normalizeSubscriptionRequest(requestOrProperties);
     let channel = this.deviceChannelMap.get(did);
 
     if (channel === undefined) {
@@ -74,7 +87,7 @@ export class CloudClient {
       this.deviceChannelMap.set(did, channel);
     }
 
-    return channel.subscribe(properties, listener);
+    return channel.subscribe(request, listener);
   }
 
   private async readProperties(
@@ -105,6 +118,22 @@ export class CloudClient {
 
     return this.backendClient.getDeviceOnline(did);
   }
+}
+
+function normalizeSubscriptionRequest(
+  requestOrProperties: CloudDeviceSubscriptionRequest | readonly MiotProperty[],
+): CloudDeviceSubscriptionRequest {
+  if (!Array.isArray(requestOrProperties)) {
+    return requestOrProperties as CloudDeviceSubscriptionRequest;
+  }
+
+  return {
+    snapshotProperties: requestOrProperties,
+    notifications: requestOrProperties.map(property => ({
+      type: 'property-change' as const,
+      data: property,
+    })),
+  };
 }
 
 export type CloudDeviceMessageClient = CloudDeviceMessageSource & {

@@ -19,14 +19,21 @@ import {
 } from './endpoint-connection.js';
 import {
   type MiotActionSchema,
+  type MiotEventSchema,
+  type MiotEventSchemaMatch,
   type MiotPropertySchema,
+  type MiotPropertySchemaResource,
+  type MiotResolvedSpecProperty,
   type MiotSpecAction,
+  type MiotSpecEvent,
   type MiotSpecMatchContext,
   type MiotSpecProperty,
   type MiotSpecService,
   assertMiotActionSchema,
+  assertMiotEventSchema,
   assertMiotPropertySchema,
   matchesMiotActionSchema,
+  resolveMiotEventSchema,
   resolveMiotPropertySchema,
 } from './miot/index.js';
 import type {MiotProvider} from './provider.js';
@@ -52,6 +59,7 @@ export type MiotEndpointConnectionConstructor<
 > = {
   readonly Endpoint: MiotEndpointConstructor<TEndpoint>;
   readonly actions?: MiotActionSchema;
+  readonly events?: MiotEventSchema;
   readonly properties: MiotPropertySchema;
   new (
     provider: MiotProvider,
@@ -155,6 +163,10 @@ export class MiotDeviceRegistry {
 
       if (Connection.actions !== undefined) {
         assertMiotActionSchema(Connection.actions);
+      }
+
+      if (Connection.events !== undefined) {
+        assertMiotEventSchema(Connection.events);
       }
 
       if (endpointSet.has(Connection.Endpoint)) {
@@ -347,7 +359,13 @@ export function createMiotDeviceEndpointConnectionBinding(
     binding: createEndpointConnectionBinding(
       endpoint as Endpoint<never, MiotEndpointConnection<never>>,
       connection,
-      () => disposeConnection?.(connection),
+      async () => {
+        try {
+          await disposeConnection?.(connection);
+        } finally {
+          connection.dispose();
+        }
+      },
     ),
   };
 }
@@ -356,28 +374,94 @@ export function resolveMiotEndpointConnectionResources(
   Connection: MiotEndpointConnectionConstructor,
   spec: MiotSpecMatchContext,
 ): readonly MiotEndpointConnectionResolvedResource[] | undefined {
-  const resources = resolveMiotPropertySchema(spec, Connection.properties);
-
-  return resources !== undefined &&
-    (Connection.actions === undefined ||
-      matchesMiotActionSchema(resources, Connection.actions))
-    ? resources
-    : undefined;
+  return resolveMiotEndpointConnectionResourceSet(Connection, spec, {});
 }
 
 export function resolvePersistedMiotEndpointConnectionResources(
   Connection: MiotEndpointConnectionConstructor,
   spec: MiotSpecMatchContext,
 ): readonly MiotEndpointConnectionResolvedResource[] | undefined {
-  const resources = resolveMiotPropertySchema(spec, Connection.properties, {
+  return resolveMiotEndpointConnectionResourceSet(Connection, spec, {
     allowMultipleOptionalServices: true,
   });
+}
 
-  return resources !== undefined &&
-    (Connection.actions === undefined ||
-      matchesMiotActionSchema(resources, Connection.actions))
-    ? resources
-    : undefined;
+function resolveMiotEndpointConnectionResourceSet(
+  Connection: MiotEndpointConnectionConstructor,
+  spec: MiotSpecMatchContext,
+  options: {readonly allowMultipleOptionalServices?: boolean},
+): readonly MiotEndpointConnectionResolvedResource[] | undefined {
+  const propertyResources = resolveMiotPropertySchema(
+    spec,
+    Connection.properties,
+    options,
+  );
+
+  if (propertyResources === undefined) {
+    return undefined;
+  }
+
+  const eventMatches =
+    Connection.events === undefined
+      ? undefined
+      : resolveMiotEventSchema(spec, Connection.events);
+
+  if (Connection.events !== undefined && eventMatches === undefined) {
+    return undefined;
+  }
+
+  const resources = mergeMiotEndpointConnectionResources(
+    propertyResources,
+    eventMatches ?? [],
+  );
+
+  if (
+    resources.length === 0 ||
+    (Connection.actions !== undefined &&
+      !matchesMiotActionSchema(resources, Connection.actions))
+  ) {
+    return undefined;
+  }
+
+  return resources;
+}
+
+function mergeMiotEndpointConnectionResources(
+  propertyResources: readonly MiotPropertySchemaResource[],
+  eventMatches: readonly MiotEventSchemaMatch[],
+): readonly MiotEndpointConnectionResolvedResource[] {
+  const resourceMap = new Map<
+    number,
+    {
+      readonly service: MiotSpecService;
+      readonly properties: Record<string, MiotResolvedSpecProperty>;
+      readonly events: Record<string, MiotSpecEvent>;
+    }
+  >();
+
+  for (const resource of propertyResources) {
+    resourceMap.set(resource.service.iid, {
+      service: resource.service,
+      properties: {...resource.properties},
+      events: {},
+    });
+  }
+
+  for (const match of eventMatches) {
+    const resource = resourceMap.get(match.service.iid);
+
+    if (resource === undefined) {
+      resourceMap.set(match.service.iid, {
+        service: match.service,
+        properties: {},
+        events: {[match.name]: match.event},
+      });
+    } else {
+      resource.events[match.name] = match.event;
+    }
+  }
+
+  return [...resourceMap.values()];
 }
 
 export function resolveMiotEndpointConnectionMetadata(
@@ -466,7 +550,8 @@ function serviceEqual(left: MiotSpecService, right: MiotSpecService): boolean {
     left.type === right.type &&
     left.description === right.description &&
     optionalPropertyArraysEqual(left.properties, right.properties) &&
-    optionalActionArraysEqual(left.actions, right.actions)
+    optionalActionArraysEqual(left.actions, right.actions) &&
+    optionalEventArraysEqual(left.events, right.events)
   );
 }
 
@@ -516,6 +601,26 @@ function optionalActionArraysEqual(
   }
 
   return unorderedArraysEqual(left, right, actionEqual);
+}
+
+function eventEqual(left: MiotSpecEvent, right: MiotSpecEvent): boolean {
+  return (
+    left.iid === right.iid &&
+    left.type === right.type &&
+    left.description === right.description &&
+    numberArraysEqual(left.arguments, right.arguments)
+  );
+}
+
+function optionalEventArraysEqual(
+  left: readonly MiotSpecEvent[] | undefined,
+  right: readonly MiotSpecEvent[] | undefined,
+): boolean {
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+
+  return unorderedArraysEqual(left, right, eventEqual);
 }
 
 function numberArraysEqual(

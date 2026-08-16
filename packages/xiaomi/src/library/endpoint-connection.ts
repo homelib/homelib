@@ -11,12 +11,16 @@ import {action, computed, observable} from 'mobx';
 import * as x from 'x-value';
 
 import {
+  type MiotEvent,
+  type MiotEventArgument,
+  type MiotEventArguments,
   type MiotExecutionRequest,
   type MiotExecutionResult,
   type MiotProperty,
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
   type MiotResolvedSpecProperty,
+  type MiotSpecEvent,
   type MiotSpecProperty,
   MiotSpecService,
   type MiotSpecValueList,
@@ -70,6 +74,24 @@ export function getMiotEndpointConnectionProperty(
   throw new TypeError(`Unknown MIoT endpoint property: ${name}.`);
 }
 
+export function getMiotEndpointConnectionEvent(
+  metadata: MiotEndpointConnectionResolvedMetadata,
+  name: string,
+): {
+  readonly service: MiotSpecService;
+  readonly event: MiotSpecEvent;
+} {
+  for (const {service, events} of metadata.resources) {
+    const event = events?.[name];
+
+    if (event !== undefined) {
+      return {service, event};
+    }
+  }
+
+  throw new TypeError(`Unknown MIoT endpoint event: ${name}.`);
+}
+
 export function getMiotEndpointConnectionResourceKeys(
   metadata: MiotEndpointConnectionMetadata,
 ): readonly string[] {
@@ -93,6 +115,8 @@ export abstract class MiotEndpointConnection<
 
   protected readonly properties: MiotEndpointConnectionSchemaProperties<TSchema>;
 
+  protected readonly events: MiotEndpointConnectionEvents;
+
   protected readonly transports: MiotEndpointConnectionTransports;
 
   @computed
@@ -105,16 +129,61 @@ export abstract class MiotEndpointConnection<
     return this.stateRevisionValue;
   }
 
+  /** Properties whose complete snapshot defines readiness. */
+  get snapshotProperties(): readonly MiotProperty[] {
+    return this.getProperties((name, property) => {
+      return this.isSnapshotProperty(name, property);
+    });
+  }
+
+  /** Incremental property and event notifications handled by this endpoint. */
+  get notificationTargets(): readonly MiotEndpointNotificationTarget[] {
+    const properties = this.getProperties(() => true).map(data => {
+      return {type: 'property-change', data} as const;
+    });
+    const {metadata} = this;
+    const events = metadata.resources.flatMap(resource => {
+      return Object.values(resource.events ?? {}).map(event => {
+        return {
+          type: 'event',
+          data: {
+            did: metadata.device.did,
+            siid: resource.service.iid,
+            eiid: event.iid,
+          },
+        } as const;
+      });
+    });
+
+    return [...properties, ...events];
+  }
+
+  /** @deprecated Use {@link snapshotProperties}. */
   get stateProperties(): readonly MiotProperty[] {
+    return this.snapshotProperties;
+  }
+
+  /** @deprecated Read event targets from {@link notificationTargets}. */
+  get stateEvents(): readonly MiotEvent[] {
+    return this.notificationTargets.flatMap(target => {
+      return target.type === 'event' ? [target.data] : [];
+    });
+  }
+
+  private getProperties(
+    select: (name: string, property: MiotResolvedSpecProperty) => boolean,
+  ): readonly MiotProperty[] {
     const {metadata} = this;
     return metadata.resources.flatMap(resource => {
-      return Object.values(resource.properties).map(property => {
-        return {
-          did: metadata.device.did,
-          siid: resource.service.iid,
-          piid: property.iid,
-        };
-      });
+      return Object.entries(resource.properties)
+        .filter(([name, property]) => select(name, property))
+        .map(([, property]) => {
+          return {
+            did: metadata.device.did,
+            siid: resource.service.iid,
+            piid: property.iid,
+          };
+        });
     });
   }
 
@@ -142,19 +211,40 @@ export abstract class MiotEndpointConnection<
     this.transports = transports;
     this.properties =
       this.createProperties() as MiotEndpointConnectionSchemaProperties<TSchema>;
+    this.events = this.createEvents();
   }
 
+  /** Dispatches one validated incremental notification atomically. */
   @action
-  handlePropertyUpdate(update: MiotPropertyUpdate): void {
-    const [state] = this.prepareStateUpdates([update]);
+  handleNotification(notification: MiotEndpointNotification): void {
+    if (notification.type === 'property-change') {
+      const [state] = this.prepareStateUpdates([notification.data]);
 
-    if (state === undefined) {
-      throw new TypeError('Missing MIoT endpoint property update.');
+      if (state === undefined) {
+        throw new TypeError('Missing MIoT endpoint property notification.');
+      }
+
+      this.stateMap.set(state.name, state.value);
+      this.handlePropertyStateChange(state.name, state.value);
+      this.stateRevisionValue++;
+      this.observationRevisionMap.set(state.name, this.stateRevisionValue);
+      return;
     }
 
-    this.stateMap.set(state.name, state.value);
+    const event = this.prepareEventNotification(notification.data);
+
+    this.handleEvent(event.name, event.event, event.arguments);
     this.stateRevisionValue++;
-    this.observationRevisionMap.set(state.name, this.stateRevisionValue);
+  }
+
+  /** @deprecated Use {@link handleNotification}. */
+  handlePropertyUpdate(update: MiotPropertyUpdate): void {
+    this.handleNotification({type: 'property-change', data: update});
+  }
+
+  /** @deprecated Use {@link handleNotification}. */
+  handleEventUpdate(update: MiotEventUpdate): void {
+    this.handleNotification({type: 'event', data: update});
   }
 
   @action
@@ -165,13 +255,21 @@ export abstract class MiotEndpointConnection<
 
     if (!update.online) {
       this.readyValue = false;
+      this.handleStateInvalidated();
       this.stateRevisionValue++;
       return;
     }
 
     const states = this.prepareStateUpdates(update.properties);
+    const missingSnapshotPropertyKeySet = new Set(
+      this.snapshotProperties.map(getMiotPropertyKey),
+    );
 
-    if (states.length !== getMiotEndpointPropertyCount(this.metadata)) {
+    for (const {property} of states) {
+      missingSnapshotPropertyKeySet.delete(getMiotPropertyKey(property));
+    }
+
+    if (missingSnapshotPropertyKeySet.size > 0) {
       throw new TypeError('Incomplete MIoT endpoint state update.');
     }
 
@@ -185,7 +283,52 @@ export abstract class MiotEndpointConnection<
     for (const {name} of states) {
       this.observationRevisionMap.set(name, this.stateRevisionValue);
     }
+
+    for (const {name, value} of states) {
+      this.handlePropertyStateChange(name, value);
+    }
   }
+
+  protected handleEvent(
+    name: string,
+    _event: MiotSpecEvent,
+    _arguments: readonly MiotEventArgument[],
+  ): void {
+    throw new TypeError(`Unhandled MIoT endpoint event: ${name}.`);
+  }
+
+  /** Selects whether a resolved property participates in readiness snapshots. */
+  protected isSnapshotProperty(
+    _name: string,
+    _property: MiotResolvedSpecProperty,
+  ): boolean {
+    return true;
+  }
+
+  /** Handles loss of the currently valid state within the owning action. */
+  protected handleStateInvalidated(): void {}
+
+  /**
+   * Handles a committed property state change.
+   *
+   * The value has already passed the resolved property's value validation.
+   */
+  protected handlePropertyStateChange(_name: string, _value: unknown): void {}
+
+  /**
+   * Marks an internal state change that did not arrive as a property or
+   * event update, advancing the connection's state revision.
+   */
+  @action
+  protected notifyStateChanged(): void {
+    this.stateRevisionValue++;
+  }
+
+  /**
+   * Releases local state machinery. The default implementation does nothing;
+   * the owning device binding calls this when its connection is disposed.
+   */
+  dispose(): void {}
 
   abstract prepareCommand(command: TCommand): CommandExecution;
 
@@ -415,6 +558,23 @@ export abstract class MiotEndpointConnection<
     return properties[name];
   }
 
+  private createEvents(): MiotEndpointConnectionEvents {
+    const events: Record<string, MiotEndpointConnectionEvent> = {};
+
+    for (const resource of this.metadata.resources) {
+      for (const [name, event] of Object.entries(resource.events ?? {})) {
+        events[name] = {...event, name};
+      }
+    }
+
+    return events;
+  }
+
+  protected getEvent(name: string): MiotEndpointConnectionEvent | undefined {
+    const events: MiotEndpointConnectionEvents = this.events;
+    return events[name];
+  }
+
   protected getPropertyValueRange(
     property: MiotEndpointConnectionProperty,
   ): MiotSpecValueRange {
@@ -480,10 +640,16 @@ export abstract class MiotEndpointConnection<
     throw createMiotEndpointConnectionError(lastUnavailableError);
   }
 
-  private prepareStateUpdates(
-    updates: readonly MiotPropertyUpdate[],
-  ): Array<{readonly name: string; readonly value: unknown}> {
-    const states: Array<{readonly name: string; readonly value: unknown}> = [];
+  private prepareStateUpdates(updates: readonly MiotPropertyUpdate[]): Array<{
+    readonly name: string;
+    readonly value: unknown;
+    readonly property: MiotProperty;
+  }> {
+    const states: Array<{
+      readonly name: string;
+      readonly value: unknown;
+      readonly property: MiotProperty;
+    }> = [];
     const stateNameSet = new Set<string>();
 
     for (const update of updates) {
@@ -503,6 +669,7 @@ export abstract class MiotEndpointConnection<
   private getStateUpdate(update: MiotPropertyUpdate): {
     readonly name: string;
     readonly value: unknown;
+    readonly property: MiotProperty;
   } {
     const {metadata} = this;
 
@@ -539,7 +706,53 @@ export abstract class MiotEndpointConnection<
     }
 
     assertMiotPropertyValue(stateProperty, update.value, stateName, update);
-    return {name: stateName, value: update.value};
+    return {
+      name: stateName,
+      value: update.value,
+      property: {did: update.did, siid: update.siid, piid: update.piid},
+    };
+  }
+
+  private prepareEventNotification(update: MiotEventUpdate): {
+    readonly name: string;
+    readonly event: MiotSpecEvent;
+    readonly arguments: readonly MiotEventArgument[];
+  } {
+    if (update.did !== this.metadata.device.did) {
+      throw new TypeError('Unexpected MIoT endpoint event notification.');
+    }
+
+    const resource = this.metadata.resources.find(candidate => {
+      return candidate.service.iid === update.siid;
+    });
+
+    if (resource === undefined) {
+      throw new TypeError('Unexpected MIoT endpoint event notification.');
+    }
+
+    let eventName: string | undefined;
+    let event: MiotSpecEvent | undefined;
+
+    for (const [name, candidate] of Object.entries(resource.events ?? {})) {
+      if (candidate.iid !== update.eiid) {
+        continue;
+      }
+
+      if (eventName !== undefined) {
+        throw new TypeError('Ambiguous MIoT endpoint event notification.');
+      }
+
+      eventName = name;
+      event = candidate;
+    }
+
+    if (eventName === undefined || event === undefined) {
+      throw new TypeError('Unexpected MIoT endpoint event notification.');
+    }
+
+    const arguments_ = resolveMiotEventArguments(resource, event, update);
+
+    return {name: eventName, event, arguments: arguments_};
   }
 }
 
@@ -594,6 +807,7 @@ export type MiotEndpointConnectionResolvedResource = Omit<
   'properties'
 > & {
   readonly properties: Readonly<Record<string, MiotResolvedSpecProperty>>;
+  readonly events?: Readonly<Record<string, MiotSpecEvent>>;
 };
 
 export type MiotEndpointConnectionResolvedMetadata = Omit<
@@ -607,12 +821,20 @@ type MiotEndpointConnectionProperty = MiotResolvedSpecProperty & {
   readonly name: string;
 };
 
+type MiotEndpointConnectionEvent = MiotSpecEvent & {
+  readonly name: string;
+};
+
 type MiotEndpointConnectionEnumProperty = MiotEndpointConnectionProperty & {
   readonly enum: Readonly<Record<string, number>>;
 };
 
 type MiotEndpointConnectionProperties = Readonly<
   Record<string, MiotEndpointConnectionProperty | undefined>
+>;
+
+type MiotEndpointConnectionEvents = Readonly<
+  Record<string, MiotEndpointConnectionEvent | undefined>
 >;
 
 type MiotEndpointConnectionSchemaProperties<
@@ -658,6 +880,8 @@ export function createMiotEndpointConnectionResolvedMetadata(
   const resolvedServiceIidSet = new Set<number>();
   const stateNameSet = new Set<string>();
   const propertyKeySet = new Set<string>();
+  const eventNameSet = new Set<string>();
+  const eventKeySet = new Set<string>();
 
   if (resources.length !== metadata.resources.length) {
     throw new TypeError('Invalid resolved MIoT endpoint resources.');
@@ -696,9 +920,31 @@ export function createMiotEndpointConnectionResolvedMetadata(
       propertyKeySet.add(propertyKey);
     }
 
+    for (const [name, event] of Object.entries(resource.events ?? {})) {
+      const eventKey = JSON.stringify([resource.service.iid, event.iid]);
+
+      if (eventNameSet.has(name) || eventKeySet.has(eventKey)) {
+        throw new TypeError('Ambiguous resolved MIoT endpoint event.');
+      }
+
+      if (
+        !physicalResource.service.events?.some(candidate =>
+          miotSpecEventsEqual(candidate, event),
+        )
+      ) {
+        throw new TypeError(
+          'Resolved MIoT endpoint event does not belong to its service.',
+        );
+      }
+
+      eventNameSet.add(name);
+      eventKeySet.add(eventKey);
+    }
+
     return {
       service: physicalResource.service,
       properties: resource.properties,
+      ...(resource.events !== undefined && {events: resource.events}),
     };
   });
 
@@ -709,11 +955,153 @@ export type MiotPropertyUpdate = MiotProperty & {
   readonly value: unknown;
 };
 
+export type MiotEndpointNotificationTarget =
+  | {
+      readonly type: 'property-change';
+      readonly data: MiotProperty;
+    }
+  | {
+      readonly type: 'event';
+      readonly data: MiotEvent;
+    };
+
+export type MiotEndpointNotification =
+  | {
+      readonly type: 'property-change';
+      readonly data: MiotPropertyUpdate;
+    }
+  | {
+      readonly type: 'event';
+      readonly data: MiotEventUpdate;
+    };
+
 export type MiotEndpointStateUpdate = {
   readonly did: string;
   readonly online: boolean;
   readonly properties: readonly MiotPropertyUpdate[];
 };
+
+export type MiotEventUpdate = MiotEvent & {
+  readonly arguments: MiotEventArguments;
+};
+
+function resolveMiotEventArguments(
+  resource: MiotEndpointConnectionResolvedResource,
+  event: MiotSpecEvent,
+  update: MiotEventUpdate,
+): readonly MiotEventArgument[] {
+  const expectedPiidSet = new Set(event.arguments);
+
+  if (
+    expectedPiidSet.size !== event.arguments.length ||
+    update.arguments.data.length !== event.arguments.length
+  ) {
+    throw new TypeError('Invalid MIoT endpoint event notification arguments.');
+  }
+
+  const argumentMap = resolveMiotEventArgumentMap(
+    update.arguments,
+    event.arguments,
+    expectedPiidSet,
+  );
+
+  return event.arguments.map(piid => {
+    const argument = argumentMap.get(piid);
+    const physicalProperties = (resource.service.properties ?? []).filter(
+      property => property.iid === piid,
+    );
+    const [physicalProperty] = physicalProperties;
+
+    if (argument === undefined || physicalProperties.length !== 1) {
+      throw new TypeError(
+        'Invalid MIoT endpoint event notification arguments.',
+      );
+    }
+
+    const resolvedProperties = Object.values(resource.properties).filter(
+      property => property.iid === piid,
+    );
+
+    if (resolvedProperties.length > 1) {
+      throw new TypeError(
+        'Ambiguous MIoT endpoint event notification argument.',
+      );
+    }
+
+    const property = resolvedProperties[0] ?? physicalProperty;
+
+    if (property === undefined) {
+      throw new TypeError(
+        'Invalid MIoT endpoint event notification arguments.',
+      );
+    }
+
+    assertMiotPropertyValue(property, argument.value, property.type, {
+      did: update.did,
+      siid: update.siid,
+      piid,
+      value: argument.value,
+    });
+
+    return {piid, value: argument.value};
+  });
+}
+
+function resolveMiotEventArgumentMap(
+  values: MiotEventArguments,
+  expectedPiids: readonly number[],
+  expectedPiidSet: ReadonlySet<number>,
+): ReadonlyMap<number, MiotEventArgument> {
+  if (values.data.length !== expectedPiids.length) {
+    throw new TypeError('Invalid MIoT endpoint event notification arguments.');
+  }
+
+  if (values.type === 'positional') {
+    return new Map(
+      expectedPiids.map((piid, index) => [
+        piid,
+        {piid, value: values.data[index]},
+      ]),
+    );
+  }
+
+  if (values.type !== 'identified') {
+    throw new TypeError('Invalid MIoT endpoint event notification arguments.');
+  }
+
+  const argumentMap = new Map<number, MiotEventArgument>();
+
+  for (const value of values.data) {
+    if (
+      !isMiotEventArgument(value) ||
+      !expectedPiidSet.has(value.piid) ||
+      argumentMap.has(value.piid)
+    ) {
+      throw new TypeError(
+        'Invalid MIoT endpoint event notification arguments.',
+      );
+    }
+
+    argumentMap.set(value.piid, value);
+  }
+
+  return argumentMap;
+}
+
+function isMiotEventArgument(value: unknown): value is MiotEventArgument {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const argument = value as {readonly piid?: unknown};
+
+  return (
+    typeof argument.piid === 'number' &&
+    Number.isInteger(argument.piid) &&
+    argument.piid > 0 &&
+    Object.hasOwn(value, 'value')
+  );
+}
 
 function assertMiotEndpointConnectionResources(
   resources: readonly MiotEndpointConnectionResource[],
@@ -741,6 +1129,13 @@ function miotSpecPropertiesEqual(
   return left.iid === right.iid && left.type === right.type;
 }
 
+function miotSpecEventsEqual(
+  left: MiotSpecEvent,
+  right: MiotSpecEvent,
+): boolean {
+  return left.iid === right.iid && left.type === right.type;
+}
+
 function getMiotResourceKey(
   did: string,
   resource: MiotEndpointConnectionResource,
@@ -755,12 +1150,8 @@ function compareMiotEndpointResources(
   return left.service.iid - right.service.iid;
 }
 
-function getMiotEndpointPropertyCount(
-  metadata: MiotEndpointConnectionResolvedMetadata,
-): number {
-  return metadata.resources.reduce((count, resource) => {
-    return count + Object.keys(resource.properties).length;
-  }, 0);
+function getMiotPropertyKey(property: MiotProperty): string {
+  return JSON.stringify([property.did, property.siid, property.piid]);
 }
 
 function createMiotEndpointConnectionTransportError(

@@ -66,6 +66,19 @@ test('subscribes once per device and routes cloud messages', async () => {
   );
   mqttClient.emit(
     'message',
+    'device/device-1/up/event_occured/3/1',
+    Buffer.from(
+      JSON.stringify({
+        params: {
+          siid: 3,
+          eiid: 1,
+          arguments: [{piid: 2, value: 'pressed'}],
+        },
+      }),
+    ),
+  );
+  mqttClient.emit(
+    'message',
     'device/device-1/state/online',
     Buffer.from(JSON.stringify({device_id: 'device-1', event: 'online'})),
   );
@@ -77,14 +90,23 @@ test('subscribes once per device and routes cloud messages', async () => {
 
   expect(messages).toEqual([
     {
-      type: 'property',
-      did: 'device-1',
-      siid: 2,
-      piid: 1,
-      value: true,
+      type: 'property-change',
+      data: {did: 'device-1', siid: 2, piid: 1, value: true},
     },
-    {type: 'state', did: 'device-1', online: true},
-    {type: 'state', did: 'device-1', online: false},
+    {
+      type: 'event',
+      data: {
+        did: 'device-1',
+        siid: 3,
+        eiid: 1,
+        arguments: {
+          type: 'identified',
+          data: [{piid: 2, value: 'pressed'}],
+        },
+      },
+    },
+    {type: 'state', data: {did: 'device-1', online: true}},
+    {type: 'state', data: {did: 'device-1', online: false}},
   ]);
 
   mqttClient.connected = false;
@@ -105,6 +127,40 @@ test('subscribes once per device and routes cloud messages', async () => {
     ],
   ]);
   await client.disconnect();
+});
+
+test('rejects event arguments without a PIID and value pair', async () => {
+  const mqttClient = new TestMqttClient();
+  const client = createClient(mqttClient);
+  const messages: CloudMqttDeviceMessage[] = [];
+  const errors: unknown[] = [];
+  const originalError = console.error;
+  console.error = error => {
+    errors.push(error);
+  };
+
+  try {
+    await client.subscribeDevice('device-1', message => {
+      messages.push(message);
+    });
+    mqttClient.emit(
+      'message',
+      'device/device-1/up/event_occured/3/1',
+      Buffer.from(
+        JSON.stringify({
+          params: {siid: 3, eiid: 1, arguments: [{piid: 2}]},
+        }),
+      ),
+    );
+
+    expect(messages).toEqual([]);
+    expect(errors).toEqual([
+      new Error('Cloud MQTT event argument has no value.'),
+    ]);
+  } finally {
+    console.error = originalError;
+    await client.disconnect();
+  }
 });
 
 test('retries device subscriptions once while a reconnected socket stays connected', async () => {

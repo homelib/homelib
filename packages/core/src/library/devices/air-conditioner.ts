@@ -85,10 +85,7 @@ export class AirConditioner
 export class AirConditionerEndpoint<
   TConnection extends AirConditionerEndpointConnection =
     AirConditionerEndpointConnection,
->
-  extends Endpoint<AirConditionerEndpointCommand, TConnection>
-  implements TemperatureSensor, HumiditySensor
-{
+> extends Endpoint<AirConditionerEndpointCommand, TConnection> {
   @computed
   get on(): boolean {
     return this.connection?.on ?? false;
@@ -164,15 +161,15 @@ export class AirConditionerEndpoint<
 }
 
 export type AirConditionerEndpointConnection =
-  EndpointConnection<AirConditionerEndpointCommand> &
-    TemperatureSensor &
-    HumiditySensor & {
-      readonly on: boolean;
-      readonly mode: AirConditionerMode | undefined;
-      readonly targetTemperature: Temperature | undefined;
-      /** Target relative humidity as a normalized ratio from 0 to 1. */
-      readonly targetRelativeHumidity: number | undefined;
-    };
+  EndpointConnection<AirConditionerEndpointCommand> & {
+    readonly temperature: Temperature | undefined;
+    readonly relativeHumidity: number | undefined;
+    readonly on: boolean;
+    readonly mode: AirConditionerMode | undefined;
+    readonly targetTemperature: Temperature | undefined;
+    /** Target relative humidity as a normalized ratio from 0 to 1. */
+    readonly targetRelativeHumidity: number | undefined;
+  };
 
 export abstract class AirConditionerCommand extends StatefulCommand {}
 

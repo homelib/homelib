@@ -58,7 +58,7 @@ test('falls back to cloud HTTP when preferred snapshot contains a MIoT error', a
 
   const subscription = await client.subscribeDevice(
     PROPERTY.did,
-    [PROPERTY],
+    {snapshotProperties: [PROPERTY]},
     createStateListener(states),
   );
 

@@ -1,6 +1,11 @@
 import {type IClientOptions, type MqttClient, connectAsync} from 'mqtt';
 
 import {type CloudServer, OAUTH2_CLIENT_ID} from '../backend/index.js';
+import type {
+  MiotEventArgument,
+  MiotEventArguments,
+  MiotProperty,
+} from '../miot/index.js';
 
 import {
   CLOUD_MQTT_CONNECT_TIMEOUT,
@@ -480,7 +485,7 @@ export class CloudMqttClient {
         return;
       }
 
-      this.deviceHandlerMap.get(message.did)?.(message);
+      this.deviceHandlerMap.get(message.data.did)?.(message);
     } catch (error) {
       console.error(error);
     }
@@ -513,30 +518,26 @@ export type CloudMqttClientOptions = {
   readonly cloudServer: CloudServer;
 };
 
-export type CloudMqttPropertyMessage = {
-  readonly type: 'property';
-  readonly did: string;
-  readonly siid: number;
-  readonly piid: number;
+export type CloudMqttPropertyChange = MiotProperty & {
   readonly value: unknown;
 };
 
-export type CloudMqttEventMessage = {
-  readonly type: 'event';
+export type CloudMqttEvent = {
   readonly did: string;
   readonly siid: number;
   readonly eiid: number;
-  readonly arguments: readonly unknown[];
+  readonly arguments: MiotEventArguments;
 };
 
-export type CloudMqttStateMessage = {
-  readonly type: 'state';
+export type CloudMqttState = {
   readonly did: string;
   readonly online: boolean;
 };
 
 export type CloudMqttDeviceMessage =
-  CloudMqttPropertyMessage | CloudMqttEventMessage | CloudMqttStateMessage;
+  | {readonly type: 'property-change'; readonly data: CloudMqttPropertyChange}
+  | {readonly type: 'event'; readonly data: CloudMqttEvent}
+  | {readonly type: 'state'; readonly data: CloudMqttState};
 
 export type CloudMqttDeviceMessageHandler = (
   message: CloudMqttDeviceMessage,
@@ -583,17 +584,25 @@ function parseCloudMqttMessage(
       throw new Error('Cloud MQTT property message has no value.');
     }
 
-    return {type: 'property', did, siid, piid, value: params.value};
+    return {
+      type: 'property-change',
+      data: {did, siid, piid, value: params.value},
+    };
   } else if (parts[2] === 'up' && parts[3] === 'event_occured') {
     const params = requireRecord(message.params);
     const siid = requireInteger(params.siid);
     const eiid = requireInteger(params.eiid);
+    const eventArguments = parseEventArguments(params.arguments);
 
-    if (!Array.isArray(params.arguments)) {
-      throw new Error('Cloud MQTT event message has invalid arguments.');
-    }
-
-    return {type: 'event', did, siid, eiid, arguments: params.arguments};
+    return {
+      type: 'event',
+      data: {
+        did,
+        siid,
+        eiid,
+        arguments: {type: 'identified', data: eventArguments},
+      },
+    };
   } else if (parts[2] === 'state') {
     const deviceId = requireString(message.device_id);
     const event = requireString(message.event);
@@ -606,10 +615,27 @@ function parseCloudMqttMessage(
       throw new Error(`Cloud MQTT state message has invalid event: ${event}.`);
     }
 
-    return {type: 'state', did, online: event === 'online'};
+    return {type: 'state', data: {did, online: event === 'online'}};
   }
 
   return undefined;
+}
+
+function parseEventArguments(value: unknown): readonly MiotEventArgument[] {
+  if (!Array.isArray(value)) {
+    throw new Error('Cloud MQTT event message has invalid arguments.');
+  }
+
+  return value.map(value => {
+    const argument = requireRecord(value);
+    const piid = requireInteger(argument.piid);
+
+    if (!Object.hasOwn(argument, 'value')) {
+      throw new Error('Cloud MQTT event argument has no value.');
+    }
+
+    return {piid, value: argument.value};
+  });
 }
 
 function getDeviceTopics(did: string): string[] {

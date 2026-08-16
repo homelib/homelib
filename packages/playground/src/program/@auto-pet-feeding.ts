@@ -8,39 +8,39 @@ const AUTORUN_KEEP_ALIVE_INTERVAL = ms('3h');
 
 const FOOD_WEIGHT_LOW_THRESHOLD = 3;
 
-export function setupAutoPetFeeding(宠物喂食器: PetFeeder): void {
+export function setupAutoPetFeeding(feeder: PetFeeder): void {
   const recentLowestFoodWeights: {
     time: number;
     weight: number;
-  }[] = [];
+  }[] = [
+    {
+      time: Date.now(),
+      weight: 0,
+    },
+  ];
 
   const dispense = debounce(() => {
-    宠物喂食器.dispense(1);
+    feeder.dispense(1);
   }, ms('10m'));
 
   const keepAlive = createKeepAlive(AUTORUN_KEEP_ALIVE_INTERVAL);
 
   autorun(() => {
-    if (!宠物喂食器.ready || 宠物喂食器.bowlFoodWeight === undefined) {
+    if (!feeder.ready || feeder.bowlFoodWeight === undefined) {
       return;
     }
 
     keepAlive();
 
-    console.info('宠物喂食器', {
-      foodLevel: 宠物喂食器.foodLevel,
-      bowlFoodWeight: 宠物喂食器.bowlFoodWeight,
-    });
-
     const now = Date.now();
 
     recentLowestFoodWeights.push({
       time: now,
-      weight: 宠物喂食器.bowlFoodWeight,
+      weight: feeder.bowlFoodWeight,
     });
 
     while (
-      recentLowestFoodWeights.length > 0 &&
+      recentLowestFoodWeights.length > 1 &&
       recentLowestFoodWeights[0].time <
         now - RECENT_LOWEST_FOOD_WEIGHTS_TIME_WINDOW
     ) {
@@ -51,10 +51,13 @@ export function setupAutoPetFeeding(宠物喂食器: PetFeeder): void {
       ...recentLowestFoodWeights.map(item => item.weight),
     );
 
-    if (
-      宠物喂食器.bowlFoodWeight <
-      lowestFoodWeight + FOOD_WEIGHT_LOW_THRESHOLD
-    ) {
+    console.info('宠物喂食器', {
+      foodLevel: feeder.foodLevel,
+      bowlFoodWeight: feeder.bowlFoodWeight,
+      lowestFoodWeight,
+    });
+
+    if (feeder.bowlFoodWeight < lowestFoodWeight + FOOD_WEIGHT_LOW_THRESHOLD) {
       dispense();
     }
   });

@@ -1,5 +1,6 @@
 import type {
   MiotSpecAction,
+  MiotSpecEvent,
   MiotSpecProperty,
   MiotSpecService,
   MiotSpecValueList,
@@ -35,6 +36,11 @@ export type MiotEnumMapping = Readonly<
 /** Selects a physical property IID from the complete device URN. */
 export type MiotPropertyIidMapping = Readonly<Record<MiotUrnPattern, number>>;
 
+/** Selects a vendor value-list override from the complete device URN. */
+export type MiotPropertyValueListMapping = Readonly<
+  Record<MiotUrnPattern, MiotSpecValueList>
+>;
+
 export type MiotPropertyMapping =
   | string
   | {
@@ -42,6 +48,14 @@ export type MiotPropertyMapping =
       readonly enum?: MiotEnumMapping;
       readonly iid?: MiotPropertyIidMapping;
       readonly optional?: true;
+      /**
+       * Replaces the declared value list for matching device URNs.
+       *
+       * Vendors sometimes report raw values that their published instance
+       * spec omits; the replacement takes effect during resolution so that
+       * state validation accepts the corrected set.
+       */
+      readonly 'value-list'?: MiotPropertyValueListMapping;
     };
 
 export type MiotPropertySchema = Readonly<
@@ -63,6 +77,17 @@ export type MiotActionSchemaMatch = {
   readonly action: MiotSpecAction;
   readonly in: readonly MiotSpecProperty[];
   readonly out: readonly MiotSpecProperty[] | undefined;
+};
+
+/** Required events grouped by their owning service URN pattern. */
+export type MiotEventSchema = Readonly<
+  Record<MiotUrnPattern, Readonly<Record<MiotUrnPattern, string>>>
+>;
+
+export type MiotEventSchemaMatch = {
+  readonly service: MiotSpecService;
+  readonly event: MiotSpecEvent;
+  readonly name: string;
 };
 
 export type MiotSpecMatchContext = {
@@ -165,10 +190,18 @@ export function assertMiotPropertySchema(schema: MiotPropertySchema): void {
         name,
         enum: enumMapping,
         iid: iidMapping,
+        'value-list': valueListMapping,
       } = getPropertyMapping(mapping);
 
       if (iidMapping !== undefined && !isValidIidMapping(iidMapping)) {
         throw new TypeError('Invalid MIoT property schema IID.');
+      }
+
+      if (
+        valueListMapping !== undefined &&
+        !isValidValueListMapping(valueListMapping)
+      ) {
+        throw new TypeError('Invalid MIoT property schema value list.');
       }
 
       if (name.length === 0 || name === '__proto__' || nameSet.has(name)) {
@@ -207,6 +240,38 @@ export function assertMiotActionSchema(schema: MiotActionSchema): void {
       ) {
         throw new TypeError('Invalid MIoT action schema action.');
       }
+    }
+  }
+}
+
+export function assertMiotEventSchema(schema: MiotEventSchema): void {
+  const services = Object.entries(schema);
+
+  if (services.length === 0) {
+    throw new TypeError('A MIoT event schema requires a service.');
+  }
+
+  const nameSet = new Set<string>();
+
+  for (const [serviceType, events] of services) {
+    if (
+      !isValidMiotUrnPattern(serviceType) ||
+      Object.keys(events).length === 0
+    ) {
+      throw new TypeError('Invalid MIoT event schema service.');
+    }
+
+    for (const [eventType, name] of Object.entries(events)) {
+      if (
+        !isValidMiotUrnPattern(eventType) ||
+        name.length === 0 ||
+        name === '__proto__' ||
+        nameSet.has(name)
+      ) {
+        throw new TypeError('Invalid MIoT event schema event.');
+      }
+
+      nameSet.add(name);
     }
   }
 }
@@ -272,6 +337,60 @@ export function resolveMiotActionSchema(
         in: inputProperties,
         out: outputProperties,
       });
+    }
+  }
+
+  return matches;
+}
+
+export function matchesMiotEventSchema(
+  spec: MiotSpecMatchContext,
+  schema: MiotEventSchema,
+): boolean {
+  return resolveMiotEventSchema(spec, schema) !== undefined;
+}
+
+/**
+ * Resolves event schema mappings against the complete spec service list,
+ * independently of any property resource resolution. A schema service
+ * pattern must match exactly one service, and each mapped event must match
+ * exactly one declared event.
+ */
+export function resolveMiotEventSchema(
+  spec: MiotSpecMatchContext,
+  schema: MiotEventSchema,
+): readonly MiotEventSchemaMatch[] | undefined {
+  assertMiotEventSchema(schema);
+  const matches: MiotEventSchemaMatch[] = [];
+  const serviceIidSet = new Set<number>();
+
+  for (const [serviceType, eventSchema] of Object.entries(schema)) {
+    const matchingServices = spec.services.filter(service =>
+      matchesMiotUrnPattern(service.type, serviceType),
+    );
+    const [service] = matchingServices;
+
+    if (matchingServices.length !== 1 || service === undefined) {
+      return undefined;
+    }
+
+    if (serviceIidSet.has(service.iid)) {
+      return undefined;
+    }
+
+    serviceIidSet.add(service.iid);
+
+    for (const [eventType, name] of Object.entries(eventSchema)) {
+      const matchingEvents = (service.events ?? []).filter(event =>
+        matchesMiotUrnPattern(event.type, eventType),
+      );
+      const [event] = matchingEvents;
+
+      if (matchingEvents.length !== 1 || event === undefined) {
+        return undefined;
+      }
+
+      matches.push({service, event, name});
     }
   }
 
@@ -408,6 +527,10 @@ function resolveServiceProperties(
       mapping.iid === undefined
         ? undefined
         : selectMiotUrnPatternValue(deviceType, mapping.iid);
+    const valueList =
+      mapping['value-list'] === undefined
+        ? undefined
+        : selectMiotUrnPatternValue(deviceType, mapping['value-list']);
     const candidates =
       mapping.iid !== undefined && iid === undefined
         ? []
@@ -429,7 +552,11 @@ function resolveServiceProperties(
         return undefined;
       }
 
-      properties[mapping.name] = resolveProperty(property, enumMapping);
+      properties[mapping.name] = resolveProperty(
+        property,
+        enumMapping,
+        valueList,
+      );
       usedPropertyIids.add(property.iid);
       continue;
     }
@@ -444,7 +571,7 @@ function resolveServiceProperties(
 
     optionalCandidates.push([
       mapping.name,
-      resolveProperty(property, enumMapping),
+      resolveProperty(property, enumMapping, valueList),
     ]);
     optionalPropertyUseCount.set(
       property.iid,
@@ -541,10 +668,14 @@ function resolveActionProperties(
 function resolveProperty(
   property: MiotSpecProperty,
   enumMapping: MiotEnumValueMapping | undefined,
+  valueList: MiotSpecValueList | undefined,
 ): MiotResolvedSpecProperty {
-  return enumMapping === undefined
-    ? property
-    : Object.assign({}, property, {enum: enumMapping});
+  return Object.assign(
+    {},
+    property,
+    enumMapping === undefined ? {} : {enum: enumMapping},
+    valueList === undefined ? {} : {'value-list': valueList},
+  );
 }
 
 function getPropertyMapping(mapping: MiotPropertyMapping): {
@@ -552,6 +683,7 @@ function getPropertyMapping(mapping: MiotPropertyMapping): {
   readonly enum?: MiotEnumMapping;
   readonly iid?: MiotPropertyIidMapping;
   readonly optional: boolean;
+  readonly 'value-list'?: MiotPropertyValueListMapping;
 } {
   return typeof mapping === 'string'
     ? {name: mapping, optional: false}
@@ -560,6 +692,7 @@ function getPropertyMapping(mapping: MiotPropertyMapping): {
         enum: mapping.enum,
         iid: mapping.iid,
         optional: mapping.optional === true,
+        'value-list': mapping['value-list'],
       };
 }
 
@@ -583,6 +716,20 @@ function isValidIidMapping(mapping: MiotPropertyIidMapping): boolean {
     entries.every(
       ([pattern, iid]) =>
         isValidMiotUrnPattern(pattern) && Number.isInteger(iid) && iid > 0,
+    )
+  );
+}
+
+function isValidValueListMapping(
+  mapping: MiotPropertyValueListMapping,
+): boolean {
+  const entries = Object.entries(mapping);
+
+  return (
+    entries.length > 0 &&
+    entries.every(
+      ([pattern, valueList]) =>
+        isValidMiotUrnPattern(pattern) && isValidMiotSpecValueList(valueList),
     )
   );
 }

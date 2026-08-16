@@ -50,6 +50,35 @@ export type MiotAction = {
   readonly aiid: number;
 };
 
+export type MiotEvent = {
+  readonly did: string;
+  readonly siid: number;
+  readonly eiid: number;
+};
+
+/** One property value carried by a MIoT event occurrence. */
+export type MiotEventArgument = {
+  readonly piid: number;
+  readonly value: unknown;
+};
+
+/**
+ * Values carried by a MIoT event occurrence.
+ *
+ * Xiaomi Cloud identifies each value by property IID, while the local gateway
+ * sends values positionally in the order declared by the event spec. Preserve
+ * that distinction until the owning endpoint can resolve the event metadata.
+ */
+export type MiotEventArguments =
+  | {
+      readonly type: 'identified';
+      readonly data: readonly MiotEventArgument[];
+    }
+  | {
+      readonly type: 'positional';
+      readonly data: readonly unknown[];
+    };
+
 export type MiotActionInput = {
   readonly piid: number;
   readonly value: unknown;

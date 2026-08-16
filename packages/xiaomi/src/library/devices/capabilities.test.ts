@@ -92,7 +92,8 @@ describe('MIoT air conditioner capabilities', () => {
         properties: {temperature: {iid: 7}, 'relative-humidity': {iid: 9}},
       },
     ]);
-    expect(connection.stateProperties).toHaveLength(6);
+    expect(connection.snapshotProperties).toHaveLength(6);
+    expect(connection.notificationTargets).toHaveLength(6);
     expect(connection.mode).toBeUndefined();
     expect(connection.targetTemperature?.kelvin).toBe(0);
     expect(connection.targetRelativeHumidity).toBe(0);

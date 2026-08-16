@@ -3,6 +3,7 @@ export * from './command-effect.js';
 export * from './dehumidifier.js';
 export * from './fan.js';
 export * from './light.js';
+export * from './motion-sensor.js';
 export * from './pet-feeder.js';
 export * from './placeholder.js';
 export * from './temperature-humidity-sensor.js';
