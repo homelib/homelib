@@ -271,9 +271,6 @@ const _TEST_MULTI_RESOURCE_PROPERTIES = {
   },
 } as const satisfies MiotPropertySchema;
 
-const TEST_HELPER_DEVICE_TYPE_PATTERN =
-  'urn:miot-spec-v2:device:light:0000A001:test-*';
-
 const TEST_HELPER_PROPERTIES = {
   'urn:miot-spec-v2:service:light:00007802': {
     'urn:miot-spec-v2:property:on:00000006': 'on',
@@ -282,7 +279,7 @@ const TEST_HELPER_PROPERTIES = {
     'urn:miot-spec-v2:property:mode:00000008': {
       name: 'mode',
       enum: {
-        [TEST_HELPER_DEVICE_TYPE_PATTERN]: {off: 0, onn: 1},
+        'urn:miot-spec-v2:device:light:0000A001:test-*': {off: 0, onn: 1},
         '*': {off: 0, standby: 2},
       },
       optional: true,
@@ -352,7 +349,7 @@ const TEST_HELPER_METADATA = createTestResolvedMetadata({
           ...TEST_HELPER_MODE_PROPERTY,
           enum: TEST_HELPER_PROPERTIES['urn:miot-spec-v2:service:fan:00007808'][
             'urn:miot-spec-v2:property:mode:00000008'
-          ].enum[TEST_HELPER_DEVICE_TYPE_PATTERN],
+          ].enum['urn:miot-spec-v2:device:light:0000A001:test-*'],
         },
       },
     },

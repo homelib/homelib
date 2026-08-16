@@ -12,3 +12,6 @@ bld/
 
 # Debugging
 .cache
+
+# Workspace
+doc/drafts/

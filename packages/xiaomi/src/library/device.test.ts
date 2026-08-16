@@ -31,8 +31,6 @@ import {MiotProvider} from './provider.js';
 const DEVICE_TYPE = 'urn:miot-spec-v2:device:light:0000A001:test-light:1';
 const ALTERNATE_DEVICE_TYPE =
   'urn:miot-spec-v2:device:light:0000A001:alternate-light:1';
-const ALTERNATE_DEVICE_TYPE_PATTERN =
-  'urn:miot-spec-v2:device:light:0000A001:alternate-*';
 const LIGHT_SERVICE_TYPE = 'urn:miot-spec-v2:service:light:00007802';
 const ENVIRONMENT_SERVICE_TYPE =
   'urn:miot-spec-v2:service:environment:0000780A';
@@ -46,12 +44,12 @@ const RELATIVE_HUMIDITY_PROPERTY_TYPE =
 const TEST_DEVICE = {did: 'physical', model: 'test.light'};
 
 const LIGHT_PROPERTIES = {
-  [LIGHT_SERVICE_TYPE]: {
-    [ON_PROPERTY_TYPE]: 'on',
-    [MODE_PROPERTY_TYPE]: {
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:property:on:00000006': 'on',
+    'urn:miot-spec-v2:property:mode:00000008': {
       name: 'mode',
       enum: {
-        [ALTERNATE_DEVICE_TYPE_PATTERN]: {off: 1, on: 0},
+        'urn:miot-spec-v2:device:light:0000A001:alternate-*': {off: 1, on: 0},
         '*': {off: 0, on: 1},
       },
       optional: true,
@@ -60,12 +58,12 @@ const LIGHT_PROPERTIES = {
 } as const satisfies MiotPropertySchema;
 
 const ENVIRONMENT_PROPERTIES = {
-  [ENVIRONMENT_SERVICE_TYPE]: {
-    [TEMPERATURE_PROPERTY_TYPE]: {
+  'urn:miot-spec-v2:service:environment:0000780A': {
+    'urn:miot-spec-v2:property:temperature:00000020': {
       name: 'temperature',
       optional: true,
     },
-    [RELATIVE_HUMIDITY_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:property:relative-humidity:0000000C': {
       name: 'relativeHumidity',
       optional: true,
     },
@@ -132,8 +130,8 @@ test('rejects ambiguous optional services instead of choosing a combination', ()
 test('rejects two declarations that resolve to the same service', () => {
   const Connection = createConnection({
     ...LIGHT_PROPERTIES,
-    [`${LIGHT_SERVICE_TYPE}:test-light:1`]: {
-      [ON_PROPERTY_TYPE]: 'duplicateOn',
+    'urn:miot-spec-v2:service:light:00007802:test-light:1': {
+      'urn:miot-spec-v2:property:on:00000006': 'duplicateOn',
     },
   });
 
@@ -208,7 +206,9 @@ test('restores the enum mapping selected by the persisted device URN', () => {
 
 test('derives newly supported optional properties from persisted services', () => {
   const withoutMode = createConnection({
-    [LIGHT_SERVICE_TYPE]: {[ON_PROPERTY_TYPE]: 'on'},
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:on:00000006': 'on',
+    },
   });
   const withMode = createConnection();
   const services = [createLightService(2)];

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Device Development'
+  short_description: 'Develop HomeLib devices and provider adapters'
+  default_prompt: 'Use $device-development to implement or update a HomeLib device and its provider adapter.'

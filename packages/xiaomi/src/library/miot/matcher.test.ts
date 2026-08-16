@@ -31,44 +31,43 @@ const RELATIVE_HUMIDITY_PROPERTY_TYPE =
 const TEST_DEVICE_TYPE = 'urn:miot-spec-v2:device:light:0000A001:test-light:1';
 const ZHIMI_FAN_DEVICE_TYPE =
   'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1:1';
-const ZHIMI_FAN_DEVICE_PATTERN =
-  'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1';
-const ZHIMI_FAN_FAMILY_PATTERN = 'urn:miot-spec-v2:device:fan:0000A005:zhimi-*';
-const DMAKER_FAN_FAMILY_PATTERN =
-  'urn:miot-spec-v2:device:fan:0000A005:dmaker-*';
 
 const LIGHT_SCHEMA = {
-  [LIGHT_SERVICE_TYPE]: {
-    [ON_PROPERTY_TYPE]: 'on',
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:property:on:00000006': 'on',
   },
 } as const satisfies MiotPropertySchema;
 
 const DIMMABLE_LIGHT_SCHEMA = {
-  [LIGHT_SERVICE_TYPE]: {
-    [ON_PROPERTY_TYPE]: 'on',
-    [BRIGHTNESS_PROPERTY_TYPE]: {name: 'brightness', optional: true},
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:property:on:00000006': 'on',
+    'urn:miot-spec-v2:property:brightness:0000000D': {
+      name: 'brightness',
+      optional: true,
+    },
   },
 } as const satisfies MiotPropertySchema;
 
-const FAN_MODE_ENUM = {
-  '*': {normal: 0, natural: 1},
-} as const;
+const FAN_MODE_VALUES = {normal: 0, natural: 1} as const;
 
 const FAN_SCHEMA = {
-  [LIGHT_SERVICE_TYPE]: {
-    [ON_PROPERTY_TYPE]: 'on',
-    [MODE_PROPERTY_TYPE]: {
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:property:on:00000006': 'on',
+    'urn:miot-spec-v2:property:mode:00000008': {
       name: 'mode',
-      enum: FAN_MODE_ENUM,
+      enum: {'*': FAN_MODE_VALUES},
       optional: true,
     },
   },
 } as const satisfies MiotPropertySchema;
 
 const ENVIRONMENT_SCHEMA = {
-  [ENVIRONMENT_SERVICE_TYPE]: {
-    [TEMPERATURE_PROPERTY_TYPE]: {name: 'temperature', optional: true},
-    [RELATIVE_HUMIDITY_PROPERTY_TYPE]: {
+  'urn:miot-spec-v2:service:environment:0000780A': {
+    'urn:miot-spec-v2:property:temperature:00000020': {
+      name: 'temperature',
+      optional: true,
+    },
+    'urn:miot-spec-v2:property:relative-humidity:0000000C': {
       name: 'relativeHumidity',
       optional: true,
     },
@@ -79,7 +78,12 @@ describe('matchesMiotUrnPattern', () => {
   const deviceType = 'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1:1';
 
   test('matches an exact URN', () => {
-    expect(matchesMiotUrnPattern(deviceType, deviceType)).toBe(true);
+    expect(
+      matchesMiotUrnPattern(
+        deviceType,
+        'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1:1',
+      ),
+    ).toBe(true);
   });
 
   test('matches a base URN at a segment boundary', () => {
@@ -152,8 +156,8 @@ test('treats a string property mapping as required', () => {
 
 test('treats an object property mapping as required by default', () => {
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [ON_PROPERTY_TYPE]: {name: 'on'},
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:on:00000006': {name: 'on'},
     },
   } as const satisfies MiotPropertySchema;
 
@@ -272,10 +276,10 @@ test('rejects an ambiguous required property', () => {
 
 test('uses a property IID to disambiguate duplicate property types', () => {
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [ON_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:on:00000006': {
         name: 'on',
-        iid: {[ZHIMI_FAN_DEVICE_PATTERN]: 2},
+        iid: {'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': 2},
       },
     },
   } as const satisfies MiotPropertySchema;
@@ -313,10 +317,13 @@ test('matches a required action and its ordered input and output properties', ()
   });
   const resources = resolveTestSchema([service], LIGHT_SCHEMA) ?? [];
   const actionSchema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [actionType]: {
-        in: [BRIGHTNESS_PROPERTY_TYPE, ON_PROPERTY_TYPE],
-        out: [ON_PROPERTY_TYPE],
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:action:test:00002801': {
+        in: [
+          'urn:miot-spec-v2:property:brightness:0000000D',
+          'urn:miot-spec-v2:property:on:00000006',
+        ],
+        out: ['urn:miot-spec-v2:property:on:00000006'],
       },
     },
   } as const;
@@ -324,9 +331,12 @@ test('matches a required action and its ordered input and output properties', ()
   expect(matchesMiotActionSchema(resources, actionSchema)).toBe(true);
   expect(
     matchesMiotActionSchema(resources, {
-      [LIGHT_SERVICE_TYPE]: {
-        [actionType]: {
-          in: [ON_PROPERTY_TYPE, BRIGHTNESS_PROPERTY_TYPE],
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:action:test:00002801': {
+          in: [
+            'urn:miot-spec-v2:property:on:00000006',
+            'urn:miot-spec-v2:property:brightness:0000000D',
+          ],
         },
       },
     }),
@@ -342,7 +352,7 @@ test('rejects an invalid action schema', () => {
 
   expect(() =>
     matchesMiotActionSchema(resources, {
-      [LIGHT_SERVICE_TYPE]: {'': {in: []}},
+      'urn:miot-spec-v2:service:light:00007802': {'': {in: []}},
     }),
   ).toThrow(TypeError);
 });
@@ -366,11 +376,16 @@ test.each(['optional-first', 'required-first'] as const)(
   order => {
     const vendorOnType = `${ON_PROPERTY_TYPE}:vendor:1`;
     const optional = {
-      [ON_PROPERTY_TYPE]: {name: 'optionalOn', optional: true},
+      'urn:miot-spec-v2:property:on:00000006': {
+        name: 'optionalOn',
+        optional: true,
+      },
     } as const;
-    const required = {[vendorOnType]: 'on'} as const;
+    const required = {
+      'urn:miot-spec-v2:property:on:00000006:vendor:1': 'on',
+    } as const;
     const schema = {
-      [LIGHT_SERVICE_TYPE]:
+      'urn:miot-spec-v2:service:light:00007802':
         order === 'optional-first'
           ? {...optional, ...required}
           : {...required, ...optional},
@@ -451,7 +466,7 @@ test('accepts extra metadata enum values and preserves the declared mapping', ()
 
   expect(resource?.properties.mode).toMatchObject({
     iid: 2,
-    enum: FAN_MODE_ENUM['*'],
+    enum: FAN_MODE_VALUES,
     'value-list': createValueList([2, 1, 0]),
   });
 });
@@ -496,7 +511,7 @@ test('accepts a device-supported subset of a declared enum mapping', () => {
   const [resource] = resolveTestSchema([service], FAN_SCHEMA) ?? [];
 
   expect(resource?.properties.mode).toMatchObject({
-    enum: FAN_MODE_ENUM['*'],
+    enum: FAN_MODE_VALUES,
     'value-list': createValueList([0, 2]),
   });
 });
@@ -504,11 +519,13 @@ test('accepts a device-supported subset of a declared enum mapping', () => {
 test('preserves the physical value list when no override pattern matches', () => {
   const physicalValueList = createValueList([2, 5]);
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
         'value-list': {
-          [ZHIMI_FAN_DEVICE_PATTERN]: createValueList([0, 2, 5]),
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': createValueList([
+            0, 2, 5,
+          ]),
         },
       },
     },
@@ -529,10 +546,12 @@ test('preserves the physical value list when no override pattern matches', () =>
 test('replaces the physical value list when an override pattern matches', () => {
   const overrideValueList = createValueList([0, 2, 5]);
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        'value-list': {[ZHIMI_FAN_DEVICE_PATTERN]: overrideValueList},
+        'value-list': {
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': overrideValueList,
+        },
       },
     },
   } as const satisfies MiotPropertySchema;
@@ -554,8 +573,11 @@ test('replaces the physical value list when an override pattern matches', () => 
 
 test('rejects a required enum property without a known value', () => {
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [MODE_PROPERTY_TYPE]: {name: 'mode', enum: FAN_MODE_ENUM},
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:mode:00000008': {
+        name: 'mode',
+        enum: {'*': FAN_MODE_VALUES},
+      },
     },
   } as const satisfies MiotPropertySchema;
   const service = createLightService({
@@ -574,12 +596,12 @@ test('selects a more specific enum pattern instead of the wildcard fallback', ()
   const fallback = {normal: 0, natural: 1} as const;
   const deviceSpecific = {normal: 1, natural: 0, sleep: 2} as const;
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
         enum: {
           '*': fallback,
-          [ZHIMI_FAN_DEVICE_PATTERN]: deviceSpecific,
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': deviceSpecific,
         },
       },
     },
@@ -605,12 +627,12 @@ test('selects a more specific enum pattern instead of the wildcard fallback', ()
 test('selects a comma-separated enum pattern instead of its fallback', () => {
   const selectedMapping = {normal: 1, natural: 0} as const;
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
         enum: {
           '*': {normal: 0, natural: 1},
-          [`${ZHIMI_FAN_FAMILY_PATTERN}, ${DMAKER_FAN_FAMILY_PATTERN}`]:
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*, urn:miot-spec-v2:device:fan:0000A005:dmaker-*':
             selectedMapping,
         },
       },
@@ -627,10 +649,12 @@ test('selects a comma-separated enum pattern instead of its fallback', () => {
 test('selects an enum pattern containing a wildcard within a segment', () => {
   const familyMapping = {natural: 0, normal: 1} as const;
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {[ZHIMI_FAN_FAMILY_PATTERN]: familyMapping},
+        enum: {
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': familyMapping,
+        },
       },
     },
   } as const satisfies MiotPropertySchema;
@@ -644,11 +668,13 @@ test('selects an enum pattern containing a wildcard within a segment', () => {
 
 test('omits an optional enum property when no device type pattern matches', () => {
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [ON_PROPERTY_TYPE]: 'on',
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:on:00000006': 'on',
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {[DMAKER_FAN_FAMILY_PATTERN]: {normal: 0}},
+        enum: {
+          'urn:miot-spec-v2:device:fan:0000A005:dmaker-*': {normal: 0},
+        },
         optional: true,
       },
     },
@@ -664,10 +690,12 @@ test('omits an optional enum property when no device type pattern matches', () =
 
 test('rejects a required enum property when no device type pattern matches', () => {
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {[DMAKER_FAN_FAMILY_PATTERN]: {normal: 0}},
+        enum: {
+          'urn:miot-spec-v2:device:fan:0000A005:dmaker-*': {normal: 0},
+        },
       },
     },
   } as const satisfies MiotPropertySchema;
@@ -682,19 +710,17 @@ test('rejects a required enum property when no device type pattern matches', () 
 test.each(['forward', 'reverse'] as const)(
   'rejects equally specific overlapping enum patterns regardless of order (%s)',
   order => {
-    const prefixPattern = ZHIMI_FAN_FAMILY_PATTERN;
-    const suffixPattern = 'urn:miot-spec-v2:device:fan:0000A005:*mi-fa1';
     const forward = {
-      [prefixPattern]: {normal: 0},
-      [suffixPattern]: {natural: 1},
+      'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {normal: 0},
+      'urn:miot-spec-v2:device:fan:0000A005:*mi-fa1': {natural: 1},
     } as const;
     const reverse = {
-      [suffixPattern]: {natural: 1},
-      [prefixPattern]: {normal: 0},
+      'urn:miot-spec-v2:device:fan:0000A005:*mi-fa1': {natural: 1},
+      'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {normal: 0},
     } as const;
     const schema = {
-      [LIGHT_SERVICE_TYPE]: {
-        [MODE_PROPERTY_TYPE]: {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
           enum: order === 'forward' ? forward : reverse,
         },
@@ -711,11 +737,11 @@ test.each(['forward', 'reverse'] as const)(
 
 test('rejects overlapping enum patterns without a containment relationship', () => {
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
         enum: {
-          [ZHIMI_FAN_FAMILY_PATTERN]: {natural: 0},
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {natural: 0},
           'urn:miot-spec-v2:device:fan:0000A005:*fa1': {normal: 0},
           '*': {normal: 0},
         },
@@ -734,13 +760,13 @@ test('rejects overlapping enum patterns without a containment relationship', () 
 test('selects one branch nested within otherwise overlapping patterns', () => {
   const exactMapping = {sleep: 2} as const;
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
         enum: {
-          [ZHIMI_FAN_FAMILY_PATTERN]: {natural: 0},
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {natural: 0},
           'urn:miot-spec-v2:device:fan:0000A005:*fa1': {normal: 1},
-          [ZHIMI_FAN_DEVICE_PATTERN]: exactMapping,
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': exactMapping,
           '*': {normal: 0},
         },
       },
@@ -756,13 +782,13 @@ test('selects one branch nested within otherwise overlapping patterns', () => {
 
 test('does not fall back when the selected enum mapping fails metadata validation', () => {
   const schema = {
-    [LIGHT_SERVICE_TYPE]: {
-      [ON_PROPERTY_TYPE]: 'on',
-      [MODE_PROPERTY_TYPE]: {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:on:00000006': 'on',
+      'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
         enum: {
           '*': {normal: 0, natural: 1},
-          [ZHIMI_FAN_DEVICE_PATTERN]: {sleep: 2},
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': {sleep: 2},
         },
         optional: true,
       },
@@ -779,82 +805,139 @@ test('does not fall back when the selected enum mapping fails metadata validatio
 
 test.each([
   ['an empty schema', {}],
-  ['an empty service type', {'': {[ON_PROPERTY_TYPE]: 'on'}}],
+  [
+    'an empty service type',
+    {'': {'urn:miot-spec-v2:property:on:00000006': 'on'}},
+  ],
   [
     'an empty service type alternative',
-    {[`${LIGHT_SERVICE_TYPE},`]: {[ON_PROPERTY_TYPE]: 'on'}},
+    {
+      'urn:miot-spec-v2:service:light:00007802,': {
+        'urn:miot-spec-v2:property:on:00000006': 'on',
+      },
+    },
   ],
-  ['a service without properties', {[LIGHT_SERVICE_TYPE]: {}}],
-  ['an empty property type', {[LIGHT_SERVICE_TYPE]: {'': 'on'}}],
+  [
+    'a service without properties',
+    {'urn:miot-spec-v2:service:light:00007802': {}},
+  ],
+  [
+    'an empty property type',
+    {'urn:miot-spec-v2:service:light:00007802': {'': 'on'}},
+  ],
   [
     'an empty property type alternative',
-    {[LIGHT_SERVICE_TYPE]: {[`${ON_PROPERTY_TYPE},`]: 'on'}},
+    {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006,': 'on',
+      },
+    },
   ],
-  ['an empty string name', {[LIGHT_SERVICE_TYPE]: {[ON_PROPERTY_TYPE]: ''}}],
+  [
+    'an empty string name',
+    {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': '',
+      },
+    },
+  ],
   [
     'an unsafe property name',
-    {[LIGHT_SERVICE_TYPE]: {[ON_PROPERTY_TYPE]: '__proto__'}},
+    {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': '__proto__',
+      },
+    },
   ],
   [
     'an empty object name',
-    {[LIGHT_SERVICE_TYPE]: {[ON_PROPERTY_TYPE]: {name: ''}}},
+    {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': {name: ''},
+      },
+    },
   ],
   [
     'an empty property IID mapping',
-    {[LIGHT_SERVICE_TYPE]: {[ON_PROPERTY_TYPE]: {name: 'on', iid: {}}}},
+    {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': {name: 'on', iid: {}},
+      },
+    },
   ],
   [
     'an empty property IID pattern',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [ON_PROPERTY_TYPE]: {name: 'on', iid: {'': 1}},
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': {
+          name: 'on',
+          iid: {'': 1},
+        },
       },
     },
   ],
   [
     'a non-positive property IID',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [ON_PROPERTY_TYPE]: {name: 'on', iid: {'*': 0}},
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': {
+          name: 'on',
+          iid: {'*': 0},
+        },
       },
     },
   ],
   [
     'a non-integer property IID',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [ON_PROPERTY_TYPE]: {name: 'on', iid: {'*': 1.5}},
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': {
+          name: 'on',
+          iid: {'*': 1.5},
+        },
       },
     },
   ],
   [
     'a duplicate name',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [ON_PROPERTY_TYPE]: 'state',
-        [BRIGHTNESS_PROPERTY_TYPE]: {name: 'state', optional: true},
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': 'state',
+        'urn:miot-spec-v2:property:brightness:0000000D': {
+          name: 'state',
+          optional: true,
+        },
       },
     },
   ],
   [
     'an empty enum',
-    {[LIGHT_SERVICE_TYPE]: {[MODE_PROPERTY_TYPE]: {name: 'mode', enum: {}}}},
+    {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:mode:00000008': {name: 'mode', enum: {}},
+      },
+    },
   ],
   [
     'an empty enum pattern',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [MODE_PROPERTY_TYPE]: {name: 'mode', enum: {'': {normal: 0}}},
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:mode:00000008': {
+          name: 'mode',
+          enum: {'': {normal: 0}},
+        },
       },
     },
   ],
   [
     'an empty enum pattern alternative',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [MODE_PROPERTY_TYPE]: {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
-          enum: {[`${ZHIMI_FAN_FAMILY_PATTERN},`]: {normal: 0}},
+          enum: {
+            'urn:miot-spec-v2:device:fan:0000A005:zhimi-*,': {normal: 0},
+          },
         },
       },
     },
@@ -862,24 +945,30 @@ test.each([
   [
     'an empty enum value mapping',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [MODE_PROPERTY_TYPE]: {name: 'mode', enum: {'*': {}}},
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:mode:00000008': {
+          name: 'mode',
+          enum: {'*': {}},
+        },
       },
     },
   ],
   [
     'an empty enum value key',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [MODE_PROPERTY_TYPE]: {name: 'mode', enum: {'*': {'': 0}}},
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:mode:00000008': {
+          name: 'mode',
+          enum: {'*': {'': 0}},
+        },
       },
     },
   ],
   [
     'a non-finite inner enum value',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [MODE_PROPERTY_TYPE]: {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
           enum: {'*': {normal: Number.NaN}},
         },
@@ -889,8 +978,8 @@ test.each([
   [
     'duplicate enum values',
     {
-      [LIGHT_SERVICE_TYPE]: {
-        [MODE_PROPERTY_TYPE]: {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
           enum: {'*': {normal: 0, natural: 0}},
         },

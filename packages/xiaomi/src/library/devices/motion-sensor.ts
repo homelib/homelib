@@ -14,18 +14,6 @@ import type {
   MiotSpecEvent,
 } from '../miot/index.js';
 
-const MOTION_SENSOR_SERVICE_PATTERN =
-  'urn:miot-spec-v2:service:motion-sensor:00007825';
-
-const NO_MOTION_DURATION_PROPERTY_PATTERN =
-  'urn:miot-spec-v2:property:no-motion-duration:000000CB';
-
-const MOTION_DETECTED_EVENT_PATTERN =
-  'urn:miot-spec-v2:event:motion-detected:00005001';
-
-const BMGL01_DEVICE_PATTERN =
-  'urn:miot-spec-v2:device:motion-sensor:0000A014:lumi-bmgl01:1';
-
 /**
  * Local safety net clearing a motion detection that no duration update
  * confirmed. It is an independent policy constant, deliberately not derived
@@ -44,15 +32,15 @@ export class MiotMotionSensorEndpointConnection
 {
   static readonly Endpoint = MotionSensorEndpoint;
   static readonly properties = {
-    [MOTION_SENSOR_SERVICE_PATTERN]: {
-      [NO_MOTION_DURATION_PROPERTY_PATTERN]: {
+    'urn:miot-spec-v2:service:motion-sensor:00007825': {
+      'urn:miot-spec-v2:property:no-motion-duration:000000CB': {
         name: 'no-motion-duration',
         optional: true,
         'value-list': {
           // The official lumi-bmgl01 instance spec omits 0, while the device
           // reports it right after motion; Xiaomi's official HA integration
           // patches the same value in.
-          [BMGL01_DEVICE_PATTERN]: [
+          'urn:miot-spec-v2:device:motion-sensor:0000A014:lumi-bmgl01:1': [
             {value: 0, description: '0 Seconds'},
             {value: 2, description: '2 Minutes'},
             {value: 5, description: '5 Minutes'},
@@ -63,8 +51,8 @@ export class MiotMotionSensorEndpointConnection
   } as const satisfies MiotPropertySchema;
 
   static readonly events = {
-    [MOTION_SENSOR_SERVICE_PATTERN]: {
-      [MOTION_DETECTED_EVENT_PATTERN]: 'motion-detected',
+    'urn:miot-spec-v2:service:motion-sensor:00007825': {
+      'urn:miot-spec-v2:event:motion-detected:00005001': 'motion-detected',
     },
   } as const satisfies MiotEventSchema;
 

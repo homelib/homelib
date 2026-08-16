@@ -19,14 +19,6 @@ import {
 
 import {clampAndQuantizeValue} from './value-range.js';
 
-const MIOT_BRIGHTNESS_PROPERTY_TYPE =
-  'urn:miot-spec-v2:property:brightness:0000000D';
-const MIOT_FAN_LEVEL_PROPERTY_TYPE =
-  'urn:miot-spec-v2:property:fan-level:00000016';
-const MIOT_RELATIVE_HUMIDITY_PROPERTY_TYPE =
-  'urn:miot-spec-v2:property:relative-humidity:0000000C';
-const MIOT_TARGET_HUMIDITY_PROPERTY_TYPE =
-  'urn:miot-spec-v2:property:target-humidity:00000022';
 const MIOT_NUMERIC_FORMAT_RANGES: Readonly<
   Record<string, readonly [minimum: number, maximum: number] | undefined>
 > = {
@@ -351,7 +343,12 @@ function getMiotEffectValue(
     return value;
   }
 
-  if (matchesMiotUrnPattern(property.type, MIOT_BRIGHTNESS_PROPERTY_TYPE)) {
+  if (
+    matchesMiotUrnPattern(
+      property.type,
+      'urn:miot-spec-v2:property:brightness:0000000D',
+    )
+  ) {
     const valueRange = property['value-range'];
 
     if (!isValidMiotSpecValueRange(valueRange, property.format)) {
@@ -364,14 +361,22 @@ function getMiotEffectValue(
   if (
     matchesMiotUrnPattern(
       property.type,
-      MIOT_RELATIVE_HUMIDITY_PROPERTY_TYPE,
+      'urn:miot-spec-v2:property:relative-humidity:0000000C',
     ) ||
-    matchesMiotUrnPattern(property.type, MIOT_TARGET_HUMIDITY_PROPERTY_TYPE)
+    matchesMiotUrnPattern(
+      property.type,
+      'urn:miot-spec-v2:property:target-humidity:00000022',
+    )
   ) {
     return value * 100;
   }
 
-  if (matchesMiotUrnPattern(property.type, MIOT_FAN_LEVEL_PROPERTY_TYPE)) {
+  if (
+    matchesMiotUrnPattern(
+      property.type,
+      'urn:miot-spec-v2:property:fan-level:00000016',
+    )
+  ) {
     const valueList = property['value-list'];
 
     if (!isValidMiotSpecValueList(valueList)) {

@@ -9,9 +9,6 @@ import {computed} from 'mobx';
 import {MiotEndpointConnection} from '../endpoint-connection.js';
 import type {MiotPropertySchema} from '../miot/index.js';
 
-const TEMPERATURE_HUMIDITY_SERVICE_PATTERN =
-  'urn:miot-spec-v2:service:temperature-humidity-sensor:00007814,urn:miot-spec-v2:service:environment:0000780A';
-
 export class MiotTemperatureHumiditySensorEndpointConnection
   extends MiotEndpointConnection<
     never,
@@ -21,11 +18,12 @@ export class MiotTemperatureHumiditySensorEndpointConnection
 {
   static readonly Endpoint = TemperatureHumiditySensorEndpoint;
   static readonly properties = {
-    [TEMPERATURE_HUMIDITY_SERVICE_PATTERN]: {
-      'urn:miot-spec-v2:property:temperature:00000020': 'temperature',
-      'urn:miot-spec-v2:property:relative-humidity:0000000C':
-        'relative-humidity',
-    },
+    'urn:miot-spec-v2:service:temperature-humidity-sensor:00007814,urn:miot-spec-v2:service:environment:0000780A':
+      {
+        'urn:miot-spec-v2:property:temperature:00000020': 'temperature',
+        'urn:miot-spec-v2:property:relative-humidity:0000000C':
+          'relative-humidity',
+      },
   } as const satisfies MiotPropertySchema;
 
   @computed
