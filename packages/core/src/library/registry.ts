@@ -10,22 +10,23 @@ const PROVIDER_NAMESPACE_DEVICE_CONSTRUCTOR_MAP = new Map<
   string,
   Map<string, DeviceConstructor<Device>>
 >();
-const ROOT_SCOPE_SET = new Set<Scope>();
+const ROOT_SCOPE_MAP = new Map<string, Scope>();
 
 export function register<TMetadata extends EndpointConnectionMetadata>(
   providerNamespace: Extract<keyof Home.ProviderNamespaces, string>,
   provider: Provider<TMetadata>,
 ): void;
-export function register(
-  constructors: DeviceConstructors<Home.DeviceConstructors>,
+export function register<
+  const TConstructors extends Record<string, DeviceConstructor<Device>>,
+>(
+  constructors: TConstructors &
+    RegisteredDeviceConstructors<TConstructors, Home.DeviceConstructors>,
 ): void;
 export function register<
   TProviderNamespace extends Extract<keyof Home.ProviderNamespaces, string>,
 >(
   providerNamespace: TProviderNamespace,
-  constructors: ProviderNamespaceDeviceConstructors<
-    Home.ProviderNamespaces[TProviderNamespace]
-  >,
+  constructors: DeviceConstructors<Home.ProviderNamespaces[TProviderNamespace]>,
 ): void;
 export function register(
   objectOrProviderNamespace:
@@ -58,7 +59,12 @@ export function register(
 
 export function registerRootScope(scope: Scope): void {
   assertDeclaring();
-  ROOT_SCOPE_SET.add(scope);
+
+  if (ROOT_SCOPE_MAP.has(scope.name)) {
+    throw new TypeError(`Duplicate home: ${scope.name}.`);
+  }
+
+  ROOT_SCOPE_MAP.set(scope.name, scope);
 }
 
 export function* getProviderEntries(): IterableIterator<
@@ -98,7 +104,7 @@ export function getProviderNamespaceDeviceConstructor(
 }
 
 export function getRootScopes(): IterableIterator<Scope> {
-  return ROOT_SCOPE_SET.values();
+  return ROOT_SCOPE_MAP.values();
 }
 
 type DeviceConstructors<TDevices> = {
@@ -107,8 +113,11 @@ type DeviceConstructors<TDevices> = {
   >;
 };
 
-type ProviderNamespaceDeviceConstructors<TDevices> =
-  DeviceConstructors<TDevices>;
+type RegisteredDeviceConstructors<TConstructors, TDevices> = {
+  [TKey in keyof TConstructors]: TKey extends keyof TDevices
+    ? DeviceConstructor<Extract<TDevices[TKey], Device>>
+    : never;
+};
 
 function registerProvider(
   providerNamespace: string,

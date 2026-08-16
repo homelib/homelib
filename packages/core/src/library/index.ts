@@ -11,6 +11,7 @@ export * from './provider.js';
 export * from './registry.js';
 export * from './runtime/index.js';
 export * from './scope.js';
+export * from './scope-declaration.js';
 export * from './types.js';
 export * from './utils/index.js';
 export * from './x-data-medium.js';
