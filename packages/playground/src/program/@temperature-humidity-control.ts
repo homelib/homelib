@@ -21,6 +21,8 @@ const HEAT_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE = 4;
 // 很多垃圾空调到了指定温度后还会继续制冷，所以需要一个后退值。
 const TEMPERATURE_BACKOFF = 4;
 
+const SOFT_OFF_DEHUMIDIFIER_RELATIVE_HUMIDITY = 1;
+
 export function setupTemperatureHumidityControl(
   name: string,
   {
@@ -59,9 +61,11 @@ export function setupTemperatureHumidityControl(
 ): void {
   let idealTemperatureUpperLimit = idealApparentTemperatureUpperLimit;
   let idealTemperatureLowerLimit = idealApparentTemperatureLowerLimit;
+  let idealTemperatureMiddle =
+    (idealTemperatureLowerLimit + idealTemperatureUpperLimit) / 2;
 
   const temperatureMatcher = new StateMatcher<
-    'very-high' | 'high' | 'ideal' | 'low',
+    'very-high' | 'high' | 'ideal-high' | 'ideal-low' | 'low',
     number
   >([
     {
@@ -83,10 +87,17 @@ export function setupTemperatureHumidityControl(
         temperature < idealTemperatureUpperLimit - idealTemperatureTolerance,
     },
     {
-      state: 'ideal',
-      enter: temperature => temperature >= idealTemperatureLowerLimit,
+      state: 'ideal-high',
+      enter: temperature => temperature >= idealTemperatureMiddle,
       leave: temperature =>
         temperature > idealTemperatureUpperLimit + idealTemperatureTolerance ||
+        temperature < idealTemperatureMiddle - idealTemperatureTolerance,
+    },
+    {
+      state: 'ideal-low',
+      enter: temperature => temperature >= idealTemperatureLowerLimit,
+      leave: temperature =>
+        temperature > idealTemperatureMiddle + idealTemperatureTolerance ||
         temperature < idealTemperatureLowerLimit - idealTemperatureTolerance,
     },
     {
@@ -152,6 +163,7 @@ export function setupTemperatureHumidityControl(
 
     const temperature = temperatureSensor.temperature?.celsius;
     const relativeHumidity = humiditySensor.relativeHumidity;
+    const dehumidifierWaterTankFull = dehumidifier.waterTankFull;
 
     if (temperature === undefined || relativeHumidity === undefined) {
       return;
@@ -173,6 +185,8 @@ export function setupTemperatureHumidityControl(
 
     idealTemperatureUpperLimit = nextIdealTemperatureUpperLimit;
     idealTemperatureLowerLimit = nextIdealTemperatureLowerLimit;
+    idealTemperatureMiddle =
+      (idealTemperatureLowerLimit + idealTemperatureUpperLimit) / 2;
 
     const temperatureState = temperatureMatcher.update(temperature);
     const relativeHumidityState =
@@ -185,6 +199,7 @@ export function setupTemperatureHumidityControl(
       idealTemperatureLowerLimit,
       temperatureState,
       relativeHumidityState,
+      dehumidifierWaterTankFull,
     });
 
     const setAirConditionerDryMode = (): void => {
@@ -229,78 +244,84 @@ export function setupTemperatureHumidityControl(
         );
     };
 
-    const setDehumidifierSoftOnOff = (on: boolean): void => {
-      dehumidifier.setTargetHumidity(on ? idealRelativeHumidityLowerLimit : 1);
+    const setDehumidifier = (targetRelativeHumidity: number): void => {
+      if (dehumidifierWaterTankFull === true) {
+        return;
+      }
+
+      dehumidifier.setTargetHumidity(targetRelativeHumidity);
     };
 
-    if (
-      (temperatureState.state === 'high' ||
-        temperatureState.state === 'very-high') &&
-      relativeHumidityState.state === 'high'
-    ) {
-      if (temperatureState.state === 'very-high') {
+    switch (temperatureState.state) {
+      case 'very-high':
         setAirConditionerCoolMode(idealTemperatureLowerLimit);
-      } else {
-        setAirConditionerDryMode();
-      }
 
-      setDehumidifierSoftOnOff(false);
-    } else if (
-      temperatureState.state === 'high' ||
-      temperatureState.state === 'very-high'
-    ) {
-      setAirConditionerCoolMode(idealTemperatureLowerLimit);
+        switch (relativeHumidityState.state) {
+          case 'high':
+            setDehumidifier(idealRelativeHumidityLowerLimit);
+            break;
+          default:
+            setDehumidifier(idealRelativeHumidityUpperLimit);
+            break;
+        }
 
-      setDehumidifierSoftOnOff(true);
-    } else if (relativeHumidityState.state === 'high') {
-      setAirConditionerCoolMode(
-        idealTemperatureUpperLimit + TEMPERATURE_BACKOFF,
-      );
+        break;
+      case 'high':
+        switch (relativeHumidityState.state) {
+          case 'high':
+            setAirConditionerDryMode();
+            break;
+          default:
+            setAirConditionerCoolMode(idealTemperatureLowerLimit);
+            break;
+        }
 
-      setDehumidifierSoftOnOff(true);
-    } else if (
-      temperatureState.state === 'low' &&
-      relativeHumidityState.state === 'low'
-    ) {
-      airConditioner
-        .setMode('heat')
-        .setTargetTemperature(
-          Temperature.fromCelsius(idealTemperatureUpperLimit),
+        setDehumidifier(idealRelativeHumidityUpperLimit);
+
+        break;
+      case 'ideal-high':
+        setAirConditionerCoolMode(
+          idealTemperatureUpperLimit + TEMPERATURE_BACKOFF,
         );
 
-      setDehumidifierSoftOnOff(false);
-    } else if (temperatureState.state === 'low') {
-      setAirConditionerHeatMode(idealTemperatureUpperLimit);
+        switch (relativeHumidityState.state) {
+          case 'high':
+            setDehumidifier(idealRelativeHumidityLowerLimit);
+            break;
+          default:
+            setDehumidifier(idealRelativeHumidityUpperLimit);
+            break;
+        }
 
-      setDehumidifierSoftOnOff(false);
-    } else if (relativeHumidityState.state === 'low') {
-      setAirConditionerHeatMode(
-        idealTemperatureLowerLimit - TEMPERATURE_BACKOFF,
-      );
+        break;
+      case 'ideal-low':
+        setAirConditionerHeatMode(
+          idealTemperatureLowerLimit - TEMPERATURE_BACKOFF,
+        );
 
-      setDehumidifierSoftOnOff(false);
-    } else {
-      switch (airConditioner.mode) {
-        case 'dry':
-        case 'cool':
-          setAirConditionerCoolMode(
-            idealTemperatureUpperLimit + TEMPERATURE_BACKOFF,
-          );
+        switch (relativeHumidityState.state) {
+          case 'high':
+            setDehumidifier(idealRelativeHumidityLowerLimit);
+            break;
+          default:
+            setDehumidifier(SOFT_OFF_DEHUMIDIFIER_RELATIVE_HUMIDITY);
+            break;
+        }
 
-          setDehumidifierSoftOnOff(true);
+        break;
+      case 'low':
+        setAirConditionerHeatMode(idealTemperatureUpperLimit);
 
-          break;
-        case 'heat':
-          airConditioner.setTargetTemperature(
-            Temperature.fromCelsius(
-              idealTemperatureLowerLimit - TEMPERATURE_BACKOFF,
-            ),
-          );
+        switch (relativeHumidityState.state) {
+          case 'high':
+            setDehumidifier(idealRelativeHumidityLowerLimit);
+            break;
+          default:
+            setDehumidifier(SOFT_OFF_DEHUMIDIFIER_RELATIVE_HUMIDITY);
+            break;
+        }
 
-          setDehumidifierSoftOnOff(false);
-
-          break;
-      }
+        break;
     }
   });
 }

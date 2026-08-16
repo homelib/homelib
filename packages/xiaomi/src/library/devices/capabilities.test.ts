@@ -783,7 +783,7 @@ describe('MIoT air conditioner capabilities', () => {
 });
 
 describe('MIoT dehumidifier capabilities', () => {
-  test('matches and projects optional mode and normalized target humidity', () => {
+  test('matches and projects optional mode, target humidity, and water tank state', () => {
     const metadata = findMetadata(
       MiotDehumidifierEndpointConnection,
       createDehumidifierSpec(),
@@ -796,8 +796,9 @@ describe('MIoT dehumidifier capabilities', () => {
 
     expect(getMetadataProperties(metadata)).toMatchObject({
       on: {iid: 1},
-      mode: {iid: 2},
-      'target-humidity': {iid: 3},
+      fault: {iid: 2},
+      mode: {iid: 3},
+      'target-humidity': {iid: 5},
     });
     expect(metadata.resources).toMatchObject([
       {service: {iid: 2}},
@@ -808,9 +809,23 @@ describe('MIoT dehumidifier capabilities', () => {
     ]);
     expect(connection.mode).toBeUndefined();
     expect(connection.targetRelativeHumidity).toBe(0);
+    expect(connection.waterTankFull).toBeUndefined();
     expect(connection.temperature?.kelvin).toBe(0);
     expect(connection.relativeHumidity).toBe(0);
+    expect(connection.snapshotProperties).toContainEqual({
+      did: metadata.device.did,
+      siid: 2,
+      piid: 2,
+    });
+    expect(connection.notificationTargets).toContainEqual({
+      type: 'property-change',
+      data: {did: metadata.device.did, siid: 2, piid: 2},
+    });
+    expect(connection.replaySnapshotPropertyNotifications).toEqual([
+      {did: metadata.device.did, siid: 2, piid: 2},
+    ]);
 
+    updateProperty(connection, metadata, 'fault', 0);
     updateProperty(connection, metadata, 'mode', 1);
     updateProperty(connection, metadata, 'target-humidity', 55);
     // The MIoT step describes write precision. Devices may still report a
@@ -819,11 +834,21 @@ describe('MIoT dehumidifier capabilities', () => {
     updateProperty(connection, metadata, 'relative-humidity', 58);
     expect(connection.mode).toBe('sleep');
     expect(connection.targetRelativeHumidity).toBe(0.55);
+    expect(connection.waterTankFull).toBe(false);
     expect(connection.temperature?.celsius).toBeCloseTo(21.5);
     expect(connection.relativeHumidity).toBe(0.58);
 
     updateProperty(connection, metadata, 'mode', 2);
+    updateProperty(connection, metadata, 'fault', 1);
     expect(connection.mode).toBe('laundry');
+    expect(connection.waterTankFull).toBe(true);
+    for (const fault of [2, 3, 4, 5, 6, 7, 8, 9]) {
+      updateProperty(connection, metadata, 'fault', fault);
+      expect(connection.waterTankFull).toBe(true);
+    }
+    updateProperty(connection, metadata, 'fault', 0);
+    updateProperty(connection, metadata, 'fault', 5);
+    expect(connection.waterTankFull).toBe(false);
     expect(() => updateProperty(connection, metadata, 'mode', 3)).toThrow(
       TypeError,
     );
@@ -876,6 +901,106 @@ describe('MIoT dehumidifier capabilities', () => {
     ]);
   });
 
+  test('rejects target humidity locally while tank protection is active', async () => {
+    const metadata = findMetadata(
+      MiotDehumidifierEndpointConnection,
+      createDehumidifierSpec(),
+    );
+    const transport = new TestTransport();
+    const connection = new MiotDehumidifierEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [transport],
+    );
+
+    updateProperty(connection, metadata, 'fault', 1);
+
+    await expect(
+      executeCommand(connection, new SetDehumidifierTargetHumidityCommand(0.5)),
+    ).rejects.toThrow(
+      'Cannot set MIoT dehumidifier target humidity while its water tank is full or unavailable.',
+    );
+    expect(transport.requests).toEqual([]);
+
+    updateProperty(connection, metadata, 'fault', 0);
+    await executeCommand(
+      connection,
+      new SetDehumidifierTargetHumidityCommand(0.5),
+    );
+    expect(transport.requests).toEqual([
+      createExpectedRequest(metadata, 'target-humidity', 50),
+    ]);
+  });
+
+  test('does not infer the water tank state from another active fault', async () => {
+    const metadata = findMetadata(
+      MiotDehumidifierEndpointConnection,
+      createDehumidifierSpec(),
+    );
+    const transport = new TestTransport();
+    const connection = new MiotDehumidifierEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [transport],
+    );
+
+    updateProperty(connection, metadata, 'fault', 5);
+
+    expect(connection.waterTankFull).toBeUndefined();
+    await executeCommand(
+      connection,
+      new SetDehumidifierTargetHumidityCommand(0.5),
+    );
+    expect(transport.requests).toEqual([
+      createExpectedRequest(metadata, 'target-humidity', 50),
+    ]);
+  });
+
+  test('forgets the last known water tank state when device state is invalidated', () => {
+    const metadata = findMetadata(
+      MiotDehumidifierEndpointConnection,
+      createDehumidifierSpec(),
+    );
+    const connection = new MiotDehumidifierEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
+
+    updateProperty(connection, metadata, 'fault', 1);
+    expect(connection.waterTankFull).toBe(true);
+
+    connection.handleStateUpdate({
+      did: metadata.device.did,
+      online: false,
+      properties: [],
+    });
+    expect(connection.waterTankFull).toBeUndefined();
+  });
+
+  test('preserves a satisfied target humidity noop while the water tank is full', () => {
+    const metadata = findMetadata(
+      MiotDehumidifierEndpointConnection,
+      createDehumidifierSpec(),
+    );
+    const connection = new MiotDehumidifierEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
+    const endpoint = new DehumidifierEndpoint();
+    endpoint.bindConnection(connection);
+
+    updateProperty(connection, metadata, 'fault', 1);
+    updateProperty(connection, metadata, 'target-humidity', 50);
+
+    const effect = requireEffect(
+      connection.prepareCommand(new SetDehumidifierTargetHumidityCommand(0.5))
+        .effect,
+    );
+    expect(effect.matches(endpoint)).toBe(true);
+  });
+
   test('returns independent canonical mode and target humidity effects', async () => {
     const metadata = findMetadata(
       MiotDehumidifierEndpointConnection,
@@ -893,6 +1018,7 @@ describe('MIoT dehumidifier capabilities', () => {
       online: true,
       properties: createStateProperties(metadata, {
         on: true,
+        fault: 0,
         mode: 1,
         'target-humidity': 58,
         temperature: 22,
@@ -945,6 +1071,7 @@ describe('MIoT dehumidifier capabilities', () => {
 
     expect(connection.mode).toBeUndefined();
     expect(connection.targetRelativeHumidity).toBeUndefined();
+    expect(connection.waterTankFull).toBeUndefined();
     await expect(
       executeCommand(connection, new SetDehumidifierModeCommand('auto')),
     ).rejects.toBeInstanceOf(CommandError);
@@ -956,7 +1083,7 @@ describe('MIoT dehumidifier capabilities', () => {
 
   test('supports known modes when the device exposes additional values', () => {
     const spec = createDehumidifierSpec();
-    const modeProperty = requireSpecProperty(spec, 2);
+    const modeProperty = requireSpecProperty(spec, 3);
     modeProperty['value-list'] = createValueList([0, 1, 2, 3]);
     const metadata = findMetadata(MiotDehumidifierEndpointConnection, spec);
     const connection = new MiotDehumidifierEndpointConnection(
@@ -968,6 +1095,7 @@ describe('MIoT dehumidifier capabilities', () => {
     expect(getMetadataPropertyNames(metadata)).toEqual(
       [
         'on',
+        'fault',
         'mode',
         'target-humidity',
         'temperature',
@@ -1004,7 +1132,7 @@ describe('MIoT dehumidifier capabilities', () => {
     const metadata = findMetadata(MiotDehumidifierEndpointConnection, spec);
 
     expect(getMetadataPropertyNames(metadata)).toEqual(
-      ['on', 'mode', 'target-humidity', entry.remaining].toSorted(),
+      ['on', 'fault', 'mode', 'target-humidity', entry.remaining].toSorted(),
     );
   });
 
@@ -1066,25 +1194,36 @@ describe('MIoT dehumidifier capabilities', () => {
   });
 
   test.each([
-    'urn:miot-spec-v2:device:other:0000FFFF:test:1',
-    'urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:2',
-  ])('matches complete features independently of device type (%s)', type => {
-    const spec = {...createDehumidifierSpec(), type};
-    const metadata = findMetadata(MiotDehumidifierEndpointConnection, spec);
+    {
+      type: 'urn:miot-spec-v2:device:other:0000FFFF:test:1',
+      waterTankState: false,
+    },
+    {
+      type: 'urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:2',
+      waterTankState: true,
+    },
+  ])(
+    'keeps generic features while matching model-specific water tank state ($type)',
+    entry => {
+      const {type} = entry;
+      const spec = {...createDehumidifierSpec(), type};
+      const metadata = findMetadata(MiotDehumidifierEndpointConnection, spec);
 
-    expect(
-      metadata.resources.map(resource => resource.service.iid).toSorted(),
-    ).toEqual([2, 3]);
-    expect(getMetadataPropertyNames(metadata)).toEqual(
-      [
-        'on',
-        'mode',
-        'target-humidity',
-        'temperature',
-        'relative-humidity',
-      ].toSorted(),
-    );
-  });
+      expect(
+        metadata.resources.map(resource => resource.service.iid).toSorted(),
+      ).toEqual([2, 3]);
+      expect(getMetadataPropertyNames(metadata)).toEqual(
+        [
+          'on',
+          ...(entry.waterTankState ? ['fault'] : []),
+          'mode',
+          'target-humidity',
+          'temperature',
+          'relative-humidity',
+        ].toSorted(),
+      );
+    },
+  );
 });
 
 describe('MIoT fan capabilities', () => {
@@ -1345,13 +1484,34 @@ function createDehumidifierSpec(): MiotSpecInstance {
   }
 
   service.properties?.push(
+    {
+      ...createValueListProperty(
+        2,
+        'urn:miot-spec-v2:property:fault:00000009:test:1',
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      ),
+      description: 'Device Fault',
+      access: ['read', 'notify'],
+      'value-list': [
+        {value: 0, description: 'No Faults'},
+        {value: 1, description: 'Water Full'},
+        {value: 2, description: 'Sensor Fault1'},
+        {value: 3, description: 'Sensor Fault2'},
+        {value: 4, description: 'Communication Fault1'},
+        {value: 5, description: 'Filter Clean'},
+        {value: 6, description: 'Defrost'},
+        {value: 7, description: 'Fan Motor'},
+        {value: 8, description: 'Overload'},
+        {value: 9, description: 'Lack Of Refrigerant'},
+      ],
+    },
     createValueListProperty(
-      2,
+      3,
       'urn:miot-spec-v2:property:mode:00000008:test:1',
       [0, 1, 2],
     ),
     createRangeProperty(
-      3,
+      5,
       'urn:miot-spec-v2:property:target-humidity:00000022:test:1',
       'uint8',
       'percentage',

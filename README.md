@@ -28,18 +28,23 @@ import {$xiaomi} from '@homelib/xiaomi';
 
 $xiaomi('home');
 
-const livingRoom = $home('home').$scope('living room');
-const light = livingRoom.$light('light');
-const motionSensor = livingRoom.$motionSensor('motion sensor');
+const home = $home('home', tree =>
+  tree.$scope('livingRoom', room =>
+    room.$light('light').$motionSensor('motionSensor'),
+  ),
+);
 
 await bootstrap();
 
 autorun(() => {
-  if (motionSensor.motionDetected) {
-    light.turnOn();
+  if (home.livingRoom.motionSensor.motionDetected) {
+    home.livingRoom.light.turnOn();
   }
 });
 ```
+
+The declaration callback creates a fully type-safe tree: only scopes and
+devices declared at each level are available as properties.
 
 The terminal frontend handles setup and device binding during `bootstrap()`.
 Use `--run` to run directly with existing bindings.

@@ -10,7 +10,7 @@ import {
   SetDehumidifierTargetHumidityCommand,
   Temperature,
 } from '@homelib/core';
-import {computed} from 'mobx';
+import {computed, observable} from 'mobx';
 
 import {MiotEndpointConnection} from '../endpoint-connection.js';
 import {
@@ -31,6 +31,13 @@ export class MiotDehumidifierEndpointConnection
   static readonly properties = {
     'urn:miot-spec-v2:service:dehumidifier:00007841': {
       'urn:miot-spec-v2:property:on:00000006': 'on',
+      'urn:miot-spec-v2:property:fault:00000009': {
+        name: 'fault',
+        iid: {
+          'urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l': 2,
+        },
+        optional: true,
+      },
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
         enum: {'*': {auto: 0, sleep: 1, laundry: 2}},
@@ -53,6 +60,8 @@ export class MiotDehumidifierEndpointConnection
     },
   } as const satisfies MiotPropertySchema;
 
+  @observable private accessor waterTankFullValue: boolean | undefined;
+
   @computed
   get on(): boolean {
     return this.getBooleanPropertyState('on', false);
@@ -70,6 +79,11 @@ export class MiotDehumidifierEndpointConnection
   }
 
   @computed
+  get waterTankFull(): boolean | undefined {
+    return this.waterTankFullValue;
+  }
+
+  @computed
   get temperature(): Temperature | undefined {
     return this.getTemperaturePropertyState(
       'temperature',
@@ -83,10 +97,39 @@ export class MiotDehumidifierEndpointConnection
     return value === undefined ? undefined : value / 100;
   }
 
+  protected override handlePropertyStateChange(
+    name: string,
+    value: unknown,
+  ): void {
+    if (name !== 'fault') {
+      return;
+    }
+
+    // MIoT exposes one fault code at a time. A different local fault can mask
+    // the tank state, so only explicit tank clear/set values replace the last
+    // known value (which normally comes from the cloud-first snapshot).
+    if (value === 0) {
+      this.waterTankFullValue = false;
+    } else if (value === 1) {
+      this.waterTankFullValue = true;
+    }
+  }
+
+  protected override shouldReplaySnapshotPropertyNotifications(
+    name: string,
+  ): boolean {
+    return name === 'fault';
+  }
+
+  protected override handleStateInvalidated(): void {
+    this.waterTankFullValue = undefined;
+  }
+
   override prepareCommand(
     command: DehumidifierEndpointCommand,
   ): CommandExecution {
     let effect: MiotDehumidifierCommandEffect;
+    let assertExecutable = (): void => undefined;
 
     if (command instanceof SetDehumidifierOnCommand) {
       effect = new MiotDehumidifierCommandEffect(this, {on: command.value});
@@ -108,6 +151,13 @@ export class MiotDehumidifierEndpointConnection
       effect = new MiotDehumidifierCommandEffect(this, {
         'target-humidity': command.relativeHumidity,
       });
+      assertExecutable = () => {
+        if (this.waterTankFull === true) {
+          throw new CommandError(
+            'Cannot set MIoT dehumidifier target humidity while its water tank is full or unavailable.',
+          );
+        }
+      };
     } else {
       throw new TypeError('Unsupported MIoT dehumidifier endpoint command.');
     }
@@ -116,7 +166,10 @@ export class MiotDehumidifierEndpointConnection
 
     return {
       effect,
-      execute: () => this.executeRequest(request),
+      execute: () => {
+        assertExecutable();
+        return this.executeRequest(request);
+      },
       toLogString: () => effect.toLogString(),
     };
   }

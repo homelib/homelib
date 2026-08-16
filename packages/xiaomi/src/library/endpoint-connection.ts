@@ -154,6 +154,13 @@ export abstract class MiotEndpointConnection<
     });
   }
 
+  /** Snapshot properties whose buffered notifications must replay afterward. */
+  get replaySnapshotPropertyNotifications(): readonly MiotProperty[] {
+    return this.getProperties((name, property) => {
+      return this.shouldReplaySnapshotPropertyNotifications(name, property);
+    });
+  }
+
   /** Incremental property and event notifications handled by this endpoint. */
   get notificationTargets(): readonly MiotEndpointNotificationTarget[] {
     const properties = this.getProperties(() => true).map(data => {
@@ -321,6 +328,14 @@ export abstract class MiotEndpointConnection<
     _property: MiotResolvedSpecProperty,
   ): boolean {
     return true;
+  }
+
+  /** Selects snapshot properties whose buffered notifications carry deltas. */
+  protected shouldReplaySnapshotPropertyNotifications(
+    _name: string,
+    _property: MiotResolvedSpecProperty,
+  ): boolean {
+    return false;
   }
 
   /** Handles loss of the currently valid state within the owning action. */

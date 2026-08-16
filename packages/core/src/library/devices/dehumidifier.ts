@@ -34,6 +34,12 @@ export class Dehumidifier
     return this.endpoint.targetRelativeHumidity;
   }
 
+  /** Last known condensate-tank protection state. */
+  @computed
+  get waterTankFull(): boolean | undefined {
+    return this.endpoint.waterTankFull;
+  }
+
   @computed
   get temperature(): Temperature | undefined {
     return this.endpoint.temperature;
@@ -92,6 +98,12 @@ export class DehumidifierEndpoint<
     return this.connection?.targetRelativeHumidity;
   }
 
+  /** Last known condensate-tank protection state. */
+  @computed
+  get waterTankFull(): boolean | undefined {
+    return this.connection?.waterTankFull;
+  }
+
   @computed
   get temperature(): Temperature | undefined {
     return this.connection?.temperature;
@@ -113,6 +125,7 @@ export class DehumidifierEndpoint<
       on: this.on,
       mode: this.mode,
       targetRelativeHumidity: this.targetRelativeHumidity,
+      waterTankFull: this.waterTankFull,
       temperatureCelsius: this.temperature?.celsius,
       relativeHumidity: this.relativeHumidity,
     };
@@ -146,6 +159,8 @@ export type DehumidifierEndpointConnection =
     readonly mode: DehumidifierMode | undefined;
     /** Target relative humidity as a normalized ratio from 0 to 1. */
     readonly targetRelativeHumidity: number | undefined;
+    /** Last known condensate-tank protection state. */
+    readonly waterTankFull: boolean | undefined;
   };
 
 export abstract class DehumidifierCommand extends StatefulCommand {}

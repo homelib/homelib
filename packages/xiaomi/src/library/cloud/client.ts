@@ -28,7 +28,7 @@ export class CloudClient {
       accessToken: backendClient.accessToken,
       cloudServer: backendClient.cloudServer,
     }),
-    private readonly preferredStateReader?: CloudDeviceStateReader,
+    private readonly localStateReader?: CloudDeviceStateReader,
   ) {
     this.backendClient = backendClient;
     this.messageClient = messageClient;
@@ -93,24 +93,84 @@ export class CloudClient {
   private async readProperties(
     properties: readonly MiotProperty[],
   ): Promise<readonly CloudPropertySnapshot[]> {
-    if (this.preferredStateReader !== undefined) {
-      try {
-        const snapshot =
-          await this.preferredStateReader.getProperties(properties);
-        assertCompletePropertySnapshot(properties, snapshot);
-        return snapshot;
-      } catch {
-        // The preferred local route is optional; cloud remains the fallback.
+    let cloudSnapshot: readonly CloudPropertySnapshot[];
+
+    try {
+      cloudSnapshot = await this.backendClient.getProperties(properties);
+    } catch (error) {
+      if (this.localStateReader !== undefined) {
+        try {
+          const localSnapshot =
+            await this.localStateReader.getProperties(properties);
+          const localResultMap = collectSuccessfulPropertyResults(
+            properties,
+            localSnapshot,
+          );
+
+          if (localResultMap.size === countUniqueProperties(properties)) {
+            return [...localResultMap.values()];
+          }
+        } catch {
+          // Preserve the original cloud transport failure.
+        }
+      }
+
+      throw error;
+    }
+
+    if (this.localStateReader === undefined) {
+      return cloudSnapshot;
+    }
+
+    const cloudResultMap = collectSuccessfulPropertyResults(
+      properties,
+      cloudSnapshot,
+    );
+    const missingPropertyMap = new Map<string, MiotProperty>();
+
+    for (const property of properties) {
+      const key = getPropertyKey(property);
+
+      if (!cloudResultMap.has(key)) {
+        missingPropertyMap.set(key, property);
       }
     }
 
-    return this.backendClient.getProperties(properties);
+    if (missingPropertyMap.size === 0) {
+      return cloudSnapshot;
+    }
+
+    let localSnapshot: readonly CloudPropertySnapshot[];
+
+    try {
+      localSnapshot = await this.localStateReader.getProperties([
+        ...missingPropertyMap.values(),
+      ]);
+    } catch {
+      return cloudSnapshot;
+    }
+
+    const localResultMap = collectSuccessfulPropertyResults(
+      [...missingPropertyMap.values()],
+      localSnapshot,
+    );
+
+    if (localResultMap.size === 0) {
+      return cloudSnapshot;
+    }
+
+    return [
+      ...cloudSnapshot.filter(
+        result => !localResultMap.has(getPropertyKey(result)),
+      ),
+      ...localResultMap.values(),
+    ];
   }
 
   private async readOnline(did: string): Promise<boolean> {
-    if (this.preferredStateReader !== undefined) {
+    if (this.localStateReader !== undefined) {
       try {
-        return await this.preferredStateReader.getDeviceOnline(did);
+        return await this.localStateReader.getDeviceOnline(did);
       } catch {
         // The preferred local route is optional; cloud remains the fallback.
       }
@@ -152,31 +212,42 @@ export type CloudDeviceStateReader = {
   getDeviceOnline(did: string): Promise<boolean>;
 };
 
-function assertCompletePropertySnapshot(
+function collectSuccessfulPropertyResults(
   properties: readonly MiotProperty[],
   snapshot: readonly CloudPropertySnapshot[],
-): void {
+): ReadonlyMap<string, CloudPropertySnapshot> {
   const expectedKeySet = new Set(properties.map(getPropertyKey));
-  const actualKeySet = new Set<string>();
+  const resultMap = new Map<string, CloudPropertySnapshot>();
+  const duplicateKeySet = new Set<string>();
 
   for (const result of snapshot) {
     const key = getPropertyKey(result);
 
+    if (!expectedKeySet.has(key) || duplicateKeySet.has(key)) {
+      continue;
+    } else if (resultMap.has(key)) {
+      resultMap.delete(key);
+      duplicateKeySet.add(key);
+      continue;
+    }
+
+    resultMap.set(key, result);
+  }
+
+  for (const [key, result] of resultMap) {
     if (
-      !expectedKeySet.has(key) ||
-      actualKeySet.has(key) ||
       (result.code !== 0 && result.code !== 1) ||
       !Object.hasOwn(result, 'value')
     ) {
-      throw new Error('Preferred MIoT property snapshot is incomplete.');
+      resultMap.delete(key);
     }
-
-    actualKeySet.add(key);
   }
 
-  if (actualKeySet.size !== expectedKeySet.size) {
-    throw new Error('Preferred MIoT property snapshot is incomplete.');
-  }
+  return resultMap;
+}
+
+function countUniqueProperties(properties: readonly MiotProperty[]): number {
+  return new Set(properties.map(getPropertyKey)).size;
 }
 
 function getPropertyKey(property: MiotProperty): string {

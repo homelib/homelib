@@ -118,6 +118,198 @@ test('publishes one initial state and absorbs newer snapshot property changes', 
   await subscription.dispose();
 });
 
+test('publishes selected snapshots before replaying buffered property changes', async () => {
+  const snapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const source = createMessageSource();
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+      return snapshot.promise;
+    },
+    async () => true,
+    () => undefined,
+  );
+  const states: CloudDeviceState[] = [];
+  const updates: CloudPropertyUpdate[] = [];
+  const subscriptionPromise = channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY],
+      notifications: [FIRST_PROPERTY_CHANGE],
+      replaySnapshotPropertyNotifications: [FIRST_PROPERTY],
+    },
+    {
+      onStateChanged: state => {
+        states.push(state);
+      },
+      onPropertyChanged: update => {
+        updates.push(update);
+      },
+    },
+  );
+
+  await waitFor(() => readCount === 1);
+  source.send({
+    type: 'property-change',
+    data: {...FIRST_PROPERTY, value: 5},
+  });
+  snapshot.resolve([{...FIRST_PROPERTY, value: 1, code: 0}]);
+
+  const subscription = await subscriptionPromise;
+
+  expect(states).toEqual([
+    {
+      did: DID,
+      online: true,
+      properties: [
+        {
+          ...FIRST_PROPERTY,
+          value: 1,
+          revision: 1,
+          source: 'snapshot',
+        },
+      ],
+    },
+  ]);
+  expect(updates).toEqual([
+    {
+      ...FIRST_PROPERTY,
+      value: 5,
+      revision: 2,
+      source: 'mqtt',
+    },
+  ]);
+
+  await subscription.dispose();
+});
+
+test('absorbs selected property changes that precede the snapshot baseline', async () => {
+  const updates: CloudPropertyUpdate[] = [];
+  const states: CloudDeviceState[] = [];
+  const source: CloudDeviceMessageSource = {
+    async subscribeDevice(_did, handler) {
+      handler({
+        type: 'property-change',
+        data: {...FIRST_PROPERTY, value: 5},
+      });
+    },
+    async unsubscribeDevice() {},
+  };
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => [{...FIRST_PROPERTY, value: 1, code: 0}],
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY],
+      notifications: [FIRST_PROPERTY_CHANGE],
+      replaySnapshotPropertyNotifications: [FIRST_PROPERTY],
+    },
+    {
+      onStateChanged: state => {
+        states.push(state);
+      },
+      onPropertyChanged: update => {
+        updates.push(update);
+      },
+    },
+  );
+
+  expect(states.at(-1)).toMatchObject({
+    did: DID,
+    online: true,
+    properties: [{...FIRST_PROPERTY, value: 1, source: 'snapshot'}],
+  });
+  expect(updates).toEqual([]);
+
+  await subscription.dispose();
+});
+
+test('replays only selected property changes newer than a replacement snapshot baseline', async () => {
+  const olderSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const newerSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const source = createMessageSource();
+  const states: CloudDeviceState[] = [];
+  const updates: CloudPropertyUpdate[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      if (readCount === 1) {
+        return [{...FIRST_PROPERTY, value: 0, code: 0}];
+      } else if (readCount === 2) {
+        return olderSnapshot.promise;
+      }
+
+      return newerSnapshot.promise;
+    },
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY],
+      notifications: [FIRST_PROPERTY_CHANGE],
+      replaySnapshotPropertyNotifications: [FIRST_PROPERTY],
+    },
+    {
+      onStateChanged: state => {
+        states.push(state);
+      },
+      onPropertyChanged: update => {
+        updates.push(update);
+      },
+    },
+  );
+  const olderRefresh = subscription.refresh();
+
+  await waitFor(() => readCount === 2);
+  source.send({
+    type: 'property-change',
+    data: {...FIRST_PROPERTY, value: 5},
+  });
+
+  const newerRefresh = subscription.refresh();
+
+  await waitFor(() => readCount === 3);
+  source.send({
+    type: 'property-change',
+    data: {...FIRST_PROPERTY, value: 1},
+  });
+  newerSnapshot.resolve([{...FIRST_PROPERTY, value: 0, code: 0}]);
+
+  await newerRefresh;
+  await olderRefresh;
+  olderSnapshot.resolve([{...FIRST_PROPERTY, value: 1, code: 0}]);
+  await Promise.resolve();
+
+  expect(states.at(-1)).toMatchObject({
+    did: DID,
+    online: true,
+    properties: [{...FIRST_PROPERTY, value: 0, source: 'snapshot'}],
+  });
+  expect(updates).toEqual([
+    expect.objectContaining({
+      ...FIRST_PROPERTY,
+      value: 1,
+      source: 'mqtt',
+    }),
+  ]);
+  expect(updates[0]?.revision).toBeGreaterThan(
+    states.at(-1)?.properties[0]?.revision ?? 0,
+  );
+
+  await subscription.dispose();
+});
+
 test('rejects an incomplete initial state, removes the listener, and can retry', async () => {
   const source = createMessageSource();
   let results: readonly CloudPropertySnapshot[] = [

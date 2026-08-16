@@ -33,7 +33,7 @@ setupTemperatureHumidityControl('客厅', {
   onGetter: () => 美岸.客厅.空调.on,
   temperature: {
     sensor: 美岸.客厅.温湿度传感器,
-    idealApparentTemperatureUpperLimit: 28,
+    idealApparentTemperatureUpperLimit: 29,
     idealApparentTemperatureLowerLimit: 20,
     idealTemperatureTolerance: 0.5,
   },

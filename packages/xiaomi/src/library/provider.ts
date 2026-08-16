@@ -647,6 +647,8 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
           {
             snapshotProperties: connection.snapshotProperties,
             notifications: connection.notificationTargets,
+            replaySnapshotPropertyNotifications:
+              connection.replaySnapshotPropertyNotifications,
           },
           {
             onStateChanged: state => {

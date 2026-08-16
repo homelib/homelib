@@ -71,6 +71,8 @@ class TestDehumidifierEndpointConnection implements DehumidifierEndpointConnecti
 
   readonly targetRelativeHumidity = 0.5;
 
+  readonly waterTankFull = false;
+
   readonly temperature: Temperature | undefined;
 
   readonly relativeHumidity = 0.5;

@@ -75,13 +75,30 @@ export class CloudDeviceChannel {
       this.did,
       request.notifications ?? [],
     );
-    const listenerEntry: CloudDeviceListenerEntry = {
-      snapshotPropertyMap: createPropertyMap(
+    const snapshotPropertyMap = createPropertyMap(
+      this.did,
+      request.snapshotProperties,
+    );
+    const replaySnapshotPropertyNotificationKeySet = new Set(
+      createPropertyMap(
         this.did,
-        request.snapshotProperties,
-      ),
+        request.replaySnapshotPropertyNotifications ?? [],
+      ).keys(),
+    );
+
+    for (const key of replaySnapshotPropertyNotificationKeySet) {
+      if (!snapshotPropertyMap.has(key) || !propertyChangeMap.has(key)) {
+        throw new TypeError(
+          `Cloud device ${this.did} can only replay subscribed snapshot property notifications.`,
+        );
+      }
+    }
+
+    const listenerEntry: CloudDeviceListenerEntry = {
+      snapshotPropertyMap,
       propertyChangeMap,
       eventKeySet,
+      replaySnapshotPropertyNotificationKeySet,
       listener,
       initialized: false,
       bufferingNotifications: true,
@@ -352,6 +369,17 @@ export class CloudDeviceChannel {
   ): Promise<void> {
     const propertyMap = createEntryPropertyMap(entries);
     const propertyBaselineMap = this.captureRevisions(propertyMap);
+    const replaySnapshotPropertyNotificationKeySet = new Set(
+      entries.flatMap(entry => [
+        ...entry.replaySnapshotPropertyNotificationKeySet,
+      ]),
+    );
+    const replaySnapshotRevisionMap = new Map(
+      [...replaySnapshotPropertyNotificationKeySet].map(key => [
+        key,
+        ++this.revision,
+      ]),
+    );
     const generation = this.stateGeneration;
     const propertyRead = settlePromise(
       onlineOverride === false || propertyMap.size === 0
@@ -490,7 +518,13 @@ export class CloudDeviceChannel {
         (cachedProperty.source === 'mqtt' ||
           cachedRefreshSequence > refreshSequence)
       ) {
-        continue;
+        if (
+          cachedRefreshSequence > refreshSequence ||
+          cachedProperty.source !== 'mqtt' ||
+          !replaySnapshotPropertyNotificationKeySet.has(key)
+        ) {
+          continue;
+        }
       }
 
       const resultError = resultErrorMap.get(key);
@@ -558,15 +592,39 @@ export class CloudDeviceChannel {
     const successfulPropertyKeySet = new Set(
       successfulEntries.flatMap(entry => [...entry.snapshotPropertyMap.keys()]),
     );
+    const replayedSnapshotUpdateMap = new Map<string, CloudPropertyUpdate>();
 
     for (const [key, update] of propertyUpdateMap) {
       if (successfulPropertyKeySet.has(key)) {
-        this.cacheProperty(
-          update.property,
-          update.value,
-          'snapshot',
-          refreshSequence,
-        );
+        const baseline = propertyBaselineMap.get(key) ?? 0;
+        const currentRevision = this.propertyRevisionMap.get(key) ?? 0;
+        const cachedProperty = this.propertyCacheMap.get(key);
+        let snapshotUpdate: CloudPropertyUpdate;
+
+        if (
+          replaySnapshotPropertyNotificationKeySet.has(key) &&
+          currentRevision !== baseline &&
+          cachedProperty?.source === 'mqtt'
+        ) {
+          snapshotUpdate = {
+            ...update.property,
+            value: update.value,
+            revision: replaySnapshotRevisionMap.get(key) ?? ++this.revision,
+            source: 'snapshot',
+          };
+          this.propertyRefreshSequenceMap.set(key, refreshSequence);
+        } else {
+          snapshotUpdate = this.cacheProperty(
+            update.property,
+            update.value,
+            'snapshot',
+            refreshSequence,
+          );
+        }
+
+        if (replaySnapshotPropertyNotificationKeySet.has(key)) {
+          replayedSnapshotUpdateMap.set(key, snapshotUpdate);
+        }
       }
     }
 
@@ -575,7 +633,12 @@ export class CloudDeviceChannel {
 
       for (const entry of successfulEntries) {
         const properties = [...entry.snapshotPropertyMap.keys()].map(key => {
-          const property = this.propertyCacheMap.get(key);
+          const property = entry.replaySnapshotPropertyNotificationKeySet.has(
+            key,
+          )
+            ? (replayedSnapshotUpdateMap.get(key) ??
+              this.propertyCacheMap.get(key))
+            : this.propertyCacheMap.get(key);
 
           if (property === undefined) {
             throw new TypeError(
@@ -591,7 +654,11 @@ export class CloudDeviceChannel {
           // represented by the state published below. Remove only those that
           // arrived before publication; a synchronous state listener may
           // enqueue newer notifications, which must still be replayed.
-          retainRefreshIndependentNotifications(entry);
+          retainPostSnapshotNotifications(
+            entry,
+            replayedSnapshotUpdateMap,
+            propertyBaselineMap,
+          );
           publishListenerState(entry, {
             did: this.did,
             online: true,
@@ -840,6 +907,13 @@ export type CloudDeviceSubscriptionRequest = {
    * arrival order afterward.
    */
   readonly notifications?: readonly CloudDeviceNotificationTarget[];
+  /**
+   * Snapshot properties whose buffered property-change notifications must be
+   * replayed after the snapshot instead of being absorbed into it. Each entry
+   * must also appear in both {@link snapshotProperties} and
+   * {@link notifications}.
+   */
+  readonly replaySnapshotPropertyNotifications?: readonly MiotProperty[];
 };
 
 export type CloudDeviceNotificationTarget =
@@ -904,6 +978,7 @@ type CloudDeviceListenerEntry = {
   readonly snapshotPropertyMap: ReadonlyMap<string, MiotProperty>;
   readonly propertyChangeMap: ReadonlyMap<string, MiotProperty>;
   readonly eventKeySet: ReadonlySet<string>;
+  readonly replaySnapshotPropertyNotificationKeySet: ReadonlySet<string>;
   readonly listener: CloudDeviceListener;
   readonly pendingNotifications: CloudDeviceNotification[];
   initialized: boolean;
@@ -1199,13 +1274,43 @@ function retainRefreshIndependentNotifications(
   );
 }
 
+function retainPostSnapshotNotifications(
+  entry: CloudDeviceListenerEntry,
+  replayedSnapshotUpdateMap: ReadonlyMap<string, CloudPropertyUpdate>,
+  propertyBaselineMap: ReadonlyMap<string, number>,
+): void {
+  const notifications = entry.pendingNotifications.filter(notification => {
+    if (notification.type === 'event') {
+      return true;
+    }
+
+    const key = getPropertyKey(notification.data);
+
+    return (
+      !entry.snapshotPropertyMap.has(key) ||
+      (entry.replaySnapshotPropertyNotificationKeySet.has(key) &&
+        replayedSnapshotUpdateMap.has(key) &&
+        notification.data.revision > (propertyBaselineMap.get(key) ?? 0))
+    );
+  });
+
+  entry.pendingNotifications.splice(
+    0,
+    entry.pendingNotifications.length,
+    ...notifications,
+  );
+}
+
 function isRefreshIndependentNotification(
   entry: CloudDeviceListenerEntry,
   notification: CloudDeviceNotification,
 ): boolean {
   return (
     notification.type === 'event' ||
-    !entry.snapshotPropertyMap.has(getPropertyKey(notification.data))
+    !entry.snapshotPropertyMap.has(getPropertyKey(notification.data)) ||
+    entry.replaySnapshotPropertyNotificationKeySet.has(
+      getPropertyKey(notification.data),
+    )
   );
 }
 

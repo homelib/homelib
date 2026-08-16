@@ -90,6 +90,7 @@ test('dehumidifier exposes state and on/off commands', async () => {
         false,
         undefined,
         undefined,
+        undefined,
         Temperature.fromCelsius(20),
         0.5,
       );
@@ -194,6 +195,7 @@ test('dehumidifier exposes mode, target relative humidity, and commands', async 
   expect(dehumidifier.on).toBe(false);
   expect(dehumidifier.mode).toBeUndefined();
   expect(dehumidifier.targetRelativeHumidity).toBeUndefined();
+  expect(dehumidifier.waterTankFull).toBeUndefined();
   expect(dehumidifier.temperature).toBeUndefined();
   expect(dehumidifier.relativeHumidity).toBeUndefined();
 
@@ -204,11 +206,12 @@ test('dehumidifier exposes mode, target relative humidity, and commands', async 
   const connection = new TestDehumidifierEndpointConnection();
 
   endpoint.bindConnection(connection);
-  connection.initialize(true, 'laundry', 0.45, temperature, 0.57);
+  connection.initialize(true, 'laundry', 0.45, false, temperature, 0.57);
 
   expect(dehumidifier.on).toBe(true);
   expect(dehumidifier.mode).toBe('laundry');
   expect(dehumidifier.targetRelativeHumidity).toBe(0.45);
+  expect(dehumidifier.waterTankFull).toBe(false);
   expect(dehumidifier.temperature).toBe(temperature);
   expect(dehumidifier.relativeHumidity).toBe(0.57);
   expect(endpoint.temperature).toBe(temperature);
@@ -620,6 +623,7 @@ test('dehumidifier logs temperature and relative humidity state', () => {
       true,
       'laundry',
       0.45,
+      true,
       Temperature.fromCelsius(24.5),
       0.57,
     );
@@ -631,6 +635,7 @@ test('dehumidifier logs temperature and relative humidity state', () => {
         on: true,
         mode: 'laundry',
         targetRelativeHumidity: 0.45,
+        waterTankFull: true,
         temperatureCelsius: 24.5,
         relativeHumidity: 0.57,
       },
@@ -766,6 +771,8 @@ class TestDehumidifierEndpointConnection
 
   @observable accessor targetRelativeHumidity: number | undefined;
 
+  @observable accessor waterTankFull: boolean | undefined;
+
   @observable.ref
   accessor temperature: DehumidifierEndpointConnection['temperature'] =
     Temperature.fromKelvin(0);
@@ -777,12 +784,14 @@ class TestDehumidifierEndpointConnection
     on: boolean,
     mode: DehumidifierEndpointConnection['mode'],
     targetRelativeHumidity: number | undefined,
+    waterTankFull: boolean | undefined,
     temperature: DehumidifierEndpointConnection['temperature'],
     relativeHumidity: number | undefined,
   ): void {
     this.on = on;
     this.mode = mode;
     this.targetRelativeHumidity = targetRelativeHumidity;
+    this.waterTankFull = waterTankFull;
     this.temperature = temperature;
     this.relativeHumidity = relativeHumidity;
     this.ready = true;
