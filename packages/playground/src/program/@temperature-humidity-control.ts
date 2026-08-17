@@ -14,7 +14,6 @@ import _ from 'lodash';
 
 const VERY_HIGH_TEMPERATURE_OFFSET = 2;
 
-const DRY_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE = 2;
 const COOL_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE = 4;
 const HEAT_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE = 4;
 
@@ -205,15 +204,7 @@ export function setupTemperatureHumidityControl(
     const setAirConditionerDryMode = (): void => {
       airConditioner
         .setMode('dry')
-        .setTargetRelativeHumidity(idealRelativeHumidityLowerLimit)
-        .setFanSpeed(
-          _.clamp(
-            (temperature - idealTemperatureUpperLimit) /
-              DRY_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE,
-            0,
-            1,
-          ),
-        );
+        .setTargetRelativeHumidity(idealRelativeHumidityLowerLimit);
     };
 
     const setAirConditionerCoolMode = (targetTemperature: number): void => {

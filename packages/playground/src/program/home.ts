@@ -35,7 +35,7 @@ setupTemperatureHumidityControl('客厅', {
   dehumidifier: 美岸.客厅.除湿机,
   temperature: {
     sensor: 美岸.客厅.温湿度传感器,
-    idealApparentTemperatureUpperLimit: 29,
+    idealApparentTemperatureUpperLimit: 30,
     idealApparentTemperatureLowerLimit: 20,
     idealTemperatureTolerance: 0.3,
   },
@@ -52,7 +52,7 @@ setupTemperatureHumidityControl('主卧', {
   dehumidifier: 美岸.主卧.除湿机,
   temperature: {
     sensor: 美岸.主卧.温湿度传感器,
-    idealApparentTemperatureUpperLimit: 29,
+    idealApparentTemperatureUpperLimit: 30,
     idealApparentTemperatureLowerLimit: 20,
     idealTemperatureTolerance: 0.3,
   },
