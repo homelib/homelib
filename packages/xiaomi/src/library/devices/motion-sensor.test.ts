@@ -53,7 +53,6 @@ test('matches the exact lumi.motion.bmgl01 motion and ambient light resources', 
       'ambient-light-level': {
         iid: 1,
         access: ['read'],
-        enum: {low: 1, high: 2},
       },
       'no-motion-duration': {iid: 2},
     },
@@ -419,6 +418,45 @@ test('soft-invalidates invalid illumination state and resets ambient light offli
 
   expect(connection.ready).toBe(true);
   expect(connection.motionDetected).toBe(false);
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  connection.dispose();
+});
+
+test('keeps an unmapped but physically valid illumination unknown', () => {
+  const spec = createSpec();
+  const illumination = requireService(spec, 2).properties?.find(
+    property => property.iid === 1,
+  );
+
+  if (illumination === undefined) {
+    throw new Error('Test sensor has no illumination property.');
+  }
+
+  illumination['value-list']?.push({value: 3, description: 'Unknown'});
+  const {connection, ambientLightLevel, motionDetected} =
+    createMotionAmbientLightLevelConnection(spec);
+
+  expect(
+    connection.handleStateUpdate({
+      did: connection.metadata.device.did,
+      online: true,
+      properties: [
+        {
+          did: connection.metadata.device.did,
+          siid: ambientLightLevel.service.iid,
+          piid: ambientLightLevel.property.iid,
+          value: 3,
+        },
+      ],
+    }),
+  ).toEqual([]);
+  connection.handleNotification({
+    type: 'event',
+    data: createEventUpdate(connection, motionDetected),
+  });
+
+  expect(connection.motionDetected).toBe(true);
   expect(connection.ambientLightLevel).toBeUndefined();
 
   connection.dispose();

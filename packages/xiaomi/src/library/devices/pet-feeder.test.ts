@@ -53,9 +53,8 @@ test.each(VERIFIED_FEEDERS)(
       'pet-food-left-level',
     ]);
     expect(resources?.[0]?.properties['eaten-food-measure']?.iid).toBe(22);
-    expect(resources?.[0]?.properties['pet-food-left-level']?.enum).toEqual({
-      normal: 0,
-      low: 1,
+    expect(resources?.[0]?.properties['pet-food-left-level']).toMatchObject({
+      iid: 6,
     });
   },
 );
@@ -99,6 +98,33 @@ test('keeps sensor values unknown until observed and preserves an empty bowl', (
     createPropertyUpdate(connection, 'eaten-food-measure', 6),
   );
   expect(connection.bowlFoodWeight).toBe(6);
+});
+
+test('keeps an unmapped but physically valid food level unknown', () => {
+  const spec = createSpec(VERIFIED_FEEDERS[0]);
+  const foodLevel = spec.services[0]?.properties?.find(
+    property => property.iid === 6,
+  );
+
+  if (foodLevel === undefined) {
+    throw new Error('Missing test food level property.');
+  }
+
+  foodLevel['value-list']?.push({value: 2, description: 'Unknown'});
+  const connection = createConnection(
+    spec,
+    VERIFIED_FEEDERS[0],
+    new TestTransport(),
+  );
+
+  expect(
+    connection.handleStateUpdate({
+      did: connection.metadata.device.did,
+      online: true,
+      properties: [createPropertyUpdate(connection, 'pet-food-left-level', 2)],
+    }),
+  ).toEqual([]);
+  expect(connection.foodLevel).toBeUndefined();
 });
 
 test('invokes every dispense command even when the portion count repeats', async () => {

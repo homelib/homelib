@@ -1,9 +1,9 @@
 import {
   type MiotPropertySchema,
-  type MiotPropertySchemaProperties,
   type MiotPropertySchemaResource,
   isValidMiotSpecValueList,
   isValidMiotSpecValueRange,
+  isValidMiotUrnPattern,
   matchesMiotActionSchema,
   matchesMiotUrnPattern,
   resolveMiotPropertySchema,
@@ -14,8 +14,6 @@ import type {
   MiotSpecValueList,
   MiotSpecValueRange,
 } from './spec.js';
-
-type KeysOfUnion<T> = T extends unknown ? keyof T : never;
 
 const LIGHT_SERVICE_TYPE = 'urn:miot-spec-v2:service:light:00007802';
 const ENVIRONMENT_SERVICE_TYPE =
@@ -48,14 +46,24 @@ const DIMMABLE_LIGHT_SCHEMA = {
   },
 } as const satisfies MiotPropertySchema;
 
-const FAN_MODE_VALUES = {normal: 0, natural: 1} as const;
+test('validates reusable MIoT URN patterns', () => {
+  expect(isValidMiotUrnPattern('*')).toBe(true);
+  expect(
+    isValidMiotUrnPattern(
+      'urn:miot-spec-v2:device:fan:0000A005:zhimi-*, urn:miot-spec-v2:device:fan:0000A005:dmaker-*',
+    ),
+  ).toBe(true);
+  expect(isValidMiotUrnPattern('')).toBe(false);
+  expect(
+    isValidMiotUrnPattern('urn:miot-spec-v2:device:fan:0000A005:zhimi-*,'),
+  ).toBe(false);
+});
 
 const FAN_SCHEMA = {
   'urn:miot-spec-v2:service:light:00007802': {
     'urn:miot-spec-v2:property:on:00000006': 'on',
     'urn:miot-spec-v2:property:mode:00000008': {
       name: 'mode',
-      enum: {'*': FAN_MODE_VALUES},
       optional: true,
     },
   },
@@ -487,7 +495,7 @@ test('allows multiple optional services when explicitly requested', () => {
   ]);
 });
 
-test('accepts extra metadata enum values and preserves the declared mapping', () => {
+test('matches a value-list property without attaching domain semantics', () => {
   const service = createLightService({
     properties: [
       createProperty(1, ON_PROPERTY_TYPE),
@@ -501,9 +509,9 @@ test('accepts extra metadata enum values and preserves the declared mapping', ()
 
   expect(resource?.properties.mode).toMatchObject({
     iid: 2,
-    enum: FAN_MODE_VALUES,
     'value-list': createValueList([2, 1, 0]),
   });
+  expect(resource?.properties.mode).not.toHaveProperty('enum');
 });
 
 test.each([
@@ -517,38 +525,22 @@ test.each([
       {value: 0, description: 'Second'},
     ],
   ],
-] as const)('omits an optional enum property with %s', (_name, valueList) => {
+] as const)('matches an optional property with %s', (_name, valueList) => {
+  const physicalValueList = copyValueList(valueList);
   const service = createLightService({
     properties: [
       createProperty(1, ON_PROPERTY_TYPE),
       createProperty(2, MODE_PROPERTY_TYPE, {
         format: 'uint8',
-        'value-list': copyValueList(valueList),
+        'value-list': physicalValueList,
       }),
     ],
   });
   const [resource] = resolveTestSchema([service], FAN_SCHEMA) ?? [];
 
   expect(resource?.properties.on?.iid).toBe(1);
-  expect(resource?.properties.mode).toBeUndefined();
-});
-
-test('accepts a device-supported subset of a declared enum mapping', () => {
-  const service = createLightService({
-    properties: [
-      createProperty(1, ON_PROPERTY_TYPE),
-      createProperty(2, MODE_PROPERTY_TYPE, {
-        format: 'uint8',
-        'value-list': createValueList([0, 2]),
-      }),
-    ],
-  });
-  const [resource] = resolveTestSchema([service], FAN_SCHEMA) ?? [];
-
-  expect(resource?.properties.mode).toMatchObject({
-    enum: FAN_MODE_VALUES,
-    'value-list': createValueList([0, 2]),
-  });
+  expect(resource?.properties.mode?.iid).toBe(2);
+  expect(resource?.properties.mode?.['value-list']).toEqual(physicalValueList);
 });
 
 test('preserves the physical value list when no override pattern matches', () => {
@@ -606,35 +598,14 @@ test('replaces the physical value list when an override pattern matches', () => 
   expect(resource?.properties.mode?.['value-list']).toEqual(overrideValueList);
 });
 
-test('rejects a required enum property without a known value', () => {
+test('selects a more specific value-list pattern instead of the wildcard fallback', () => {
+  const fallback = createValueList([0, 1]);
+  const deviceSpecific = createValueList([1, 0, 2]);
   const schema = {
     'urn:miot-spec-v2:service:light:00007802': {
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {'*': FAN_MODE_VALUES},
-      },
-    },
-  } as const satisfies MiotPropertySchema;
-  const service = createLightService({
-    properties: [
-      createProperty(2, MODE_PROPERTY_TYPE, {
-        format: 'uint8',
-        'value-list': createValueList([2]),
-      }),
-    ],
-  });
-
-  expect(resolveTestSchema([service], schema)).toBeUndefined();
-});
-
-test('selects a more specific enum pattern instead of the wildcard fallback', () => {
-  const fallback = {normal: 0, natural: 1} as const;
-  const deviceSpecific = {normal: 1, natural: 0, sleep: 2} as const;
-  const schema = {
-    'urn:miot-spec-v2:service:light:00007802': {
-      'urn:miot-spec-v2:property:mode:00000008': {
-        name: 'mode',
-        enum: {
+        'value-list': {
           '*': fallback,
           'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': deviceSpecific,
         },
@@ -646,29 +617,19 @@ test('selects a more specific enum pattern instead of the wildcard fallback', ()
       deviceType: ZHIMI_FAN_DEVICE_TYPE,
     }) ?? [];
 
-  expect(resource?.properties.mode?.enum).toEqual(deviceSpecific);
-
-  type ModeProperty = MiotPropertySchemaProperties<typeof schema>['mode'];
-  type ModeName = Extract<KeysOfUnion<ModeProperty['enum']>, string>;
-  const modeNames = {
-    normal: true,
-    natural: true,
-    sleep: true,
-  } as const satisfies Readonly<Record<ModeName, true>>;
-
-  expect(Object.keys(modeNames)).toEqual(['normal', 'natural', 'sleep']);
+  expect(resource?.properties.mode?.['value-list']).toEqual(deviceSpecific);
 });
 
-test('selects a comma-separated enum pattern instead of its fallback', () => {
-  const selectedMapping = {normal: 1, natural: 0} as const;
+test('selects a comma-separated value-list pattern instead of its fallback', () => {
+  const selectedValueList = createValueList([1, 0]);
   const schema = {
     'urn:miot-spec-v2:service:light:00007802': {
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {
-          '*': {normal: 0, natural: 1},
+        'value-list': {
+          '*': createValueList([0, 1]),
           'urn:miot-spec-v2:device:fan:0000A005:zhimi-*, urn:miot-spec-v2:device:fan:0000A005:dmaker-*':
-            selectedMapping,
+            selectedValueList,
         },
       },
     },
@@ -678,17 +639,17 @@ test('selects a comma-separated enum pattern instead of its fallback', () => {
       deviceType: ZHIMI_FAN_DEVICE_TYPE,
     }) ?? [];
 
-  expect(resource?.properties.mode?.enum).toEqual(selectedMapping);
+  expect(resource?.properties.mode?.['value-list']).toEqual(selectedValueList);
 });
 
-test('selects an enum pattern containing a wildcard within a segment', () => {
-  const familyMapping = {natural: 0, normal: 1} as const;
+test('selects a value-list pattern containing a wildcard within a segment', () => {
+  const familyValueList = createValueList([2, 1]);
   const schema = {
     'urn:miot-spec-v2:service:light:00007802': {
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {
-          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': familyMapping,
+        'value-list': {
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': familyValueList,
         },
       },
     },
@@ -698,111 +659,73 @@ test('selects an enum pattern containing a wildcard within a segment', () => {
       deviceType: ZHIMI_FAN_DEVICE_TYPE,
     }) ?? [];
 
-  expect(resource?.properties.mode?.enum).toEqual(familyMapping);
-});
-
-test('omits an optional enum property when no device type pattern matches', () => {
-  const schema = {
-    'urn:miot-spec-v2:service:light:00007802': {
-      'urn:miot-spec-v2:property:on:00000006': 'on',
-      'urn:miot-spec-v2:property:mode:00000008': {
-        name: 'mode',
-        enum: {
-          'urn:miot-spec-v2:device:fan:0000A005:dmaker-*': {normal: 0},
-        },
-        optional: true,
-      },
-    },
-  } as const satisfies MiotPropertySchema;
-  const [resource] =
-    resolveTestSchema([createModeService()], schema, {
-      deviceType: ZHIMI_FAN_DEVICE_TYPE,
-    }) ?? [];
-
-  expect(resource?.properties.on?.iid).toBe(1);
-  expect(resource?.properties.mode).toBeUndefined();
-});
-
-test('rejects a required enum property when no device type pattern matches', () => {
-  const schema = {
-    'urn:miot-spec-v2:service:light:00007802': {
-      'urn:miot-spec-v2:property:mode:00000008': {
-        name: 'mode',
-        enum: {
-          'urn:miot-spec-v2:device:fan:0000A005:dmaker-*': {normal: 0},
-        },
-      },
-    },
-  } as const satisfies MiotPropertySchema;
-
-  expect(
-    resolveTestSchema([createModeService()], schema, {
-      deviceType: ZHIMI_FAN_DEVICE_TYPE,
-    }),
-  ).toBeUndefined();
+  expect(resource?.properties.mode?.['value-list']).toEqual(familyValueList);
 });
 
 test.each(['forward', 'reverse'] as const)(
-  'rejects equally specific overlapping enum patterns regardless of order (%s)',
+  'ignores equally specific overlapping value-list patterns regardless of order (%s)',
   order => {
+    const physicalValueList = createValueList([9]);
     const forward = {
-      'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {normal: 0},
-      'urn:miot-spec-v2:device:fan:0000A005:*mi-fa1': {natural: 1},
+      'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': createValueList([0]),
+      'urn:miot-spec-v2:device:fan:0000A005:*mi-fa1': createValueList([1]),
     } as const;
     const reverse = {
-      'urn:miot-spec-v2:device:fan:0000A005:*mi-fa1': {natural: 1},
-      'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {normal: 0},
+      'urn:miot-spec-v2:device:fan:0000A005:*mi-fa1': createValueList([1]),
+      'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': createValueList([0]),
     } as const;
     const schema = {
       'urn:miot-spec-v2:service:light:00007802': {
         'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
-          enum: order === 'forward' ? forward : reverse,
+          'value-list': order === 'forward' ? forward : reverse,
         },
       },
     } as const satisfies MiotPropertySchema;
-
-    expect(
-      resolveTestSchema([createModeService()], schema, {
+    const [resource] =
+      resolveTestSchema([createModeService([9])], schema, {
         deviceType: ZHIMI_FAN_DEVICE_TYPE,
-      }),
-    ).toBeUndefined();
+      }) ?? [];
+
+    expect(resource?.properties.mode?.['value-list']).toEqual(
+      physicalValueList,
+    );
   },
 );
 
-test('rejects overlapping enum patterns without a containment relationship', () => {
+test('ignores overlapping value-list patterns without a containment relationship', () => {
+  const physicalValueList = createValueList([9]);
   const schema = {
     'urn:miot-spec-v2:service:light:00007802': {
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {
-          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {natural: 0},
-          'urn:miot-spec-v2:device:fan:0000A005:*fa1': {normal: 0},
-          '*': {normal: 0},
+        'value-list': {
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': createValueList([0]),
+          'urn:miot-spec-v2:device:fan:0000A005:*fa1': createValueList([1]),
+          '*': createValueList([2]),
         },
-        optional: true,
       },
     },
   } as const satisfies MiotPropertySchema;
-
-  expect(
-    resolveTestSchema([createModeService([0])], schema, {
+  const [resource] =
+    resolveTestSchema([createModeService([9])], schema, {
       deviceType: ZHIMI_FAN_DEVICE_TYPE,
-    }),
-  ).toEqual([]);
+    }) ?? [];
+
+  expect(resource?.properties.mode?.['value-list']).toEqual(physicalValueList);
 });
 
-test('selects one branch nested within otherwise overlapping patterns', () => {
-  const exactMapping = {sleep: 2} as const;
+test('selects one value-list branch nested within otherwise overlapping patterns', () => {
+  const exactValueList = createValueList([2]);
   const schema = {
     'urn:miot-spec-v2:service:light:00007802': {
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {
-          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {natural: 0},
-          'urn:miot-spec-v2:device:fan:0000A005:*fa1': {normal: 1},
-          'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': exactMapping,
-          '*': {normal: 0},
+        'value-list': {
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': createValueList([0]),
+          'urn:miot-spec-v2:device:fan:0000A005:*fa1': createValueList([1]),
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': exactValueList,
+          '*': createValueList([3]),
         },
       },
     },
@@ -812,20 +735,18 @@ test('selects one branch nested within otherwise overlapping patterns', () => {
       deviceType: ZHIMI_FAN_DEVICE_TYPE,
     }) ?? [];
 
-  expect(resource?.properties.mode?.enum).toEqual(exactMapping);
+  expect(resource?.properties.mode?.['value-list']).toEqual(exactValueList);
 });
 
-test('does not fall back when the selected enum mapping fails metadata validation', () => {
+test('applies a selected value-list override independently of physical metadata', () => {
+  const overrideValueList = createValueList([2]);
   const schema = {
     'urn:miot-spec-v2:service:light:00007802': {
-      'urn:miot-spec-v2:property:on:00000006': 'on',
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {
-          '*': {normal: 0, natural: 1},
-          'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': {sleep: 2},
+        'value-list': {
+          'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1': overrideValueList,
         },
-        optional: true,
       },
     },
   } as const satisfies MiotPropertySchema;
@@ -834,8 +755,7 @@ test('does not fall back when the selected enum mapping fails metadata validatio
       deviceType: ZHIMI_FAN_DEVICE_TYPE,
     }) ?? [];
 
-  expect(resource?.properties.on?.iid).toBe(1);
-  expect(resource?.properties.mode).toBeUndefined();
+  expect(resource?.properties.mode?.['value-list']).toEqual(overrideValueList);
 });
 
 test.each([
@@ -968,77 +888,78 @@ test.each([
     },
   ],
   [
-    'an empty enum',
-    {
-      'urn:miot-spec-v2:service:light:00007802': {
-        'urn:miot-spec-v2:property:mode:00000008': {name: 'mode', enum: {}},
-      },
-    },
-  ],
-  [
-    'an empty enum pattern',
+    'an empty value-list mapping',
     {
       'urn:miot-spec-v2:service:light:00007802': {
         'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
-          enum: {'': {normal: 0}},
+          'value-list': {},
         },
       },
     },
   ],
   [
-    'an empty enum pattern alternative',
+    'an empty value-list pattern',
     {
       'urn:miot-spec-v2:service:light:00007802': {
         'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
-          enum: {
-            'urn:miot-spec-v2:device:fan:0000A005:zhimi-*,': {normal: 0},
+          'value-list': {'': [{value: 0, description: 'Normal'}]},
+        },
+      },
+    },
+  ],
+  [
+    'an empty value-list pattern alternative',
+    {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:mode:00000008': {
+          name: 'mode',
+          'value-list': {
+            'urn:miot-spec-v2:device:fan:0000A005:zhimi-*,': [
+              {value: 0, description: 'Normal'},
+            ],
           },
         },
       },
     },
   ],
   [
-    'an empty enum value mapping',
+    'an empty value-list override',
     {
       'urn:miot-spec-v2:service:light:00007802': {
         'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
-          enum: {'*': {}},
+          'value-list': {'*': []},
         },
       },
     },
   ],
   [
-    'an empty enum value key',
+    'a non-finite value-list override',
     {
       'urn:miot-spec-v2:service:light:00007802': {
         'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
-          enum: {'*': {'': 0}},
+          'value-list': {
+            '*': [{value: Number.NaN, description: 'Invalid'}],
+          },
         },
       },
     },
   ],
   [
-    'a non-finite inner enum value',
+    'duplicate value-list override values',
     {
       'urn:miot-spec-v2:service:light:00007802': {
         'urn:miot-spec-v2:property:mode:00000008': {
           name: 'mode',
-          enum: {'*': {normal: Number.NaN}},
-        },
-      },
-    },
-  ],
-  [
-    'duplicate enum values',
-    {
-      'urn:miot-spec-v2:service:light:00007802': {
-        'urn:miot-spec-v2:property:mode:00000008': {
-          name: 'mode',
-          enum: {'*': {normal: 0, natural: 0}},
+          'value-list': {
+            '*': [
+              {value: 0, description: 'Normal'},
+              {value: 0, description: 'Natural'},
+            ],
+          },
         },
       },
     },

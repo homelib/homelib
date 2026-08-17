@@ -13,6 +13,14 @@ import type {
 } from '../miot/index.js';
 
 import {MiotMotionSensorEndpointConnectionBase} from './@motion-sensor.js';
+import {createMiotNamedValueCodec} from './@value-codec.js';
+
+const AMBIENT_LIGHT_LEVEL_CODEC = createMiotNamedValueCodec<AmbientLightLevel>({
+  'urn:miot-spec-v2:device:motion-sensor:0000A014:lumi-bmgl01:1': {
+    low: 1,
+    high: 2,
+  },
+});
 
 /** Xiaomi Motion Sensor 2 (lumi.motion.bmgl01), including ambient light level. */
 export class MiotMotionAmbientLightLevelSensorEndpointConnection
@@ -27,12 +35,6 @@ export class MiotMotionAmbientLightLevelSensorEndpointConnection
       'urn:miot-spec-v2:property:illumination:0000004E': {
         name: 'ambient-light-level',
         access: 'read',
-        enum: {
-          'urn:miot-spec-v2:device:motion-sensor:0000A014:lumi-bmgl01:1': {
-            low: 1,
-            high: 2,
-          },
-        },
         iid: {
           'urn:miot-spec-v2:device:motion-sensor:0000A014:lumi-bmgl01:1': 1,
         },
@@ -57,15 +59,24 @@ export class MiotMotionAmbientLightLevelSensorEndpointConnection
     },
   } as const satisfies MiotEventSchema;
 
+  private readonly ambientLightLevelCodec = this.getPropertyValueCodec(
+    'ambient-light-level',
+    AMBIENT_LIGHT_LEVEL_CODEC,
+  );
+
   @observable private accessor ambientLightLevelRefreshedForMotion = false;
 
   /** The qualitative ambient light level sampled for detected motion. */
   @computed
   get ambientLightLevel(): AmbientLightLevel | undefined {
-    return this.motionDetected === true &&
-      this.ambientLightLevelRefreshedForMotion
-      ? this.getEnumPropertyState('ambient-light-level')
-      : undefined;
+    if (
+      this.motionDetected !== true ||
+      !this.ambientLightLevelRefreshedForMotion
+    ) {
+      return undefined;
+    }
+
+    return this.ambientLightLevelCodec?.read();
   }
 
   protected override handleSnapshotPropertyInvalidated(name: string): void {

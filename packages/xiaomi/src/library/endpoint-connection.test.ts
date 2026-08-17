@@ -21,7 +21,10 @@ import {
   type CloudMqttDeviceMessageHandler,
 } from './cloud/index.js';
 import type {MiotPlaceholderCommand} from './command.js';
-import {MiotLightEndpointConnection} from './devices/index.js';
+import {
+  MiotLightEndpointConnection,
+  encodeMiotPropertyValue,
+} from './devices/index.js';
 import {
   LegacyMiotEndpointConnectionMetadata,
   MiotEndpointConnection,
@@ -30,6 +33,7 @@ import {
   MiotEndpointConnectionTransport,
   MiotEndpointConnectionTransportError,
   MiotEndpointConnectionTransportUnavailableError,
+  type MiotEndpointStateUpdate,
   createMiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionProperty,
   getMiotEndpointConnectionResourceKeys,
@@ -273,17 +277,13 @@ const _TEST_MULTI_RESOURCE_PROPERTIES = {
   },
 } as const satisfies MiotPropertySchema;
 
-const TEST_HELPER_PROPERTIES = {
+const _TEST_HELPER_PROPERTIES = {
   'urn:miot-spec-v2:service:light:00007802': {
     'urn:miot-spec-v2:property:on:00000006': 'on',
   },
   'urn:miot-spec-v2:service:fan:00007808': {
     'urn:miot-spec-v2:property:mode:00000008': {
       name: 'mode',
-      enum: {
-        'urn:miot-spec-v2:device:light:0000A001:test-*': {off: 0, onn: 1},
-        '*': {off: 0, standby: 2},
-      },
       optional: true,
     },
     'urn:miot-spec-v2:property:fan-level:00000016': {
@@ -347,12 +347,7 @@ const TEST_HELPER_METADATA = createTestResolvedMetadata({
         properties: [TEST_HELPER_MODE_PROPERTY],
       },
       properties: {
-        mode: {
-          ...TEST_HELPER_MODE_PROPERTY,
-          enum: TEST_HELPER_PROPERTIES['urn:miot-spec-v2:service:fan:00007808'][
-            'urn:miot-spec-v2:property:mode:00000008'
-          ].enum['urn:miot-spec-v2:device:light:0000A001:test-*'],
-        },
+        mode: TEST_HELPER_MODE_PROPERTY,
       },
     },
     {
@@ -385,28 +380,21 @@ test('provides typed property state helpers across resolved resources', () => {
 
   const requiredBoolean: boolean = connection.on;
   const optionalNumber: number | undefined = connection.missingSpeed;
-  const exactEnum: 'off' | 'onn' | 'standby' | undefined = connection.mode;
-  const exactEnumWithoutInitial: 'off' | 'onn' | 'standby' | undefined =
-    connection.modeWithoutInitial;
-  // @ts-expect-error -- A schema typo cannot masquerade as a domain enum name.
-  const domainEnum: 'off' | 'on' | undefined = connection.mode;
+  const optionalMode: number | undefined = connection.mode;
+  // @ts-expect-error -- Physical numeric state is not a domain enum.
+  const domainMode: 'off' | 'on' | undefined = connection.mode;
 
   void requiredBoolean;
   void optionalNumber;
-  void exactEnum;
-  void exactEnumWithoutInitial;
-  void domainEnum;
+  void optionalMode;
+  void domainMode;
 
   expect(connection.on).toBe(false);
   expect(connection.rawOn).toBeUndefined();
   expect(connection.relativeHumidity).toBe(50);
   expect(connection.missingSpeed).toBeUndefined();
   expect(connection.missingSpeedWithInitial).toBeUndefined();
-  expect(connection.mode).toBe('off');
-  expect(connection.modeWithoutInitial).toBeUndefined();
-  expect(() => connection.modeWithUnavailableInitial).toThrow(
-    'Unsupported MIoT property enum initial value: mode=standby.',
-  );
+  expect(connection.mode).toBeUndefined();
   expect(connection.projectedMode).toBe(0);
   expect(connection.projectionCount).toBe(0);
   expect(connection.getTemperatureCelsius(initialTemperature)).toBe(
@@ -445,8 +433,7 @@ test('provides typed property state helpers across resolved resources', () => {
   });
 
   expect(connection.on).toBe(true);
-  expect(connection.mode).toBe('onn');
-  expect(connection.modeWithoutInitial).toBe('onn');
+  expect(connection.mode).toBe(1);
   expect(connection.projectedMode).toBe(0.5);
   expect(connection.projectionCount).toBe(1);
   expect(connection.getTemperatureCelsius(initialTemperature).celsius).toBe(20);
@@ -469,9 +456,7 @@ test('provides typed property state helpers across resolved resources', () => {
   expect(connection.getObservationRevision(['mode'])).toBeGreaterThan(
     previousModeObservationRevision,
   );
-  expect(() => connection.mode).toThrow(
-    'Unknown MIoT enum property state: mode=2.',
-  );
+  expect(connection.mode).toBe(2);
   expect(connection.projectedMode).toBe(1);
   expect(connection.projectionCount).toBe(2);
 
@@ -481,7 +466,32 @@ test('provides typed property state helpers across resolved resources', () => {
     piid: 3,
     value: 1,
   });
-  expect(connection.mode).toBe('onn');
+  expect(connection.mode).toBe(1);
+});
+
+test('resolves device-owned codecs from connection metadata once', () => {
+  const connection = createHelperConnection();
+  const resolvedModeProperty = {...TEST_HELPER_MODE_PROPERTY, name: 'mode'};
+
+  expect(connection.modeCodecDeviceType).toBe(TEST_HELPER_METADATA.device.urn);
+  expect(connection.modeCodecProperty).toEqual(resolvedModeProperty);
+  expect(connection.codecResolutionCount).toBe(1);
+
+  expect(connection.modeCodecDeviceType).toBe(TEST_HELPER_METADATA.device.urn);
+  expect(connection.modeCodecProperty).toEqual(resolvedModeProperty);
+  expect(connection.codecResolutionCount).toBe(1);
+  expect(connection.missingSpeedCodecAvailable).toBe(false);
+  expect(connection.unsupportedModeCodecAvailable).toBe(false);
+
+  connection.handlePropertyUpdate({
+    did: TEST_METADATA.device.did,
+    siid: 4,
+    piid: 3,
+    value: 2,
+  });
+
+  expect(connection.modeCodecRaw).toBe(2);
+  expect(connection.codecResolutionCount).toBe(1);
 });
 
 test('validates range, value-list, and temperature metadata in helpers', () => {
@@ -2232,6 +2242,50 @@ test('accepts only declared value-list property state', () => {
   );
 });
 
+test('enforces numeric format bounds without a value list or range', () => {
+  const property = {
+    iid: 3,
+    type: 'urn:miot-spec-v2:property:mode:00000008:test-fan:1',
+    description: 'Mode',
+    format: 'uint8',
+    access: ['read', 'notify'],
+  } satisfies MiotSpecProperty;
+  const metadata = createTestResolvedMetadata({
+    device: TEST_VALUE_LIST_METADATA.device,
+    resources: [
+      {
+        service: {
+          ...TEST_VALUE_LIST_PRIMARY_RESOURCE.service,
+          properties: [property],
+        },
+        properties: {mode: property},
+      },
+    ],
+  });
+  const connection = new TestValueListEndpointConnection(
+    new MiotProvider('provider'),
+    metadata,
+    [new TestTransport()],
+  );
+  const createState = (value: number): MiotEndpointStateUpdate => ({
+    did: metadata.device.did,
+    online: true,
+    properties: [createStateProperty(metadata, 'mode', value)],
+  });
+
+  expect(connection.handleStateUpdate(createState(255))).toEqual([]);
+  expect(connection.ready).toBe(true);
+
+  for (const value of [-1, 256]) {
+    expect(connection.handleStateUpdate(createState(value))).toEqual([
+      expect.objectContaining({
+        message: 'MIoT property state exceeds its format range.',
+      }),
+    ]);
+    expect(connection.ready).toBe(true);
+  }
+});
+
 function createExpectedSetPropertyRequest(
   piid: number,
   value: unknown,
@@ -2395,9 +2449,93 @@ class TestValueListEndpointConnection extends MiotEndpointConnection<never> {
 
 class TestPropertyHelperEndpointConnection extends MiotEndpointConnection<
   never,
-  typeof TEST_HELPER_PROPERTIES
+  typeof _TEST_HELPER_PROPERTIES
 > {
+  private codecResolutionCountValue = 0;
+
+  private readonly modeCodecDefinition = {
+    resolve: (context: {
+      readonly deviceType: string;
+      readonly property: MiotSpecProperty;
+    }) => {
+      this.codecResolutionCountValue++;
+      return {
+        decode: (raw: unknown) => ({...context, raw}),
+        encode: (value: {
+          readonly deviceType: string;
+          readonly property: MiotSpecProperty;
+          readonly raw: unknown;
+        }) => encodeMiotPropertyValue(context.property, Number(value.raw)),
+      };
+    },
+  };
+
+  private readonly missingSpeedCodecDefinition = {
+    resolve: () => {
+      throw new Error('An absent property must not resolve its codec.');
+    },
+  };
+
+  private readonly unsupportedModeCodecDefinition = {
+    resolve: () => undefined,
+  };
+
   projectionCount = 0;
+
+  get codecResolutionCount(): number {
+    return this.codecResolutionCountValue;
+  }
+
+  get modeCodecDeviceType(): string | undefined {
+    return this.getPropertyValueCodec('mode', this.modeCodecDefinition)?.read()
+      ?.deviceType;
+  }
+
+  get modeCodecProperty(): MiotSpecProperty | undefined {
+    return this.getPropertyValueCodec('mode', this.modeCodecDefinition)?.read()
+      ?.property;
+  }
+
+  get modeCodecRaw(): unknown {
+    return this.getPropertyValueCodec('mode', this.modeCodecDefinition)?.read()
+      ?.raw;
+  }
+
+  get missingSpeedCodecAvailable(): boolean {
+    return (
+      this.getPropertyValueCodec(
+        'missingSpeed',
+        this.missingSpeedCodecDefinition,
+      ) !== undefined
+    );
+  }
+
+  get unsupportedModeCodecAvailable(): boolean {
+    return (
+      this.getPropertyValueCodec(
+        'mode',
+        this.unsupportedModeCodecDefinition,
+      ) !== undefined
+    );
+  }
+
+  get invalidPropertyCodec(): unknown {
+    return this.getPropertyValueCodec(
+      // @ts-expect-error -- Codec aliases are schema-constrained.
+      'missing-mode',
+      this.modeCodecDefinition,
+    );
+  }
+
+  get invalidEncodedPropertyCodec(): unknown {
+    return this.getPropertyValueCodec('mode', {
+      resolve: () => ({
+        decode: () => undefined,
+        // @ts-expect-error -- A codec must return encoded physical values.
+        encode: () => 0,
+      }),
+    });
+  }
 
   get propertyNames(): Readonly<Record<string, string | undefined>> {
     return {
@@ -2437,22 +2575,8 @@ class TestPropertyHelperEndpointConnection extends MiotEndpointConnection<
     return this.getNumberPropertyState('missingSpeed', 3);
   }
 
-  get mode(): 'off' | 'onn' | 'standby' | undefined {
-    return this.getEnumPropertyState('mode', 'off');
-  }
-
-  get modeWithoutInitial(): 'off' | 'onn' | 'standby' | undefined {
-    return this.getEnumPropertyState('mode');
-  }
-
-  get incorrectlyNarrowMode(): 'off' | 'onn' | undefined {
-    // @ts-expect-error -- Other device-type branches add enum names.
-    return this.getEnumPropertyState('mode', 'off');
-  }
-
-  get modeWithUnavailableInitial(): 'off' | 'onn' | 'standby' | undefined {
-    // @ts-expect-error -- An initial value must exist in every enum branch.
-    return this.getEnumPropertyState('mode', 'standby');
+  get mode(): number | undefined {
+    return this.getNumberPropertyState('mode');
   }
 
   get invalidAlias(): boolean {

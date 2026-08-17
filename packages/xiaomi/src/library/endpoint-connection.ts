@@ -31,6 +31,30 @@ import {
 } from './miot/index.js';
 import type {MiotProvider} from './provider.js';
 
+const MIOT_NUMERIC_FORMAT_RANGES: Readonly<
+  Record<string, readonly [minimum: number, maximum: number] | undefined>
+> = {
+  float: undefined,
+  int8: [-128, 127],
+  int16: [-32_768, 32_767],
+  int32: [-2_147_483_648, 2_147_483_647],
+  uint8: [0, 255],
+  uint16: [0, 65_535],
+  uint32: [0, 4_294_967_295],
+};
+
+/** A canonical primitive accepted by the MIoT property protocol. */
+export type MiotPropertyValue = boolean | number | string;
+
+declare const MIOT_ENCODED_PROPERTY_VALUE: unique symbol;
+
+/** A physical MIoT value that has been canonicalized for a property. */
+export type MiotEncodedPropertyValue<
+  TValue extends MiotPropertyValue = MiotPropertyValue,
+> = TValue & {
+  readonly [MIOT_ENCODED_PROPERTY_VALUE]: true;
+};
+
 /** A legacy MIoT service snapshot claimed by one logical endpoint. */
 export const MiotEndpointConnectionResource = x.object({
   service: MiotSpecService,
@@ -130,6 +154,11 @@ export abstract class MiotEndpointConnection<
   @observable private accessor stateRevisionValue = 0;
 
   private readonly observationRevisionMap = new Map<string, number>();
+
+  private readonly propertyValueCodecCache = new WeakMap<
+    object,
+    Map<string, unknown>
+  >();
 
   protected readonly properties: MiotEndpointConnectionSchemaProperties<TSchema>;
 
@@ -513,73 +542,6 @@ export abstract class MiotEndpointConnection<
     return value;
   }
 
-  protected getEnumPropertyState<
-    const TName extends MiotEndpointConnectionEnumPropertyName<
-      MiotEndpointConnectionSchemaProperties<TSchema>
-    >,
-  >(
-    name: TName,
-  ):
-    | MiotPropertyEnumName<
-        MiotEndpointConnectionSchemaProperties<TSchema>[TName]
-      >
-    | undefined;
-  protected getEnumPropertyState<
-    const TName extends MiotEndpointConnectionEnumPropertyName<
-      MiotEndpointConnectionSchemaProperties<TSchema>
-    >,
-  >(
-    name: TName,
-    initial: MiotPropertyEnumInitial<
-      MiotEndpointConnectionSchemaProperties<TSchema>[TName]
-    >,
-  ): MiotEndpointConnectionPropertyState<
-    MiotEndpointConnectionSchemaProperties<TSchema>[TName],
-    MiotPropertyEnumName<MiotEndpointConnectionSchemaProperties<TSchema>[TName]>
-  >;
-  protected getEnumPropertyState(
-    name: string,
-    initial?: string,
-  ): string | undefined {
-    const property = this.getProperty(name);
-
-    if (property === undefined) {
-      return undefined;
-    }
-
-    if (property.enum === undefined) {
-      throw new TypeError(`Missing MIoT property enum: ${name}.`);
-    }
-
-    const value = this.getCommandEffectState(name);
-
-    if (value === undefined) {
-      if (initial !== undefined && !Object.hasOwn(property.enum, initial)) {
-        throw new TypeError(
-          `Unsupported MIoT property enum initial value: ${name}=${initial}.`,
-        );
-      }
-
-      return initial;
-    }
-
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new TypeError(`Invalid MIoT enum property state: ${name}.`);
-    }
-
-    const enumName = Object.entries(property.enum).find(
-      ([, enumValue]) => enumValue === value,
-    )?.[0];
-
-    if (enumName === undefined) {
-      throw new TypeError(
-        `Unknown MIoT enum property state: ${name}=${value}.`,
-      );
-    }
-
-    return enumName;
-  }
-
   protected getTemperaturePropertyState<
     const TName extends Extract<
       keyof MiotEndpointConnectionSchemaProperties<TSchema>,
@@ -636,6 +598,83 @@ export abstract class MiotEndpointConnection<
       MiotEndpointConnectionSchemaProperties<TSchema>[TName],
       Temperature
     >;
+  }
+
+  /**
+   * Binds a device-owned codec to one resolved property in this connection.
+   *
+   * The physical property, raw state, and complete device URN are connection
+   * concerns; concrete devices only provide the domain mapping. The returned
+   * codec always reads the alias it was bound to and is cached for the
+   * connection lifetime. A codec may still be unavailable when an optional
+   * property is absent or its mapping does not support this physical device.
+   */
+  protected getPropertyValueCodec<
+    const TName extends Extract<
+      keyof MiotEndpointConnectionSchemaProperties<TSchema>,
+      string
+    >,
+    TDomain,
+    TEncoded extends MiotEncodedPropertyValue,
+  >(
+    name: TName,
+    definition: {
+      readonly resolve: (context: {
+        readonly deviceType: string;
+        readonly property: MiotResolvedSpecProperty;
+      }) =>
+        | {
+            readonly decode: (raw: unknown) => TDomain | undefined;
+            readonly encode: (value: TDomain) => TEncoded;
+          }
+        | undefined;
+    },
+  ):
+    | {
+        readonly read: () => TDomain | undefined;
+        readonly encode: (value: TDomain) => TEncoded;
+      }
+    | undefined {
+    let codecMap = this.propertyValueCodecCache.get(definition);
+
+    if (codecMap?.has(name)) {
+      return codecMap.get(name) as
+        | {
+            readonly read: () => TDomain | undefined;
+            readonly encode: (value: TDomain) => TEncoded;
+          }
+        | undefined;
+    }
+
+    if (codecMap === undefined) {
+      codecMap = new Map();
+      this.propertyValueCodecCache.set(definition, codecMap);
+    }
+
+    const property = this.getProperty(name);
+
+    if (property === undefined) {
+      codecMap.set(name, undefined);
+      return undefined;
+    }
+
+    const resolved = definition.resolve({
+      deviceType: this.metadata.device.urn,
+      property,
+    });
+
+    if (resolved === undefined) {
+      codecMap.set(name, undefined);
+      return undefined;
+    }
+
+    const codec = {
+      read: () => resolved.decode(this.getCommandEffectState(name)),
+      encode: (value: TDomain) => resolved.encode(value),
+    };
+
+    codecMap.set(name, codec);
+    return codec;
   }
 
   private createProperties(): MiotEndpointConnectionProperties {
@@ -1068,10 +1107,6 @@ type MiotEndpointConnectionEvent = MiotSpecEvent & {
   readonly name: string;
 };
 
-type MiotEndpointConnectionEnumProperty = MiotEndpointConnectionProperty & {
-  readonly enum: Readonly<Record<string, number>>;
-};
-
 type MiotEndpointConnectionProperties = Readonly<
   Record<string, MiotEndpointConnectionProperty | undefined>
 >;
@@ -1086,32 +1121,6 @@ type MiotEndpointConnectionSchemaProperties<
 
 type MiotEndpointConnectionPropertyState<TProperty, TValue> =
   undefined extends TProperty ? TValue | undefined : TValue;
-
-type MiotEndpointConnectionEnumPropertyName<TProperties> = Extract<
-  {
-    [TName in keyof TProperties]-?: NonNullable<
-      TProperties[TName]
-    > extends MiotEndpointConnectionEnumProperty
-      ? TName
-      : never;
-  }[keyof TProperties],
-  string
->;
-
-type MiotPropertyEnumName<TProperty> = TProperty extends {
-  readonly enum: infer TEnum;
-}
-  ? TEnum extends Readonly<Record<string, number>>
-    ? Extract<keyof TEnum, string>
-    : never
-  : never;
-
-type MiotPropertyEnumInitial<TProperty> =
-  NonNullable<TProperty> extends {
-    readonly enum: infer TEnum extends Readonly<Record<string, number>>;
-  }
-    ? Extract<keyof TEnum, string>
-    : never;
 
 export function createMiotEndpointConnectionResolvedMetadata(
   metadata: MiotEndpointConnectionMetadata,
@@ -1452,8 +1461,21 @@ function assertMiotPropertyValue(
       throw new TypeError('Invalid MIoT numeric property state.');
     }
 
+    if (!Object.hasOwn(MIOT_NUMERIC_FORMAT_RANGES, format)) {
+      throw new TypeError(`Unsupported MIoT property state format: ${format}.`);
+    }
+
     if (/^(?:u?int(?:8|16|32))$/.test(format) && !Number.isInteger(value)) {
       throw new TypeError('Invalid MIoT integer property state.');
+    }
+
+    const formatRange = MIOT_NUMERIC_FORMAT_RANGES[format];
+
+    if (
+      formatRange !== undefined &&
+      (value < formatRange[0] || value > formatRange[1])
+    ) {
+      throw new TypeError('MIoT property state exceeds its format range.');
     }
 
     numericValue = value;

@@ -290,7 +290,9 @@ function StaleBindingsView({
       </Box>
 
       {state.notice === undefined ? null : (
-        <Text color="green">{state.notice}</Text>
+        <Box marginTop={1}>
+          <Text color="green">{state.notice}</Text>
+        </Box>
       )}
 
       <Hint>
@@ -636,7 +638,9 @@ function BindingDeviceView({
       </Box>
 
       {state.notice === undefined ? null : (
-        <Text color="green">{state.notice}</Text>
+        <Box marginTop={1}>
+          <Text color="green">{state.notice}</Text>
+        </Box>
       )}
 
       <Hint>{getBindingDeviceHint(hasProviders, hasBoundEndpoints)}</Hint>

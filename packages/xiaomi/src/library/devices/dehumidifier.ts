@@ -18,7 +18,30 @@ import {
   type MiotPropertySchemaProperties,
 } from '../miot/index.js';
 
-import {MiotCommandEffect} from './command-effect.js';
+import {
+  type MiotPropertyValueCodec,
+  createMiotNamedValueCodec,
+} from './@value-codec.js';
+import {MiotCommandEffect, encodeMiotPropertyValue} from './command-effect.js';
+
+const DEHUMIDIFIER_MODE_CODEC = createMiotNamedValueCodec<DehumidifierMode>({
+  '*': {auto: 0, sleep: 1, laundry: 2},
+});
+
+const TARGET_RELATIVE_HUMIDITY_CODEC: MiotPropertyValueCodec<number, number> = {
+  resolve({property}) {
+    return {
+      decode(raw) {
+        return typeof raw === 'number' && Number.isFinite(raw)
+          ? raw / 100
+          : undefined;
+      },
+      encode(value) {
+        return encodeMiotPropertyValue(property, value * 100);
+      },
+    };
+  },
+};
 
 export class MiotDehumidifierEndpointConnection
   extends MiotEndpointConnection<
@@ -40,7 +63,6 @@ export class MiotDehumidifierEndpointConnection
       },
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {'*': {auto: 0, sleep: 1, laundry: 2}},
         optional: true,
       },
       'urn:miot-spec-v2:property:target-humidity:00000022': {
@@ -60,6 +82,16 @@ export class MiotDehumidifierEndpointConnection
     },
   } as const satisfies MiotPropertySchema;
 
+  private readonly modeCodec = this.getPropertyValueCodec(
+    'mode',
+    DEHUMIDIFIER_MODE_CODEC,
+  );
+
+  private readonly targetRelativeHumidityCodec = this.getPropertyValueCodec(
+    'target-humidity',
+    TARGET_RELATIVE_HUMIDITY_CODEC,
+  );
+
   @observable private accessor waterTankFullValue: boolean | undefined;
 
   @computed
@@ -69,13 +101,19 @@ export class MiotDehumidifierEndpointConnection
 
   @computed
   get mode(): DehumidifierMode | undefined {
-    return this.getEnumPropertyState('mode');
+    return this.modeCodec?.read();
   }
 
   @computed
   get targetRelativeHumidity(): number | undefined {
-    const value = this.getNumberPropertyState('target-humidity', 0);
-    return value === undefined ? undefined : value / 100;
+    const {targetRelativeHumidityCodec: codec} = this;
+
+    if (codec === undefined) {
+      return undefined;
+    }
+
+    const raw = this.getNumberPropertyState('target-humidity');
+    return raw === undefined ? 0 : codec.read();
   }
 
   @computed
@@ -138,26 +176,34 @@ export class MiotDehumidifierEndpointConnection
     let assertExecutable = (): void => undefined;
 
     if (command instanceof SetDehumidifierOnCommand) {
-      effect = new MiotDehumidifierCommandEffect(this, {on: command.value});
+      effect = new MiotDehumidifierCommandEffect(this, {
+        on: encodeMiotPropertyValue(this.properties.on, command.value),
+      });
     } else if (command instanceof SetDehumidifierModeCommand) {
-      if (this.properties.mode === undefined) {
+      const {modeCodec: codec} = this;
+
+      if (codec === undefined) {
         throw new CommandError('MIoT dehumidifier does not support mode.');
       }
 
-      effect = new MiotDehumidifierCommandEffect(this, {
-        mode: command.value,
-      });
+      effect = new MiotDehumidifierCommandEffect(
+        this,
+        {mode: codec.encode(command.value)},
+        {mode: command.value},
+      );
     } else if (
       command instanceof SetDehumidifierTargetRelativeHumidityCommand
     ) {
-      if (this.properties['target-humidity'] === undefined) {
+      const {targetRelativeHumidityCodec: codec} = this;
+
+      if (codec === undefined) {
         throw new CommandError(
           'MIoT dehumidifier does not support target humidity.',
         );
       }
 
       effect = new MiotDehumidifierCommandEffect(this, {
-        'target-humidity': command.relativeHumidity,
+        'target-humidity': codec.encode(command.relativeHumidity),
       });
       assertExecutable = () => {
         if (this.waterTankFull === true) {

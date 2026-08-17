@@ -19,9 +19,14 @@ import {MiotEndpointConnection} from '../endpoint-connection.js';
 import {
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
+  isValidMiotSpecValueList,
 } from '../miot/index.js';
 
-import {MiotCommandEffect} from './command-effect.js';
+import {
+  type MiotPropertyValueCodec,
+  createMiotNamedValueCodec,
+} from './@value-codec.js';
+import {MiotCommandEffect, encodeMiotPropertyValue} from './command-effect.js';
 
 const AIR_CONDITIONER_MODES: ReadonlySet<string> = new Set([
   'auto',
@@ -30,6 +35,140 @@ const AIR_CONDITIONER_MODES: ReadonlySet<string> = new Set([
   'fan',
   'heat',
 ]);
+
+type MiotAirConditionerMode = AirConditionerMode | 'off';
+
+const AIR_CONDITIONER_MODE_CODEC =
+  createMiotNamedValueCodec<MiotAirConditionerMode>({
+    '*': {cool: 2, dry: 3, fan: 4, heat: 5, off: 6},
+  });
+
+const AIR_CONDITIONER_AUTO_FAN_SPEED_CODEC = createMiotNamedValueCodec<'auto'>({
+  'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-mt*': {
+    auto: 0,
+  },
+  'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00': {
+    auto: 0,
+  },
+});
+
+const AIR_CONDITIONER_FAN_SPEED_CODEC: MiotPropertyValueCodec<
+  AirConditionerFanSpeed,
+  number
+> = {
+  resolve(context) {
+    const autoCodec = AIR_CONDITIONER_AUTO_FAN_SPEED_CODEC.resolve(context);
+    const valueList = context.property['value-list'];
+
+    if (autoCodec === undefined || !isValidMiotSpecValueList(valueList)) {
+      return undefined;
+    }
+
+    const autoValue = autoCodec.encode('auto');
+    const levels = valueList
+      .map(entry => entry.value)
+      .filter(value => value !== autoValue)
+      .toSorted((left, right) => left - right);
+
+    return {
+      decode(raw) {
+        if (autoCodec.decode(raw) === 'auto') {
+          return 'auto';
+        }
+
+        if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+          return undefined;
+        }
+
+        const index = levels.indexOf(raw);
+
+        if (index < 0) {
+          return undefined;
+        }
+
+        return levels.length === 1 ? 0 : index / (levels.length - 1);
+      },
+      encode(value) {
+        if (value === 'auto') {
+          return autoValue;
+        }
+
+        if (
+          typeof value !== 'number' ||
+          !Number.isFinite(value) ||
+          value < 0 ||
+          value > 1 ||
+          levels.length === 0
+        ) {
+          throw new CommandError(
+            `Unsupported MIoT air conditioner fan speed: ${String(value)}.`,
+          );
+        }
+
+        const index = Math.min(
+          levels.length - 1,
+          Math.max(0, Math.round(value * (levels.length - 1))),
+        );
+        return encodeMiotPropertyValue(context.property, levels[index]);
+      },
+    };
+  },
+};
+
+const TARGET_RELATIVE_HUMIDITY_CODEC: MiotPropertyValueCodec<number, number> = {
+  resolve({property}) {
+    return {
+      decode(raw) {
+        return typeof raw === 'number' && Number.isFinite(raw)
+          ? raw / 100
+          : undefined;
+      },
+      encode(value) {
+        return encodeMiotPropertyValue(property, value * 100);
+      },
+    };
+  },
+};
+
+const TARGET_TEMPERATURE_CODEC: MiotPropertyValueCodec<Temperature, number> = {
+  resolve({property}) {
+    const fromRaw =
+      property.unit === 'celsius'
+        ? Temperature.fromCelsius
+        : property.unit === 'fahrenheit'
+          ? Temperature.fromFahrenheit
+          : property.unit === 'kelvin'
+            ? Temperature.fromKelvin
+            : undefined;
+    const toRaw =
+      property.unit === 'celsius'
+        ? (value: Temperature): number => value.celsius
+        : property.unit === 'fahrenheit'
+          ? (value: Temperature): number => value.fahrenheit
+          : property.unit === 'kelvin'
+            ? (value: Temperature): number => value.kelvin
+            : undefined;
+
+    if (fromRaw === undefined || toRaw === undefined) {
+      return undefined;
+    }
+
+    return {
+      decode(raw) {
+        return typeof raw === 'number' && Number.isFinite(raw)
+          ? fromRaw(raw)
+          : undefined;
+      },
+      encode(value) {
+        if (!(value instanceof Temperature)) {
+          throw new TypeError('Invalid MIoT target temperature.');
+        }
+
+        return encodeMiotPropertyValue(property, toRaw(value));
+      },
+    };
+  },
+};
 
 export class MiotAirConditionerEndpointConnection
   extends MiotEndpointConnection<
@@ -44,7 +183,6 @@ export class MiotAirConditionerEndpointConnection
       'urn:miot-spec-v2:property:on:00000006': 'on',
       'urn:miot-spec-v2:property:mode:00000008': {
         name: 'mode',
-        enum: {'*': {cool: 2, dry: 3, fan: 4, heat: 5, off: 6}},
         optional: true,
       },
       'urn:miot-spec-v2:property:target-temperature:00000021': {
@@ -59,13 +197,9 @@ export class MiotAirConditionerEndpointConnection
     'urn:miot-spec-v2:service:fan-control:00007809': {
       'urn:miot-spec-v2:property:fan-level:00000016': {
         name: 'fan-level',
-        enum: {
-          'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-mt*': {
-            auto: 0,
-          },
-          'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00': {
-            auto: 0,
-          },
+        iid: {
+          'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-mt*': 2,
+          'urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-rr6r00': 2,
         },
         optional: true,
       },
@@ -82,6 +216,26 @@ export class MiotAirConditionerEndpointConnection
     },
   } as const satisfies MiotPropertySchema;
 
+  private readonly modeCodec = this.getPropertyValueCodec(
+    'mode',
+    AIR_CONDITIONER_MODE_CODEC,
+  );
+
+  private readonly fanSpeedCodec = this.getPropertyValueCodec(
+    'fan-level',
+    AIR_CONDITIONER_FAN_SPEED_CODEC,
+  );
+
+  private readonly targetTemperatureCodec = this.getPropertyValueCodec(
+    'target-temperature',
+    TARGET_TEMPERATURE_CODEC,
+  );
+
+  private readonly targetRelativeHumidityCodec = this.getPropertyValueCodec(
+    'target-humidity',
+    TARGET_RELATIVE_HUMIDITY_CODEC,
+  );
+
   @computed
   get on(): boolean {
     return this.getBooleanPropertyState('on', false);
@@ -89,54 +243,37 @@ export class MiotAirConditionerEndpointConnection
 
   @computed
   get mode(): AirConditionerMode | undefined {
-    const mode = this.getEnumPropertyState('mode');
+    const mode = this.modeCodec?.read();
     return mode === 'off' ? undefined : mode;
   }
 
   @computed
   get fanSpeed(): AirConditionerFanSpeed | undefined {
-    const property = this.properties['fan-level'];
-
-    if (property === undefined) {
-      return undefined;
-    }
-
-    const value = this.getNumberPropertyState('fan-level');
-
-    if (value === undefined) {
-      return undefined;
-    }
-
-    if (value === property.enum.auto) {
-      return 'auto';
-    }
-
-    const enumValues = new Set<number>(Object.values(property.enum));
-    const levels = this.getPropertyValueList(property)
-      .map(entry => entry.value)
-      .filter(level => !enumValues.has(level))
-      .toSorted((left, right) => left - right);
-    const levelIndex = levels.indexOf(value);
-
-    if (levelIndex < 0) {
-      throw new TypeError(`Unknown MIoT fan-level property state: ${value}.`);
-    }
-
-    return levels.length === 1 ? 0 : levelIndex / (levels.length - 1);
+    return this.fanSpeedCodec?.read();
   }
 
   @computed
   get targetTemperature(): Temperature | undefined {
-    return this.getTemperaturePropertyState(
-      'target-temperature',
-      Temperature.fromKelvin(0),
-    );
+    const {targetTemperatureCodec: codec} = this;
+
+    if (codec === undefined) {
+      return undefined;
+    }
+
+    const raw = this.getNumberPropertyState('target-temperature');
+    return raw === undefined ? Temperature.fromKelvin(0) : codec.read();
   }
 
   @computed
   get targetRelativeHumidity(): number | undefined {
-    const value = this.getNumberPropertyState('target-humidity', 0);
-    return value === undefined ? undefined : value / 100;
+    const {targetRelativeHumidityCodec: codec} = this;
+
+    if (codec === undefined) {
+      return undefined;
+    }
+
+    const raw = this.getNumberPropertyState('target-humidity');
+    return raw === undefined ? 0 : codec.read();
   }
 
   @computed
@@ -160,10 +297,12 @@ export class MiotAirConditionerEndpointConnection
 
     if (command instanceof SetAirConditionerOnCommand) {
       effect = new MiotAirConditionerCommandEffect(this, {
-        on: command.value,
+        on: encodeMiotPropertyValue(this.properties.on, command.value),
       });
     } else if (command instanceof SetAirConditionerModeCommand) {
-      if (this.properties.mode === undefined) {
+      const {modeCodec: codec} = this;
+
+      if (codec === undefined) {
         throw new CommandError('MIoT air conditioner does not support mode.');
       }
 
@@ -173,40 +312,54 @@ export class MiotAirConditionerEndpointConnection
         );
       }
 
-      effect = new MiotAirConditionerCommandEffect(this, {
-        mode: command.value,
-      });
+      const value = codec.encode(command.value);
+      effect = new MiotAirConditionerCommandEffect(
+        this,
+        {mode: value},
+        {mode: command.value},
+      );
     } else if (command instanceof SetAirConditionerFanSpeedCommand) {
-      if (this.properties['fan-level'] === undefined) {
+      const {fanSpeedCodec: codec} = this;
+
+      if (codec === undefined) {
         throw new CommandError(
           'MIoT air conditioner does not support fan speed.',
         );
       }
 
-      effect = new MiotAirConditionerCommandEffect(this, {
-        'fan-level': command.value,
-      });
+      const value = codec.encode(command.value);
+      effect = new MiotAirConditionerCommandEffect(
+        this,
+        {'fan-level': value},
+        command.value === 'auto' ? {'fan-level': 'auto'} : {},
+      );
     } else if (command instanceof SetAirConditionerTargetTemperatureCommand) {
-      if (this.properties['target-temperature'] === undefined) {
+      const {targetTemperatureCodec: codec} = this;
+
+      if (codec === undefined) {
         throw new CommandError(
           'MIoT air conditioner does not support target temperature.',
         );
       }
 
+      const value = codec.encode(command.value);
       effect = new MiotAirConditionerCommandEffect(this, {
-        'target-temperature': command.value,
+        'target-temperature': value,
       });
     } else if (
       command instanceof SetAirConditionerTargetRelativeHumidityCommand
     ) {
-      if (this.properties['target-humidity'] === undefined) {
+      const {targetRelativeHumidityCodec: codec} = this;
+
+      if (codec === undefined) {
         throw new CommandError(
           'MIoT air conditioner does not support target humidity.',
         );
       }
 
+      const value = codec.encode(command.relativeHumidity);
       effect = new MiotAirConditionerCommandEffect(this, {
-        'target-humidity': command.relativeHumidity,
+        'target-humidity': value,
       });
     } else {
       throw new TypeError('Unsupported MIoT air conditioner endpoint command.');

@@ -1,6 +1,9 @@
 import {CommandError, type EndpointReference, Temperature} from '@homelib/core';
 
-import type {MiotEndpointConnectionResolvedMetadata} from '../endpoint-connection.js';
+import {
+  type MiotEndpointConnectionResolvedMetadata,
+  getMiotEndpointConnectionProperty,
+} from '../endpoint-connection.js';
 import {
   type MiotResolvedSpecProperty,
   MiotSetPropertyRequest,
@@ -11,6 +14,9 @@ import {
   MiotCommandEffect,
   type MiotCommandEffectConnection,
   type MiotCommandEffectValues,
+  type MiotEncodedPropertyValue,
+  type MiotPropertyValue,
+  encodeMiotPropertyValue,
 } from './command-effect.js';
 
 const ON_PROPERTY = {
@@ -59,7 +65,6 @@ const MODE_SPEC_PROPERTY = {
 } as const satisfies MiotSpecProperty;
 const MODE_PROPERTY = {
   ...MODE_SPEC_PROPERTY,
-  enum: {cool: 2, dry: 3, heat: 5},
 } as const satisfies MiotResolvedSpecProperty;
 const FAN_LEVEL_SPEC_PROPERTY = {
   iid: 8,
@@ -81,7 +86,6 @@ const FAN_LEVEL_SPEC_PROPERTY = {
 } as const satisfies MiotSpecProperty;
 const FAN_LEVEL_PROPERTY = {
   ...FAN_LEVEL_SPEC_PROPERTY,
-  enum: {auto: 0},
 } as const satisfies MiotResolvedSpecProperty;
 const UNSUPPORTED_PROPERTY = {
   iid: 6,
@@ -135,7 +139,7 @@ const METADATA = {
 } satisfies MiotEndpointConnectionResolvedMetadata;
 
 test('uses resolved aliases and actual property ranges for requests', () => {
-  const effect = new TestEffect({brightness: 0.23});
+  const effect = new TestEffect({brightness: encoded('brightness', 23)});
 
   expect(effect.request).toEqual(
     new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 2}, 25),
@@ -144,14 +148,16 @@ test('uses resolved aliases and actual property ranges for requests', () => {
 
 test('compares canonical multi-property values without depending on map order', () => {
   const first = new TestEffect({
-    brightness: 0.23,
-    targetTemperature: Temperature.fromCelsius(23.24),
+    brightness: encoded('brightness', 23),
+    targetTemperature: encoded('targetTemperature', 23.24),
   });
   const second = new TestEffect({
-    targetTemperature: Temperature.fromCelsius(23.2),
-    brightness: 0.249,
+    targetTemperature: encoded('targetTemperature', 23.2),
+    brightness: encoded('brightness', 24.9),
   });
-  const differentKeys = new TestEffect({brightness: 0.23});
+  const differentKeys = new TestEffect({
+    brightness: encoded('brightness', 23),
+  });
 
   expect(first.equals(second)).toBe(true);
   expect(first.equals(differentKeys)).toBe(false);
@@ -167,8 +173,8 @@ test('matches every targeted value against the same spec conventions', () => {
   });
   const effect = new TestEffect(
     {
-      brightness: 0.23,
-      targetTemperature: Temperature.fromCelsius(23.24),
+      brightness: encoded('brightness', 23),
+      targetTemperature: encoded('targetTemperature', 23.24),
     },
     connection,
   );
@@ -180,14 +186,16 @@ test('matches every targeted value against the same spec conventions', () => {
   expect(effect.matches(endpoint)).toBe(false);
 
   connection.setState('brightness', undefined);
-  expect(new TestEffect({brightness: 0.23}, connection).matches(endpoint)).toBe(
-    false,
-  );
+  expect(
+    new TestEffect({brightness: encoded('brightness', 23)}, connection).matches(
+      endpoint,
+    ),
+  ).toBe(false);
 });
 
 test('reads only the observed alias targeted by an on effect', () => {
   const connection = new TestConnection({on: true, mode: 6});
-  const effect = new TestEffect({on: true}, connection);
+  const effect = new TestEffect({on: encoded('on', true)}, connection);
 
   expect(effect.matches(new ThrowingModeEndpoint())).toBe(true);
   expect(connection.readNames).toEqual(['on']);
@@ -209,49 +217,52 @@ test('rejects empty, undefined, and unknown effect values', () => {
 });
 
 test('validates actual MIoT formats rather than accepting arbitrary numbers', () => {
-  expect(() => new TestEffect({level: -1})).toThrow(
-    'MIoT command effect value exceeds its format range.',
+  expect(() => new TestEffect({level: unvalidated(-1)})).toThrow(
+    'MIoT property value exceeds its format range.',
   );
-  expect(() => new TestEffect({level: 256})).toThrow(
-    'MIoT command effect value exceeds its format range.',
+  expect(() => new TestEffect({level: unvalidated(256)})).toThrow(
+    'MIoT property value exceeds its format range.',
   );
-  expect(() => new TestEffect({unsupported: 1})).toThrow(
-    'Unsupported MIoT command effect format: custom.',
+  expect(() => new TestEffect({unsupported: unvalidated(1)})).toThrow(
+    'Unsupported MIoT property format: custom.',
   );
 });
 
 test('reports a non-writable resolved property as an unsupported command', () => {
-  expect(() => new TestEffect({readOnly: 1}).request).toThrow(CommandError);
+  expect(
+    () => new TestEffect({readOnly: encoded('readOnly', 1)}).request,
+  ).toThrow(CommandError);
 });
 
-test('uses one enum mapping for requests, equality, and state matching', () => {
+test('uses only canonical raw values for requests, equality, and matching', () => {
   const connection = new TestConnection({mode: 2});
-  const effect = new TestEffect({mode: 'cool'}, connection);
+  const effect = new TestEffect({mode: encoded('mode', 2)}, connection);
   const endpoint = new TestEndpoint();
 
   expect(effect.request).toEqual(
     new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 5}, 2),
   );
-  expect(effect.equals(new TestEffect({mode: 'cool'}))).toBe(true);
-  expect(effect.equals(new TestEffect({mode: 'heat'}))).toBe(false);
+  expect(effect.equals(new TestEffect({mode: encoded('mode', 2)}))).toBe(true);
+  expect(effect.equals(new TestEffect({mode: encoded('mode', 5)}))).toBe(false);
 
   expect(effect.matches(endpoint)).toBe(true);
   connection.setState('mode', 5);
   expect(effect.matches(endpoint)).toBe(false);
   connection.setState('mode', 0);
-  expect(() => effect.matches(endpoint)).toThrow(
-    'Unknown MIoT enum property state: mode=0.',
-  );
-  expect(() => new TestEffect({mode: 'dry'})).toThrow(CommandError);
-  expect(() => new TestEffect({mode: 'auto'})).toThrow(CommandError);
-  expect(() => new TestEffect({mode: 2})).toThrow(
-    'Invalid MIoT enum command effect value.',
+  expect(effect.matches(endpoint)).toBe(false);
+  expect(() => new TestEffect({mode: unvalidated(3)})).toThrow(CommandError);
+  expect(() => new TestEffect({mode: unvalidated('cool')})).toThrow(
+    CommandError,
   );
 });
 
-test('supports enum and manual values on a hybrid fan level', () => {
+test('does not interpret hybrid fan-level domain values', () => {
   const autoConnection = new TestConnection({'fan-level': 0});
-  const autoEffect = new TestEffect({'fan-level': 'auto'}, autoConnection);
+  const autoEffect = new TestEffect(
+    {'fan-level': encoded('fan-level', 0)},
+    autoConnection,
+    {'fan-level': 'auto'},
+  );
 
   expect(autoEffect.request).toEqual(
     new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 0),
@@ -259,41 +270,107 @@ test('supports enum and manual values on a hybrid fan level', () => {
   expect(autoEffect.toLogString()).toBe('set fan-level=0 (auto)');
   expect(autoEffect.matches(new TestEndpoint())).toBe(true);
 
-  expect(new TestEffect({'fan-level': 0}).request).toEqual(
-    new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 1),
+  expect(
+    new TestEffect({'fan-level': encoded('fan-level', 1)}).request,
+  ).toEqual(new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 1));
+  expect(
+    new TestEffect({'fan-level': encoded('fan-level', 7)}).request,
+  ).toEqual(new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 7));
+  expect(
+    new TestEffect({'fan-level': encoded('fan-level', 8)}).request,
+  ).toEqual(new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 8));
+  expect(() => new TestEffect({'fan-level': unvalidated('auto')})).toThrow(
+    CommandError,
   );
-  expect(new TestEffect({'fan-level': 6 / 7}).request).toEqual(
-    new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 7),
-  );
-  expect(new TestEffect({'fan-level': 1}).request).toEqual(
-    new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 8}, 8),
+  expect(() => new TestEffect({'fan-level': unvalidated(6 / 7)})).toThrow(
+    CommandError,
   );
 
   const manualConnection = new TestConnection({'fan-level': 7});
-  const manualEffect = new TestEffect({'fan-level': 6 / 7}, manualConnection);
+  const manualEffect = new TestEffect(
+    {'fan-level': encoded('fan-level', 7)},
+    manualConnection,
+  );
 
   expect(manualEffect.matches(new TestEndpoint())).toBe(true);
 });
 
-test('describes canonical values after clamping and unit conversion', () => {
-  const effect = new TestEffect({
-    mode: 'cool',
-    targetTemperature: Temperature.fromCelsius(23.24),
-    brightness: 0.23,
-  });
+test('describes canonical raw values with caller-provided labels', () => {
+  const effect = new TestEffect(
+    {
+      mode: encoded('mode', 2),
+      targetTemperature: encoded('targetTemperature', 23.24),
+      brightness: encoded('brightness', 23),
+    },
+    new TestConnection(),
+    {mode: 'cool'},
+  );
 
   expect(effect.toLogString()).toBe(
     'set brightness=25 set targetTemperature=23 set mode=2 (cool)',
   );
+  expect(
+    effect.equals(
+      new TestEffect({
+        mode: encoded('mode', 2),
+        targetTemperature: encoded('targetTemperature', 23.24),
+        brightness: encoded('brightness', 23),
+      }),
+    ),
+  ).toBe(true);
+  expect(
+    () =>
+      new TestEffect({mode: encoded('mode', 2)}, new TestConnection(), {
+        brightness: 'high',
+      }),
+  ).toThrow(
+    'MIoT command effect label has no corresponding value: brightness.',
+  );
+  expect(
+    () =>
+      new TestEffect({mode: encoded('mode', 2)}, new TestConnection(), {
+        mode: '  ',
+      }),
+  ).toThrow('MIoT command effect label is empty: mode.');
+});
+
+test('defensively validates encoded values without domain unit conversion', () => {
+  expect(new TestEffect({brightness: unvalidated(0.23)}).request).toEqual(
+    new MiotSetPropertyRequest({did: 'device-1', siid: 2, piid: 2}, 20),
+  );
+  expect(
+    () =>
+      new TestEffect({
+        targetTemperature: unvalidated(Temperature.fromCelsius(23)),
+      }),
+  ).toThrow('Invalid MIoT numeric property value.');
+});
+
+test('requires explicitly encoded effect values at compile time', () => {
+  // @ts-expect-error -- A domain string has not been encoded for a property.
+  const domainString: MiotCommandEffectValues<'mode'> = {mode: 'cool'};
+  const normalizedValue: MiotCommandEffectValues<'fan-level'> = {
+    // @ts-expect-error -- A normalized value has not been encoded for a property.
+    'fan-level': 0.5,
+  };
+  // @ts-expect-error -- Even a raw-looking primitive must cross the encoder.
+  const rawPrimitive: MiotCommandEffectValues<'mode'> = {mode: 2};
+
+  void domainString;
+  void normalizedValue;
+  void rawPrimitive;
 });
 
 test('tracks observations only for the targeted aliases', () => {
   const connection = new TestConnection();
-  const brightnessEffect = new TestEffect({brightness: 0.5}, connection);
+  const brightnessEffect = new TestEffect(
+    {brightness: encoded('brightness', 50)},
+    connection,
+  );
   const combinedEffect = new TestEffect(
     {
-      brightness: 0.5,
-      targetTemperature: Temperature.fromCelsius(24),
+      brightness: encoded('brightness', 50),
+      targetTemperature: encoded('targetTemperature', 24),
     },
     connection,
   );
@@ -327,6 +404,22 @@ type TestEffectPropertyName =
   | 'readOnly'
   | 'unsupported';
 
+type TestStateValues = Readonly<
+  Partial<Record<TestEffectPropertyName, MiotPropertyValue>>
+>;
+
+function encoded(
+  name: TestEffectPropertyName,
+  value: MiotPropertyValue,
+): MiotEncodedPropertyValue {
+  const {property} = getMiotEndpointConnectionProperty(METADATA, name);
+  return encodeMiotPropertyValue(property, value);
+}
+
+function unvalidated(value: unknown): MiotEncodedPropertyValue {
+  return value as MiotEncodedPropertyValue;
+}
+
 class TestEndpoint implements EndpointReference {
   readonly name = 'test';
 
@@ -343,8 +436,9 @@ class TestEffect extends MiotCommandEffect<TestEffectPropertyName> {
   constructor(
     values: MiotCommandEffectValues<TestEffectPropertyName>,
     connection: MiotCommandEffectConnection = new TestConnection(),
+    labels: Readonly<Partial<Record<TestEffectPropertyName, string>>> = {},
   ) {
-    super(connection, values);
+    super(connection, values, labels);
   }
 }
 
@@ -359,7 +453,7 @@ class TestConnection implements MiotCommandEffectConnection {
 
   private readonly stateMap = new Map<string, unknown>();
 
-  constructor(states: MiotCommandEffectValues<TestEffectPropertyName> = {}) {
+  constructor(states: TestStateValues = {}) {
     for (const [name, value] of Object.entries(states)) {
       if (value !== undefined) {
         this.stateMap.set(name, value);

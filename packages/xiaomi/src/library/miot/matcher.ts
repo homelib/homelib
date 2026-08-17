@@ -25,14 +25,6 @@ const MIOT_INTEGER_FORMAT_RANGES: Readonly<
  */
 export type MiotUrnPattern = string;
 
-/** Maps HomeLib domain names to MIoT wire values. */
-export type MiotEnumValueMapping = Readonly<Record<string, number>>;
-
-/** Selects an enum value mapping from the complete device URN. */
-export type MiotEnumMapping = Readonly<
-  Record<MiotUrnPattern, MiotEnumValueMapping>
->;
-
 /** Selects a physical property IID from the complete device URN. */
 export type MiotPropertyIidMapping = Readonly<Record<MiotUrnPattern, number>>;
 
@@ -53,7 +45,6 @@ export type MiotPropertyMapping =
        * required.
        */
       readonly access?: MiotPropertyAccessRequirement;
-      readonly enum?: MiotEnumMapping;
       readonly iid?: MiotPropertyIidMapping;
       /**
        * Allows this capability to be absent while matching. Once resolved,
@@ -107,9 +98,7 @@ export type MiotSpecMatchContext = {
   readonly services: readonly MiotSpecService[];
 };
 
-export type MiotResolvedSpecProperty = MiotSpecProperty & {
-  readonly enum?: MiotEnumValueMapping;
-};
+export type MiotResolvedSpecProperty = MiotSpecProperty;
 
 export type MiotPropertySchemaResource = {
   readonly service: MiotSpecService;
@@ -142,37 +131,20 @@ type MiotOptionalPropertyName<TMapping> = TMapping extends {
   ? MiotPropertyMappingName<TMapping>
   : never;
 
-type MiotPropertyMappingForName<TMapping, TName> =
-  TMapping extends MiotPropertyMapping
-    ? MiotPropertyMappingName<TMapping> extends TName
-      ? TMapping
-      : never
-    : never;
-
-type MiotResolvedPropertyForName<
-  TSchema extends MiotPropertySchema,
-  TName,
-> = Omit<MiotResolvedSpecProperty, 'enum'> & {
+type MiotResolvedPropertyForName<TName> = MiotResolvedSpecProperty & {
   readonly name: Extract<TName, string>;
-} & (MiotPropertyMappingForName<
-    MiotPropertySchemaMapping<TSchema>,
-    TName
-  > extends infer TMapping
-    ? TMapping extends {readonly enum: infer TEnum extends MiotEnumMapping}
-      ? {readonly enum: TEnum[keyof TEnum]}
-      : {readonly enum?: undefined}
-    : never);
+};
 
 export type MiotPropertySchemaProperties<TSchema extends MiotPropertySchema> =
   Readonly<
     {
       readonly [
         TName in MiotRequiredPropertyName<MiotPropertySchemaMapping<TSchema>>
-      ]: MiotResolvedPropertyForName<TSchema, TName>;
+      ]: MiotResolvedPropertyForName<TName>;
     } & {
       readonly [
         TName in MiotOptionalPropertyName<MiotPropertySchemaMapping<TSchema>>
-      ]?: MiotResolvedPropertyForName<TSchema, TName>;
+      ]?: MiotResolvedPropertyForName<TName>;
     }
   >;
 
@@ -201,7 +173,6 @@ export function assertMiotPropertySchema(schema: MiotPropertySchema): void {
       const {
         name,
         access,
-        enum: enumMapping,
         iid: iidMapping,
         'value-list': valueListMapping,
       } = getPropertyMapping(mapping);
@@ -226,10 +197,6 @@ export function assertMiotPropertySchema(schema: MiotPropertySchema): void {
       }
 
       nameSet.add(name);
-
-      if (enumMapping !== undefined && !isValidEnumMapping(enumMapping)) {
-        throw new TypeError('Invalid MIoT property schema enum.');
-      }
     }
   }
 }
@@ -536,10 +503,6 @@ function resolveServiceProperties(
 
   for (const [propertyType, configuredMapping] of Object.entries(schema)) {
     const mapping = getPropertyMapping(configuredMapping);
-    const enumMapping =
-      mapping.enum === undefined
-        ? undefined
-        : selectMiotUrnPatternValue(deviceType, mapping.enum);
     const iid =
       mapping.iid === undefined
         ? undefined
@@ -551,14 +514,7 @@ function resolveServiceProperties(
     const candidates =
       mapping.iid !== undefined && iid === undefined
         ? []
-        : findPropertyCandidates(
-            service,
-            propertyType,
-            mapping.access,
-            enumMapping,
-            mapping.enum !== undefined,
-            iid,
-          );
+        : findPropertyCandidates(service, propertyType, mapping.access, iid);
     const [property] = candidates;
 
     if (!mapping.optional) {
@@ -570,11 +526,7 @@ function resolveServiceProperties(
         return undefined;
       }
 
-      properties[mapping.name] = resolveProperty(
-        property,
-        enumMapping,
-        valueList,
-      );
+      properties[mapping.name] = resolveProperty(property, valueList);
       usedPropertyIids.add(property.iid);
       continue;
     }
@@ -589,7 +541,7 @@ function resolveServiceProperties(
 
     optionalCandidates.push([
       mapping.name,
-      resolveProperty(property, enumMapping, valueList),
+      resolveProperty(property, valueList),
     ]);
     optionalPropertyUseCount.set(
       property.iid,
@@ -613,8 +565,6 @@ function findPropertyCandidates(
   service: MiotSpecService,
   propertyType: string,
   access: MiotPropertyAccessRequirement,
-  enumMapping: MiotEnumValueMapping | undefined,
-  requiresEnumMapping: boolean,
   iid: number | undefined,
 ): readonly MiotSpecProperty[] {
   return (service.properties ?? []).filter(property => {
@@ -636,18 +586,7 @@ function findPropertyCandidates(
       return false;
     }
 
-    if (enumMapping === undefined) {
-      return !requiresEnumMapping;
-    }
-
-    const valueList = property['value-list'];
-
-    return (
-      isValidMiotSpecValueList(valueList) &&
-      Object.values(enumMapping).some(value =>
-        valueList.some(entry => entry.value === value),
-      )
-    );
+    return true;
   });
 }
 
@@ -686,13 +625,11 @@ function resolveActionProperties(
 
 function resolveProperty(
   property: MiotSpecProperty,
-  enumMapping: MiotEnumValueMapping | undefined,
   valueList: MiotSpecValueList | undefined,
 ): MiotResolvedSpecProperty {
   return Object.assign(
     {},
     property,
-    enumMapping === undefined ? {} : {enum: enumMapping},
     valueList === undefined ? {} : {'value-list': valueList},
   );
 }
@@ -700,7 +637,6 @@ function resolveProperty(
 function getPropertyMapping(mapping: MiotPropertyMapping): {
   readonly name: string;
   readonly access: MiotPropertyAccessRequirement;
-  readonly enum?: MiotEnumMapping;
   readonly iid?: MiotPropertyIidMapping;
   readonly optional: boolean;
   readonly 'value-list'?: MiotPropertyValueListMapping;
@@ -710,23 +646,10 @@ function getPropertyMapping(mapping: MiotPropertyMapping): {
     : {
         name: mapping.name,
         access: mapping.access === undefined ? 'read-notify' : mapping.access,
-        enum: mapping.enum,
         iid: mapping.iid,
         optional: mapping.optional === true,
         'value-list': mapping['value-list'],
       };
-}
-
-function isValidEnumMapping(mapping: MiotEnumMapping): boolean {
-  const entries = Object.entries(mapping);
-
-  return (
-    entries.length > 0 &&
-    entries.every(
-      ([pattern, valueMapping]) =>
-        isValidMiotUrnPattern(pattern) && isValidEnumValueMapping(valueMapping),
-    )
-  );
 }
 
 function isValidIidMapping(mapping: MiotPropertyIidMapping): boolean {
@@ -752,16 +675,6 @@ function isValidValueListMapping(
       ([pattern, valueList]) =>
         isValidMiotUrnPattern(pattern) && isValidMiotSpecValueList(valueList),
     )
-  );
-}
-
-function isValidEnumValueMapping(mapping: MiotEnumValueMapping): boolean {
-  const entries = Object.entries(mapping);
-
-  return (
-    entries.length > 0 &&
-    entries.every(([key, value]) => key.length > 0 && Number.isFinite(value)) &&
-    new Set(entries.map(([, value]) => value)).size === entries.length
   );
 }
 
@@ -800,7 +713,7 @@ export function matchesMiotUrnPattern(
   );
 }
 
-function isValidMiotUrnPattern(pattern: MiotUrnPattern): boolean {
+export function isValidMiotUrnPattern(pattern: MiotUrnPattern): boolean {
   const alternatives = getMiotUrnPatternAlternatives(pattern);
 
   return (

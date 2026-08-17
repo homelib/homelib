@@ -82,7 +82,7 @@ describe('MIoT air conditioner capabilities', () => {
     expect(getMetadataProperties(metadata)).toMatchObject({
       on: {iid: 1},
       mode: {iid: 2},
-      'fan-level': {iid: 2, enum: {auto: 0}},
+      'fan-level': {iid: 2},
       'target-temperature': {iid: 3},
       'target-humidity': {iid: 4},
     });
@@ -505,9 +505,7 @@ describe('MIoT air conditioner capabilities', () => {
       ].toSorted(),
     );
     updateProperty(connection, metadata, 'mode', 0);
-    expect(() => connection.mode).toThrow(
-      'Unknown MIoT enum property state: mode=0.',
-    );
+    expect(connection.mode).toBeUndefined();
     await executeCommand(connection, new SetAirConditionerModeCommand('cool'));
     expect(transport.requests).toEqual([
       new MiotSetPropertyRequest(
@@ -698,7 +696,7 @@ describe('MIoT air conditioner capabilities', () => {
     ).toBeUndefined();
   });
 
-  test('matches non-enum features independently of device type', () => {
+  test('matches generic features independently of device type', () => {
     const spec = {
       ...createAirConditionerSpec(),
       type: 'urn:miot-spec-v2:device:other:0000FFFF:test:1',
@@ -726,8 +724,18 @@ describe('MIoT air conditioner capabilities', () => {
       type: 'urn:miot-spec-v2:device:air-conditioner:0000A004:maxi-b01x:1',
     };
     const metadata = findMetadata(MiotAirConditionerEndpointConnection, spec);
+    const transport = new TestTransport();
+    const connection = new MiotAirConditionerEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [transport],
+    );
 
     expect(getMetadataPropertyNames(metadata)).not.toContain('fan-level');
+    expect(() =>
+      connection.prepareCommand(new SetAirConditionerFanSpeedCommand('auto')),
+    ).toThrow(CommandError);
+    expect(transport.requests).toEqual([]);
   });
 
   test('commits control and environment state atomically', () => {
@@ -888,6 +896,11 @@ describe('MIoT dehumidifier capabilities', () => {
       createExpectedRequest(metadata, 'target-humidity', 30),
       createExpectedRequest(metadata, 'target-humidity', 58),
     ]);
+    expect(
+      connection
+        .prepareCommand(new SetDehumidifierModeCommand('sleep'))
+        .toLogString?.(),
+    ).toBe('set mode=1 (sleep)');
 
     await executeCommand(
       connection,
@@ -1160,9 +1173,7 @@ describe('MIoT dehumidifier capabilities', () => {
       ].toSorted(),
     );
     updateProperty(connection, metadata, 'mode', 3);
-    expect(() => connection.mode).toThrow(
-      'Unknown MIoT enum property state: mode=3.',
-    );
+    expect(connection.mode).toBeUndefined();
   });
 
   test('matches control features without an environment service', () => {
@@ -1394,7 +1405,7 @@ describe('MIoT light capabilities', () => {
 });
 
 describe('MIoT fan capabilities', () => {
-  test('uses the device URN enum branch for state and command values', async () => {
+  test('uses the device URN codec branch for state and command values', async () => {
     const spec = {
       ...createFanSpec(),
       type: 'urn:miot-spec-v2:device:fan:0000A005:zhimi-fa1:1',
@@ -1414,6 +1425,25 @@ describe('MIoT fan capabilities', () => {
     expect(transport.requests).toEqual([
       createExpectedRequest(metadata, 'mode', 1),
     ]);
+    expect(
+      connection
+        .prepareCommand(new SetFanModeCommand('normal'))
+        .toLogString?.(),
+    ).toBe('set mode=1 (normal)');
+  });
+
+  test('returns undefined for an unmapped but physically valid mode', () => {
+    const spec = createFanSpec();
+    requireSpecProperty(spec, 2)['value-list'] = createValueList([0, 1, 2]);
+    const metadata = findMetadata(MiotFanEndpointConnection, spec);
+    const connection = new MiotFanEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
+
+    updateProperty(connection, metadata, 'mode', 2);
+    expect(connection.mode).toBeUndefined();
   });
 
   test('matches and projects mode, normalized speed, and swing', () => {

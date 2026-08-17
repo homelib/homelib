@@ -14,9 +14,52 @@ import {MiotEndpointConnection} from '../endpoint-connection.js';
 import {
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
+  isValidMiotSpecValueRange,
 } from '../miot/index.js';
 
-import {MiotCommandEffect} from './command-effect.js';
+import {type MiotPropertyValueCodec} from './@value-codec.js';
+import {MiotCommandEffect, encodeMiotPropertyValue} from './command-effect.js';
+
+const BRIGHTNESS_CODEC: MiotPropertyValueCodec<number, number> = {
+  resolve({property}) {
+    const valueRange = property['value-range'];
+
+    if (
+      !isValidMiotSpecValueRange(valueRange, property.format) ||
+      valueRange[1] <= 0
+    ) {
+      return undefined;
+    }
+
+    const maximum = valueRange[1];
+
+    return {
+      decode(raw) {
+        return typeof raw === 'number' && Number.isFinite(raw)
+          ? raw / maximum
+          : undefined;
+      },
+      encode(value) {
+        return encodeMiotPropertyValue(property, value * maximum);
+      },
+    };
+  },
+};
+
+const NUMBER_PROPERTY_CODEC: MiotPropertyValueCodec<number, number> = {
+  resolve({property}) {
+    return {
+      decode(raw) {
+        return typeof raw === 'number' && Number.isFinite(raw)
+          ? raw
+          : undefined;
+      },
+      encode(value) {
+        return encodeMiotPropertyValue(property, value);
+      },
+    };
+  },
+};
 
 export class MiotLightEndpointConnection
   extends MiotEndpointConnection<
@@ -40,6 +83,16 @@ export class MiotLightEndpointConnection
     },
   } as const satisfies MiotPropertySchema;
 
+  private readonly brightnessCodec = this.getPropertyValueCodec(
+    'brightness',
+    BRIGHTNESS_CODEC,
+  );
+
+  private readonly colorTemperatureCodec = this.getPropertyValueCodec(
+    'color-temperature',
+    NUMBER_PROPERTY_CODEC,
+  );
+
   @computed
   get on(): boolean {
     return this.getBooleanPropertyState('on', false);
@@ -47,52 +100,42 @@ export class MiotLightEndpointConnection
 
   @computed
   get brightness(): number | undefined {
-    const {brightness} = this.properties;
-
-    if (brightness === undefined) {
-      return undefined;
-    }
-
-    const valueRange = this.getPropertyValueRange(brightness);
-    const [, maximum] = valueRange;
-    const value = this.getNumberPropertyState('brightness');
-
-    return value === undefined ? undefined : value / maximum;
+    return this.brightnessCodec?.read();
   }
 
   @computed
   get colorTemperature(): number | undefined {
-    const colorTemperature = this.properties['color-temperature'];
-
-    if (colorTemperature === undefined) {
-      return undefined;
-    }
-
-    return this.getNumberPropertyState('color-temperature');
+    return this.colorTemperatureCodec?.read();
   }
 
   override prepareCommand(command: LightEndpointCommand): CommandExecution {
     let effect: MiotLightCommandEffect;
 
     if (command instanceof SetLightOnCommand) {
-      effect = new MiotLightCommandEffect(this, {on: command.value});
+      effect = new MiotLightCommandEffect(this, {
+        on: encodeMiotPropertyValue(this.properties.on, command.value),
+      });
     } else if (command instanceof SetLightBrightnessCommand) {
-      if (this.properties.brightness === undefined) {
+      const {brightnessCodec: codec} = this;
+
+      if (codec === undefined) {
         throw new CommandError('MIoT light does not support brightness.');
       }
 
       effect = new MiotLightCommandEffect(this, {
-        brightness: command.value,
+        brightness: codec.encode(command.value),
       });
     } else if (command instanceof SetLightColorTemperatureCommand) {
-      if (this.properties['color-temperature'] === undefined) {
+      const {colorTemperatureCodec: codec} = this;
+
+      if (codec === undefined) {
         throw new CommandError(
           'MIoT light does not support color temperature.',
         );
       }
 
       effect = new MiotLightCommandEffect(this, {
-        'color-temperature': command.value,
+        'color-temperature': codec.encode(command.value),
       });
     } else {
       throw new TypeError('Unsupported MIoT light endpoint command.');

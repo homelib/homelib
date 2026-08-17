@@ -2,11 +2,12 @@ import {
   type CommandEffect,
   CommandError,
   type EndpointReference,
-  Temperature,
 } from '@homelib/core';
 
 import {
+  type MiotEncodedPropertyValue,
   type MiotEndpointConnectionResolvedMetadata,
+  type MiotPropertyValue,
   getMiotEndpointConnectionProperty,
 } from '../endpoint-connection.js';
 import {
@@ -14,7 +15,6 @@ import {
   MiotSetPropertyRequest,
   isValidMiotSpecValueList,
   isValidMiotSpecValueRange,
-  matchesMiotUrnPattern,
 } from '../miot/index.js';
 
 import {clampAndQuantizeValue} from './value-range.js';
@@ -31,8 +31,107 @@ const MIOT_NUMERIC_FORMAT_RANGES: Readonly<
   uint32: [0, 4_294_967_295],
 };
 
+export type {
+  MiotEncodedPropertyValue,
+  MiotPropertyValue,
+} from '../endpoint-connection.js';
+
+/** Canonicalizes and marks one value as encoded for a physical property. */
+export function encodeMiotPropertyValue<TValue extends MiotPropertyValue>(
+  property: MiotResolvedSpecProperty,
+  value: TValue,
+): MiotEncodedPropertyValue<WidenMiotPropertyValue<TValue>> {
+  return canonicalizeMiotPropertyValue(
+    property,
+    value,
+  ) as MiotEncodedPropertyValue<WidenMiotPropertyValue<TValue>>;
+}
+
+/**
+ * Validates and canonicalizes one raw MIoT property value.
+ *
+ * Numeric ranges retain the existing command behavior: values are clamped and
+ * quantized to the declared control step. No domain-level unit conversion is
+ * performed here.
+ */
+export function canonicalizeMiotPropertyValue(
+  property: MiotResolvedSpecProperty,
+  value: unknown,
+): MiotPropertyValue {
+  const {format} = property;
+
+  if (format === 'bool') {
+    if (typeof value !== 'boolean') {
+      throw new TypeError('Invalid MIoT boolean property value.');
+    }
+
+    return value;
+  }
+
+  if (format === 'string') {
+    if (typeof value !== 'string') {
+      throw new TypeError('Invalid MIoT string property value.');
+    }
+
+    return value;
+  }
+
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TypeError('Invalid MIoT numeric property value.');
+  }
+
+  if (!Object.hasOwn(MIOT_NUMERIC_FORMAT_RANGES, format)) {
+    throw new TypeError(`Unsupported MIoT property format: ${format}.`);
+  }
+
+  const valueList = property['value-list'];
+
+  if (valueList !== undefined) {
+    if (
+      !isValidMiotSpecValueList(valueList) ||
+      !valueList.some(entry => entry.value === value)
+    ) {
+      throw new TypeError('Invalid MIoT value-list property value.');
+    }
+  }
+
+  const valueRange = property['value-range'];
+  const canonicalValue =
+    valueRange === undefined
+      ? value
+      : isValidMiotSpecValueRange(valueRange, format)
+        ? clampAndQuantizeValue(value, valueRange)
+        : undefined;
+
+  if (canonicalValue === undefined) {
+    throw new TypeError('Invalid MIoT property value range.');
+  }
+
+  if (
+    /^(?:u?int(?:8|16|32))$/.test(format) &&
+    !Number.isInteger(canonicalValue)
+  ) {
+    throw new TypeError('Invalid MIoT integer property value.');
+  }
+
+  const formatRange = MIOT_NUMERIC_FORMAT_RANGES[format];
+
+  if (
+    formatRange !== undefined &&
+    (canonicalValue < formatRange[0] || canonicalValue > formatRange[1])
+  ) {
+    throw new TypeError('MIoT property value exceeds its format range.');
+  }
+
+  return canonicalValue;
+}
+
 export type MiotCommandEffectValues<TName extends string = string> = Readonly<
-  Partial<Record<TName, unknown>>
+  Partial<Record<TName, MiotEncodedPropertyValue>>
+>;
+
+export type MiotCommandEffectLabels<TName extends string = string> = Readonly<
+  Partial<Record<TName, string>>
 >;
 
 export type MiotCommandEffectConnection = {
@@ -60,12 +159,35 @@ export class MiotCommandEffect<
   constructor(
     connection: MiotCommandEffectConnection,
     values: MiotCommandEffectValues<TPropertyName>,
+    labels?: MiotCommandEffectLabels<TPropertyName>,
   ) {
     const {metadata} = connection;
-    const entries = Object.entries(values);
+    const entries = Object.entries(values) as Array<
+      [TPropertyName, MiotEncodedPropertyValue | undefined]
+    >;
 
     if (entries.length === 0) {
       throw new TypeError('A MIoT command effect must contain a value.');
+    }
+
+    const labelEntries = Object.entries(labels ?? {}) as Array<
+      [TPropertyName, string | undefined]
+    >;
+
+    for (const [name, label] of labelEntries) {
+      if (label === undefined) {
+        continue;
+      }
+
+      if (!Object.hasOwn(values, name)) {
+        throw new TypeError(
+          `MIoT command effect label has no corresponding value: ${name}.`,
+        );
+      }
+
+      if (label.trim().length === 0) {
+        throw new TypeError(`MIoT command effect label is empty: ${name}.`);
+      }
     }
 
     this.properties = entries
@@ -90,6 +212,7 @@ export class MiotCommandEffect<
             piid: property.iid,
           },
           value: canonicalizeMiotEffectValue(property, value),
+          label: labels?.[name],
         };
       })
       .toSorted(compareMiotCommandEffectProperties);
@@ -141,15 +264,8 @@ export class MiotCommandEffect<
   /** Describes the canonical values that this effect writes to the device. */
   toLogString(): string {
     return this.properties
-      .map(({name, property, value}) => {
-        const enumName =
-          property.enum === undefined
-            ? undefined
-            : Object.entries(property.enum).find(
-                ([, enumValue]) => enumValue === value,
-              )?.[0];
-
-        return `set ${name}=${value}${enumName === undefined ? '' : ` (${enumName})`}`;
+      .map(({name, value, label}) => {
+        return `set ${name}=${value}${label === undefined ? '' : ` (${label})`}`;
       })
       .join(' ');
   }
@@ -168,11 +284,7 @@ export class MiotCommandEffect<
 
       if (
         value === undefined ||
-        canonicalizeMiotObservedEffectValue(
-          target.name,
-          target.property,
-          value,
-        ) !== target.value
+        canonicalizeMiotPropertyValue(target.property, value) !== target.value
       ) {
         return false;
       }
@@ -196,238 +308,29 @@ type MiotCommandEffectProperty = {
     readonly piid: number;
   };
   readonly value: boolean | number | string;
+  readonly label: string | undefined;
 };
 
 function canonicalizeMiotEffectValue(
   property: MiotResolvedSpecProperty,
-  value: unknown,
-): boolean | number | string {
-  const miotValue = getMiotEffectValue(property, value);
-  const valueList = property['value-list'];
-
-  if (
-    valueList !== undefined &&
-    isValidMiotSpecValueList(valueList) &&
-    !valueList.some(entry => entry.value === miotValue)
-  ) {
-    throw new CommandError(`Unsupported MIoT property value: ${miotValue}.`);
-  }
-
-  return canonicalizeMiotObservedValue(property, miotValue);
-}
-
-function canonicalizeMiotObservedEffectValue(
-  name: string,
-  property: MiotResolvedSpecProperty,
-  value: unknown,
-): boolean | number | string {
-  const canonicalValue = canonicalizeMiotObservedValue(property, value);
-  const manualFanLevels = getMiotManualFanLevels(property);
-
-  if (
-    property.enum !== undefined &&
-    (typeof canonicalValue !== 'number' ||
-      (!Object.values(property.enum).includes(canonicalValue) &&
-        !manualFanLevels?.includes(canonicalValue)))
-  ) {
-    throw new TypeError(`Unknown MIoT enum property state: ${name}=${value}.`);
-  }
-
-  return canonicalValue;
-}
-
-function canonicalizeMiotObservedValue(
-  property: MiotResolvedSpecProperty,
-  value: unknown,
-): boolean | number | string {
-  const {format} = property;
-
-  if (format === 'bool') {
-    if (typeof value !== 'boolean') {
-      throw new TypeError('Invalid MIoT boolean command effect value.');
-    }
-
-    return value;
-  }
-
-  if (format === 'string') {
-    if (typeof value !== 'string') {
-      throw new TypeError('Invalid MIoT string command effect value.');
-    }
-
-    return value;
-  }
-
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError('Invalid MIoT numeric command effect value.');
-  }
-
-  if (!Object.hasOwn(MIOT_NUMERIC_FORMAT_RANGES, format)) {
-    throw new TypeError(`Unsupported MIoT command effect format: ${format}.`);
-  }
-
+  value: MiotEncodedPropertyValue,
+): MiotPropertyValue {
   const valueList = property['value-list'];
 
   if (valueList !== undefined) {
+    if (!isValidMiotSpecValueList(valueList)) {
+      throw new TypeError('Invalid MIoT command effect value list.');
+    }
+
     if (
-      !isValidMiotSpecValueList(valueList) ||
+      typeof value !== 'number' ||
       !valueList.some(entry => entry.value === value)
     ) {
-      throw new TypeError('Invalid MIoT value-list command effect value.');
+      throw new CommandError(`Unsupported MIoT property value: ${value}.`);
     }
   }
 
-  const valueRange = property['value-range'];
-  const canonicalValue =
-    valueRange === undefined
-      ? value
-      : isValidMiotSpecValueRange(valueRange, format)
-        ? clampAndQuantizeValue(value, valueRange)
-        : undefined;
-
-  if (canonicalValue === undefined) {
-    throw new TypeError('Invalid MIoT command effect value range.');
-  }
-
-  if (
-    /^(?:u?int(?:8|16|32))$/.test(format) &&
-    !Number.isInteger(canonicalValue)
-  ) {
-    throw new TypeError('Invalid MIoT integer command effect value.');
-  }
-
-  const formatRange = MIOT_NUMERIC_FORMAT_RANGES[format];
-
-  if (
-    formatRange !== undefined &&
-    (canonicalValue < formatRange[0] || canonicalValue > formatRange[1])
-  ) {
-    throw new TypeError('MIoT command effect value exceeds its format range.');
-  }
-
-  return canonicalValue;
-}
-
-function getMiotEffectValue(
-  property: MiotResolvedSpecProperty,
-  value: unknown,
-): unknown {
-  const manualFanLevels = getMiotManualFanLevels(property);
-
-  if (property.enum !== undefined) {
-    if (typeof value !== 'string' && manualFanLevels === undefined) {
-      throw new TypeError('Invalid MIoT enum command effect value.');
-    }
-
-    if (typeof value === 'string') {
-      if (!Object.hasOwn(property.enum, value)) {
-        throw new CommandError(`Unsupported MIoT enum value: ${value}.`);
-      }
-
-      const enumValue = property.enum[value];
-
-      return enumValue;
-    }
-  }
-
-  if (value instanceof Temperature) {
-    switch (property.unit) {
-      case 'celsius':
-        return value.celsius;
-      case 'fahrenheit':
-        return value.fahrenheit;
-      case 'kelvin':
-        return value.kelvin;
-      default:
-        throw new TypeError(
-          `Unsupported MIoT temperature unit: ${property.unit ?? 'none'}.`,
-        );
-    }
-  }
-
-  if (typeof value !== 'number') {
-    return value;
-  }
-
-  if (
-    matchesMiotUrnPattern(
-      property.type,
-      'urn:miot-spec-v2:property:brightness:0000000D',
-    )
-  ) {
-    const valueRange = property['value-range'];
-
-    if (!isValidMiotSpecValueRange(valueRange, property.format)) {
-      throw new TypeError('Invalid MIoT brightness value range.');
-    }
-
-    return value * valueRange[1];
-  }
-
-  if (
-    matchesMiotUrnPattern(
-      property.type,
-      'urn:miot-spec-v2:property:relative-humidity:0000000C',
-    ) ||
-    matchesMiotUrnPattern(
-      property.type,
-      'urn:miot-spec-v2:property:target-humidity:00000022',
-    )
-  ) {
-    return value * 100;
-  }
-
-  if (isMiotFanLevelProperty(property)) {
-    const valueList = property['value-list'];
-
-    if (!isValidMiotSpecValueList(valueList)) {
-      throw new TypeError('Invalid MIoT fan-level value list.');
-    }
-
-    const levels =
-      manualFanLevels ??
-      valueList.map(entry => entry.value).toSorted((a, b) => a - b);
-    // Hybrid fan levels reserve enum values such as Auto, so their remaining
-    // manual levels span the closed normalized interval from 0 to 1.
-    const scaledIndex =
-      manualFanLevels === undefined
-        ? Math.round(value * levels.length) - 1
-        : Math.round(value * (levels.length - 1));
-    const index = Math.min(levels.length - 1, Math.max(0, scaledIndex));
-
-    return levels[index];
-  }
-
-  return value;
-}
-
-function getMiotManualFanLevels(
-  property: MiotResolvedSpecProperty,
-): readonly number[] | undefined {
-  if (property.enum === undefined || !isMiotFanLevelProperty(property)) {
-    return undefined;
-  }
-
-  const valueList = property['value-list'];
-
-  if (!isValidMiotSpecValueList(valueList)) {
-    return undefined;
-  }
-
-  const enumValues = new Set(Object.values(property.enum));
-  const manualLevels = valueList
-    .map(entry => entry.value)
-    .filter(value => !enumValues.has(value))
-    .toSorted((a, b) => a - b);
-
-  return manualLevels.length === 0 ? undefined : manualLevels;
-}
-
-function isMiotFanLevelProperty(property: MiotResolvedSpecProperty): boolean {
-  return matchesMiotUrnPattern(
-    property.type,
-    'urn:miot-spec-v2:property:fan-level:00000016',
-  );
+  return encodeMiotPropertyValue(property, value);
 }
 
 function compareMiotCommandEffectProperties(
@@ -461,3 +364,12 @@ function miotCommandEffectPropertiesEqual(
     })
   );
 }
+
+type WidenMiotPropertyValue<TValue extends MiotPropertyValue> =
+  TValue extends boolean
+    ? boolean
+    : TValue extends number
+      ? number
+      : TValue extends string
+        ? string
+        : never;

@@ -19,6 +19,12 @@ import {
   resolveMiotActionSchema,
 } from '../miot/index.js';
 
+import {createMiotNamedValueCodec} from './@value-codec.js';
+
+const PET_FOOD_LEVEL_CODEC = createMiotNamedValueCodec<PetFoodLevel>({
+  '*': {normal: 0, low: 1},
+});
+
 export class MiotPetFeederEndpointConnection
   extends MiotEndpointConnection<
     PetFeederEndpointCommand,
@@ -40,12 +46,6 @@ export class MiotPetFeederEndpointConnection
     'urn:miot-spec-v2:service:pet-feeder:00007847': {
       'urn:miot-spec-v2:property:pet-food-left-level:0000010E': {
         name: 'pet-food-left-level',
-        enum: {
-          '*': {
-            normal: 0,
-            low: 1,
-          },
-        },
       },
       'urn:miot-spec-v2:property:eaten-food-measure:000002FA': {
         name: 'eaten-food-measure',
@@ -56,9 +56,14 @@ export class MiotPetFeederEndpointConnection
     },
   } as const satisfies MiotPropertySchema;
 
+  private readonly foodLevelCodec = this.getPropertyValueCodec(
+    'pet-food-left-level',
+    PET_FOOD_LEVEL_CODEC,
+  );
+
   @computed
   get foodLevel(): PetFoodLevel | undefined {
-    return this.getEnumPropertyState('pet-food-left-level');
+    return this.foodLevelCodec?.read();
   }
 
   @computed

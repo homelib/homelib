@@ -50,10 +50,6 @@ const LIGHT_PROPERTIES = {
     'urn:miot-spec-v2:property:on:00000006': 'on',
     'urn:miot-spec-v2:property:mode:00000008': {
       name: 'mode',
-      enum: {
-        'urn:miot-spec-v2:device:light:0000A001:alternate-*': {off: 1, on: 0},
-        '*': {off: 0, on: 1},
-      },
       optional: true,
     },
   },
@@ -192,17 +188,6 @@ test('restores a previously selected split environment without discovery', () =>
     {service: {iid: 4}, properties: {temperature: {iid: 1}}},
     {service: {iid: 5}, properties: {relativeHumidity: {iid: 1}}},
   ]);
-});
-
-test('restores the enum mapping selected by the persisted device URN', () => {
-  const Connection = createConnection();
-  const metadata = createLegacyMetadata(
-    [createLightService(2)],
-    ALTERNATE_DEVICE_TYPE,
-  );
-  const resolved = resolveMiotEndpointConnectionMetadata(Connection, metadata);
-
-  expect(resolved.resources[0]?.properties.mode?.enum).toEqual({off: 1, on: 0});
 });
 
 test('derives newly supported optional properties from persisted services', () => {
