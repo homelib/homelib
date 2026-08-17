@@ -3,6 +3,7 @@ import {
   Dehumidifier,
   Fan,
   Light,
+  MotionAmbientLightLevelSensor,
   MotionSensor,
   PetFeeder,
   TemperatureHumiditySensor,
@@ -14,6 +15,7 @@ register({
   dehumidifier: Dehumidifier,
   fan: Fan,
   light: Light,
+  motionAmbientLightLevelSensor: MotionAmbientLightLevelSensor,
   motionSensor: MotionSensor,
   petFeeder: PetFeeder,
   temperatureHumiditySensor: TemperatureHumiditySensor,
@@ -27,6 +29,7 @@ declare global {
       dehumidifier: Dehumidifier;
       fan: Fan;
       light: Light;
+      motionAmbientLightLevelSensor: MotionAmbientLightLevelSensor;
       motionSensor: MotionSensor;
       petFeeder: PetFeeder;
       temperatureHumiditySensor: TemperatureHumiditySensor;

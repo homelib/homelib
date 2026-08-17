@@ -2,7 +2,10 @@ import {computed} from 'mobx';
 
 import type {Temperature} from '../atomics/index.js';
 import {StatefulCommand} from '../command.js';
-import type {HumiditySensor, TemperatureSensor} from '../device/index.js';
+import type {
+  RelativeHumiditySource,
+  TemperatureSource,
+} from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
   Endpoint,
@@ -16,7 +19,7 @@ export type AirConditionerFanSpeed = 'auto' | number;
 
 export class AirConditioner
   extends Device
-  implements TemperatureSensor, HumiditySensor
+  implements TemperatureSource, RelativeHumiditySource
 {
   protected readonly endpoint: AirConditionerEndpoint;
 
@@ -89,8 +92,8 @@ export class AirConditioner
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(relativeHumidity: number): this {
-    this.endpoint.setTargetHumidity(relativeHumidity);
+  setTargetRelativeHumidity(relativeHumidity: number): this {
+    this.endpoint.setTargetRelativeHumidity(relativeHumidity);
     return this;
   }
 }
@@ -177,9 +180,9 @@ export class AirConditionerEndpoint<
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(relativeHumidity: number): this {
+  setTargetRelativeHumidity(relativeHumidity: number): this {
     return this.enqueueCommand(
-      new SetAirConditionerTargetHumidityCommand(relativeHumidity),
+      new SetAirConditionerTargetRelativeHumidityCommand(relativeHumidity),
     );
   }
 }
@@ -255,7 +258,7 @@ export class SetAirConditionerTargetTemperatureCommand extends AirConditionerCom
   }
 }
 
-export class SetAirConditionerTargetHumidityCommand extends AirConditionerCommand {
+export class SetAirConditionerTargetRelativeHumidityCommand extends AirConditionerCommand {
   /** A normalized relative-humidity ratio from 0 to 1. */
   constructor(readonly relativeHumidity: number) {
     super();
@@ -281,4 +284,4 @@ export type AirConditionerEndpointCommand =
   | SetAirConditionerModeCommand
   | SetAirConditionerFanSpeedCommand
   | SetAirConditionerTargetTemperatureCommand
-  | SetAirConditionerTargetHumidityCommand;
+  | SetAirConditionerTargetRelativeHumidityCommand;

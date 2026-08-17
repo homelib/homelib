@@ -10,7 +10,7 @@ import {
   SetAirConditionerFanSpeedCommand,
   SetAirConditionerModeCommand,
   SetAirConditionerOnCommand,
-  SetAirConditionerTargetHumidityCommand,
+  SetAirConditionerTargetRelativeHumidityCommand,
   SetAirConditionerTargetTemperatureCommand,
 } from './air-conditioner.js';
 
@@ -24,14 +24,14 @@ test('commands return their receiver', () => {
   expect(airConditioner.setTargetTemperature(targetTemperature)).toBe(
     airConditioner,
   );
-  expect(airConditioner.setTargetHumidity(0.5)).toBe(airConditioner);
+  expect(airConditioner.setTargetRelativeHumidity(0.5)).toBe(airConditioner);
   expect(airConditioner.turnOff()).toBe(airConditioner);
 
   expect(endpoint.turnOn()).toBe(endpoint);
   expect(endpoint.setMode('dry')).toBe(endpoint);
   expect(endpoint.setFanSpeed(0.5)).toBe(endpoint);
   expect(endpoint.setTargetTemperature(targetTemperature)).toBe(endpoint);
-  expect(endpoint.setTargetHumidity(0.6)).toBe(endpoint);
+  expect(endpoint.setTargetRelativeHumidity(0.6)).toBe(endpoint);
   expect(endpoint.turnOff()).toBe(endpoint);
 });
 
@@ -47,7 +47,7 @@ test('turnOn enqueues on before chained setters when off', async () => {
     .setMode('cool')
     .setFanSpeed(0)
     .setTargetTemperature(targetTemperature)
-    .setTargetHumidity(0.5);
+    .setTargetRelativeHumidity(0.5);
   await flushMicrotasks();
 
   expect(connection.commands).toEqual([
@@ -55,7 +55,7 @@ test('turnOn enqueues on before chained setters when off', async () => {
     new SetAirConditionerModeCommand('cool'),
     new SetAirConditionerFanSpeedCommand(0),
     new SetAirConditionerTargetTemperatureCommand(targetTemperature),
-    new SetAirConditionerTargetHumidityCommand(0.5),
+    new SetAirConditionerTargetRelativeHumidityCommand(0.5),
   ]);
 });
 

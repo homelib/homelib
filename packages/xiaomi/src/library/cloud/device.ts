@@ -37,6 +37,8 @@ export class CloudDeviceChannel {
 
   private stateRefreshRequest: CloudDeviceStateRefreshRequest | undefined;
 
+  private readonly snapshotRetryEntrySet = new Set<CloudDeviceListenerEntry>();
+
   private brokerConnected = true;
 
   private stateRefreshPromise: Promise<void> | undefined;
@@ -85,6 +87,10 @@ export class CloudDeviceChannel {
         request.replaySnapshotPropertyNotifications ?? [],
       ).keys(),
     );
+    const refreshSnapshotOnEventKeySet = createEventKeySet(
+      this.did,
+      request.refreshSnapshotOnEvents ?? [],
+    );
 
     for (const key of replaySnapshotPropertyNotificationKeySet) {
       if (!snapshotPropertyMap.has(key) || !propertyChangeMap.has(key)) {
@@ -94,15 +100,34 @@ export class CloudDeviceChannel {
       }
     }
 
+    if (
+      refreshSnapshotOnEventKeySet.size > 0 &&
+      snapshotPropertyMap.size === 0
+    ) {
+      throw new TypeError(
+        `Cloud device ${this.did} cannot refresh an empty snapshot on events.`,
+      );
+    }
+
+    for (const key of refreshSnapshotOnEventKeySet) {
+      if (!eventKeySet.has(key)) {
+        throw new TypeError(
+          `Cloud device ${this.did} can only refresh snapshots for subscribed events.`,
+        );
+      }
+    }
+
     const listenerEntry: CloudDeviceListenerEntry = {
       snapshotPropertyMap,
       propertyChangeMap,
       eventKeySet,
       replaySnapshotPropertyNotificationKeySet,
+      refreshSnapshotOnEventKeySet,
       listener,
       initialized: false,
       bufferingNotifications: true,
       pendingNotifications: [],
+      deliveredSnapshotPropertyKeySet: new Set(),
     };
 
     this.listenerEntrySet.add(listenerEntry);
@@ -166,7 +191,7 @@ export class CloudDeviceChannel {
   }
 
   private requestStateRefresh(onlineOverride?: boolean): void {
-    this.stateRefreshRequest = {onlineOverride};
+    this.stateRefreshRequest = {type: 'state', onlineOverride};
     this.stopStateRefresh();
     this.startStateRefresh();
   }
@@ -184,11 +209,22 @@ export class CloudDeviceChannel {
       return;
     }
 
-    const entries = [...this.listenerEntrySet];
+    const entries =
+      request.type === 'snapshot-retry'
+        ? [...this.snapshotRetryEntrySet].filter(entry =>
+            this.listenerEntrySet.has(entry),
+          )
+        : [...this.listenerEntrySet];
 
-    void this.refreshEntries(entries, request.onlineOverride).catch(
-      () => undefined,
-    );
+    if (entries.length === 0) {
+      this.stateRefreshRequest = undefined;
+      return;
+    }
+
+    void this.refreshEntries(entries, {
+      onlineOverride: request.onlineOverride,
+      reportFailuresToListeners: true,
+    }).catch(() => undefined);
 
     const promise = Promise.all(
       entries.map(entry => this.waitForEntryRefresh(entry)),
@@ -203,11 +239,22 @@ export class CloudDeviceChannel {
 
         this.stateRefreshPromise = undefined;
 
-        if (this.stateRefreshRequest === request) {
+        if (this.stateRefreshRequest !== request) {
+          this.scheduleStateRefresh();
+          return;
+        }
+
+        if (this.snapshotRetryEntrySet.size === 0) {
           this.stateRefreshRequest = undefined;
+        } else {
+          this.stateRefreshRequest = {
+            type: 'snapshot-retry',
+            onlineOverride: undefined,
+          };
+          this.scheduleStateRefresh();
         }
       },
-      error => {
+      () => {
         if (this.stateRefreshPromise !== promise) {
           return;
         }
@@ -215,14 +262,13 @@ export class CloudDeviceChannel {
         this.stateRefreshPromise = undefined;
 
         if (
-          this.stateRefreshRequest !== request ||
+          this.stateRefreshRequest === undefined ||
           !this.brokerConnected ||
           this.listenerEntrySet.size === 0
         ) {
           return;
         }
 
-        this.notifyError(error);
         this.scheduleStateRefresh();
       },
     );
@@ -250,6 +296,49 @@ export class CloudDeviceChannel {
     if (this.stateRefreshRetryTimeout !== undefined) {
       clearTimeout(this.stateRefreshRetryTimeout);
       this.stateRefreshRetryTimeout = undefined;
+    }
+  }
+
+  private updateSnapshotRetry(
+    entry: CloudDeviceListenerEntry,
+    retry: boolean,
+  ): void {
+    if (!this.listenerEntrySet.has(entry)) {
+      return;
+    }
+
+    if (retry) {
+      this.snapshotRetryEntrySet.add(entry);
+    } else {
+      this.snapshotRetryEntrySet.delete(entry);
+    }
+
+    if (this.snapshotRetryEntrySet.size === 0) {
+      if (this.stateRefreshRequest?.type === 'snapshot-retry') {
+        this.stateRefreshRequest = undefined;
+
+        if (this.stateRefreshRetryTimeout !== undefined) {
+          clearTimeout(this.stateRefreshRetryTimeout);
+          this.stateRefreshRetryTimeout = undefined;
+        }
+      }
+
+      return;
+    }
+
+    if (this.online === false || !this.brokerConnected) {
+      return;
+    }
+
+    if (this.stateRefreshRequest === undefined) {
+      this.stateRefreshRequest = {
+        type: 'snapshot-retry',
+        onlineOverride: undefined,
+      };
+    }
+
+    if (this.stateRefreshPromise === undefined) {
+      this.scheduleStateRefresh();
     }
   }
 
@@ -286,7 +375,7 @@ export class CloudDeviceChannel {
 
   private refreshEntries(
     requestedEntries: readonly CloudDeviceListenerEntry[],
-    onlineOverride?: boolean,
+    options: CloudDeviceRefreshOptions = {},
   ): Promise<void> {
     const entries = requestedEntries.filter(entry =>
       this.listenerEntrySet.has(entry),
@@ -300,7 +389,7 @@ export class CloudDeviceChannel {
     const sequence = ++this.refreshSequence;
     let resolvePromise!: () => void;
     let rejectPromise!: (error: unknown) => void;
-    const promise = new Promise<void>((resolve, reject) => {
+    const internalPromise = new Promise<void>((resolve, reject) => {
       resolvePromise = resolve;
       rejectPromise = reject;
     });
@@ -309,23 +398,55 @@ export class CloudDeviceChannel {
       entry.refreshOperation?.replace();
       retainRefreshIndependentNotifications(entry);
       entry.bufferingNotifications = true;
-      entry.refreshOperation = createRefreshOperation(token, promise);
+      const entryPromise = internalPromise.catch(error => {
+        const failure = normalizeRefreshFailure(error, entries);
+
+        if (failure.failedEntrySet.has(entry)) {
+          throw failure.getEntryReason(entry);
+        }
+      });
+      void entryPromise.catch(() => undefined);
+      entry.refreshOperation = createRefreshOperation(token, entryPromise);
     }
 
     void this.readAndPublishState(
       entries,
       token,
       sequence,
-      onlineOverride,
+      options.onlineOverride,
     ).then(resolvePromise, error => {
+      const failure = normalizeRefreshFailure(error, entries);
+
       for (const entry of entries) {
-        recoverEntryNotifications(entry, token);
+        const current =
+          this.listenerEntrySet.has(entry) &&
+          entry.refreshOperation?.token === token;
+        const invalidateSnapshot =
+          current &&
+          failure.failedEntrySet.has(entry) &&
+          entry.initialized &&
+          entry.bufferingNotifications &&
+          hasPendingSnapshotRefreshEvent(entry);
+
+        if (invalidateSnapshot) {
+          invalidateDeliveredEntrySnapshot(entry);
+        }
+
+        if (current && failure.failedEntrySet.has(entry)) {
+          recoverEntryNotifications(entry, token);
+
+          if (options.reportFailuresToListeners === true) {
+            notifyListenerError(entry.listener, failure.getEntryReason(entry));
+          }
+        }
       }
 
-      rejectPromise(error);
+      rejectPromise(failure);
     });
 
-    return promise;
+    return internalPromise.catch(error => {
+      throw normalizeRefreshFailure(error, entries).reason;
+    });
   }
 
   private async waitForEntryRefresh(
@@ -424,7 +545,7 @@ export class CloudDeviceChannel {
       return;
     }
 
-    const refreshErrors: unknown[] = [];
+    const entryErrorMap = new Map<CloudDeviceListenerEntry, unknown>();
     const notificationOnlyEntries = currentEntries.filter(
       entry => entry.snapshotPropertyMap.size === 0,
     );
@@ -440,8 +561,9 @@ export class CloudDeviceChannel {
             properties: [],
           });
           replayEntryNotifications(entry, refreshToken);
+          this.updateSnapshotRetry(entry, false);
         } catch (error) {
-          refreshErrors.push(error);
+          entryErrorMap.set(entry, error);
         }
       }
     }
@@ -451,10 +573,7 @@ export class CloudDeviceChannel {
     );
 
     if (currentEntries.length === 0) {
-      if (refreshErrors.length > 0) {
-        throw refreshErrors[0];
-      }
-
+      throwEntryRefreshErrors(entryErrorMap);
       return;
     }
 
@@ -467,10 +586,7 @@ export class CloudDeviceChannel {
     );
 
     if (currentEntries.length === 0) {
-      if (refreshErrors.length > 0) {
-        throw refreshErrors[0];
-      }
-
+      throwEntryRefreshErrors(entryErrorMap);
       return;
     }
 
@@ -478,26 +594,42 @@ export class CloudDeviceChannel {
 
     if (!online) {
       this.publishState(currentEntries, false, new Map(), refreshToken);
-
-      if (refreshErrors.length > 0) {
-        throw refreshErrors[0];
-      }
-
+      throwEntryRefreshErrors(entryErrorMap);
       return;
-    } else if (propertyOutcome.status === 'rejected') {
-      throw propertyOutcome.reason;
     }
 
+    const wholePropertyReadFailed = propertyOutcome.status === 'rejected';
+    const wholePropertyReadError =
+      propertyOutcome.status === 'rejected'
+        ? propertyOutcome.reason
+        : undefined;
+    const {
+      resultMap,
+      resultErrorMap,
+      errors: protocolErrors,
+    } = propertyOutcome.status === 'fulfilled'
+      ? collectSnapshotResults(this.did, propertyMap, propertyOutcome.value)
+      : {
+          resultMap: new Map<string, CloudPropertySnapshot>(),
+          resultErrorMap: new Map<string, Error>(),
+          errors: [],
+        };
     const currentPropertyMap = createEntryPropertyMap(currentEntries);
-    const {resultMap, resultErrorMap, errors} = collectSnapshotResults(
-      this.did,
-      currentPropertyMap,
-      propertyOutcome.value,
-    );
+    const snapshotReadFailedPropertyKeySet = new Set(
+      [...currentPropertyMap.keys()].filter(key => {
+        if (wholePropertyReadFailed || resultErrorMap.has(key)) {
+          return true;
+        }
 
-    for (const error of errors) {
-      this.notifyError(error);
-    }
+        const result = resultMap.get(key);
+
+        return (
+          result === undefined ||
+          (result.code !== 0 && result.code !== 1) ||
+          !Object.hasOwn(result, 'value')
+        );
+      }),
+    );
 
     const propertyErrorMap = new Map<string, unknown>();
     const propertyUpdateMap = new Map<
@@ -525,6 +657,11 @@ export class CloudDeviceChannel {
         ) {
           continue;
         }
+      }
+
+      if (wholePropertyReadFailed) {
+        propertyErrorMap.set(key, wholePropertyReadError);
+        continue;
       }
 
       const resultError = resultErrorMap.get(key);
@@ -556,46 +693,93 @@ export class CloudDeviceChannel {
       }
     }
 
-    const successfulEntries: CloudDeviceListenerEntry[] = [];
+    const entryAvailablePropertyKeyMap = new Map<
+      CloudDeviceListenerEntry,
+      ReadonlySet<string>
+    >();
+    const entryUnavailableSnapshotPropertyKeyMap = new Map<
+      CloudDeviceListenerEntry,
+      ReadonlySet<string>
+    >();
+    const entryFailedSnapshotPropertyKeyMap = new Map<
+      CloudDeviceListenerEntry,
+      ReadonlySet<string>
+    >();
+    const hasFreshCachedProperty = (key: string): boolean => {
+      const baseline = propertyBaselineMap.get(key) ?? 0;
+      const currentRevision = this.propertyRevisionMap.get(key) ?? 0;
+      const cachedProperty = this.propertyCacheMap.get(key);
+      const cachedRefreshSequence =
+        this.propertyRefreshSequenceMap.get(key) ?? 0;
+
+      return (
+        currentRevision !== baseline &&
+        cachedProperty !== undefined &&
+        (cachedProperty.source === 'mqtt' ||
+          cachedRefreshSequence > refreshSequence)
+      );
+    };
 
     for (const entry of currentEntries) {
-      const entryErrors = [...entry.snapshotPropertyMap.keys()].flatMap(key => {
-        const error = propertyErrorMap.get(key);
+      const availablePropertyKeySet = new Set<string>();
+      const unavailableSnapshotPropertyKeySet = new Set<string>();
+      const failedSnapshotPropertyKeySet = new Set<string>();
 
-        if (error === undefined) {
-          return [];
-        }
-
-        const baseline = propertyBaselineMap.get(key) ?? 0;
-        const currentRevision = this.propertyRevisionMap.get(key) ?? 0;
-
+      for (const key of entry.snapshotPropertyMap.keys()) {
         const cachedProperty = this.propertyCacheMap.get(key);
         const cachedRefreshSequence =
           this.propertyRefreshSequenceMap.get(key) ?? 0;
+        const preserveSupersededSelectedNotification =
+          entry.replaySnapshotPropertyNotificationKeySet.has(key) &&
+          cachedProperty?.source === 'mqtt' &&
+          cachedRefreshSequence > refreshSequence &&
+          hasPendingSnapshotPropertyNotification(
+            entry,
+            key,
+            propertyBaselineMap.get(key) ?? 0,
+          );
 
-        return currentRevision !== baseline &&
-          cachedProperty !== undefined &&
-          (cachedProperty.source === 'mqtt' ||
-            cachedRefreshSequence > refreshSequence)
-          ? []
-          : [error];
-      });
+        if (preserveSupersededSelectedNotification) {
+          unavailableSnapshotPropertyKeySet.add(key);
 
-      if (entryErrors.length > 0) {
-        refreshErrors.push(...entryErrors);
-        continue;
+          if (snapshotReadFailedPropertyKeySet.has(key)) {
+            failedSnapshotPropertyKeySet.add(key);
+          }
+
+          continue;
+        }
+
+        if (
+          propertyErrorMap.has(key) &&
+          (!hasFreshCachedProperty(key) ||
+            entry.replaySnapshotPropertyNotificationKeySet.has(key))
+        ) {
+          unavailableSnapshotPropertyKeySet.add(key);
+          failedSnapshotPropertyKeySet.add(key);
+          continue;
+        }
+
+        availablePropertyKeySet.add(key);
       }
 
-      successfulEntries.push(entry);
+      entryAvailablePropertyKeyMap.set(entry, availablePropertyKeySet);
+      entryUnavailableSnapshotPropertyKeyMap.set(
+        entry,
+        unavailableSnapshotPropertyKeySet,
+      );
+      entryFailedSnapshotPropertyKeyMap.set(
+        entry,
+        failedSnapshotPropertyKeySet,
+      );
     }
 
-    const successfulPropertyKeySet = new Set(
-      successfulEntries.flatMap(entry => [...entry.snapshotPropertyMap.keys()]),
+    const availablePropertyKeySet = new Set(
+      [...entryAvailablePropertyKeyMap.values()].flatMap(keys => [...keys]),
     );
     const replayedSnapshotUpdateMap = new Map<string, CloudPropertyUpdate>();
 
     for (const [key, update] of propertyUpdateMap) {
-      if (successfulPropertyKeySet.has(key)) {
+      if (availablePropertyKeySet.has(key)) {
         const baseline = propertyBaselineMap.get(key) ?? 0;
         const currentRevision = this.propertyRevisionMap.get(key) ?? 0;
         const cachedProperty = this.propertyCacheMap.get(key);
@@ -628,52 +812,105 @@ export class CloudDeviceChannel {
       }
     }
 
-    if (successfulEntries.length > 0) {
+    if (entryAvailablePropertyKeyMap.size > 0) {
       this.commitRefreshOnline(true, refreshSequence);
 
-      for (const entry of successfulEntries) {
-        const properties = [...entry.snapshotPropertyMap.keys()].map(key => {
-          const property = entry.replaySnapshotPropertyNotificationKeySet.has(
-            key,
-          )
-            ? (replayedSnapshotUpdateMap.get(key) ??
-              this.propertyCacheMap.get(key))
-            : this.propertyCacheMap.get(key);
+      for (const [
+        entry,
+        availablePropertyKeySet,
+      ] of entryAvailablePropertyKeyMap) {
+        const properties = [...entry.snapshotPropertyMap.keys()].flatMap(
+          key => {
+            if (!availablePropertyKeySet.has(key)) {
+              return [];
+            }
 
-          if (property === undefined) {
-            throw new TypeError(
-              `Cloud device state is missing property ${key}.`,
-            );
-          }
+            const property = entry.replaySnapshotPropertyNotificationKeySet.has(
+              key,
+            )
+              ? (replayedSnapshotUpdateMap.get(key) ??
+                this.propertyCacheMap.get(key))
+              : this.propertyCacheMap.get(key);
 
-          return property;
-        });
+            if (property === undefined) {
+              throw new TypeError(
+                `Cloud device state is missing property ${key}.`,
+              );
+            }
+
+            return [property];
+          },
+        );
+        const invalidatedProperties = [...entry.snapshotPropertyMap].flatMap(
+          ([key, property]) => {
+            return entry.deliveredSnapshotPropertyKeySet.has(key) &&
+              !availablePropertyKeySet.has(key)
+              ? [property]
+              : [];
+          },
+        );
+        const failedSnapshotPropertyKeySet =
+          entryFailedSnapshotPropertyKeyMap.get(entry) ?? new Set<string>();
+        const unavailableSnapshotPropertyKeySet =
+          entryUnavailableSnapshotPropertyKeyMap.get(entry) ??
+          new Set<string>();
 
         try {
           // Snapshot-backed notifications already present in the cache are
           // represented by the state published below. Remove only those that
-          // arrived before publication; a synchronous state listener may
-          // enqueue newer notifications, which must still be replayed.
+          // arrived before callbacks; a synchronous invalidation or state
+          // listener may enqueue newer notifications, which must still be
+          // replayed.
           retainPostSnapshotNotifications(
             entry,
             replayedSnapshotUpdateMap,
             propertyBaselineMap,
+            unavailableSnapshotPropertyKeySet,
           );
+
           publishListenerState(entry, {
             did: this.did,
             online: true,
             properties,
+            ...(invalidatedProperties.length === 0
+              ? {}
+              : {invalidatedProperties}),
           });
           replayEntryNotifications(entry, refreshToken);
+          this.updateSnapshotRetry(
+            entry,
+            wholePropertyReadFailed || failedSnapshotPropertyKeySet.size > 0,
+          );
+
+          if (wholePropertyReadFailed) {
+            notifyListenerError(entry.listener, wholePropertyReadError);
+          }
         } catch (error) {
-          refreshErrors.push(error);
+          entryErrorMap.set(entry, error);
         }
       }
     }
 
-    if (refreshErrors.length > 0) {
-      throw refreshErrors[0];
+    for (const entry of currentEntries) {
+      const duplicateErrorSet = new Set(
+        [...entry.snapshotPropertyMap.keys()].flatMap(key => {
+          const error = resultErrorMap.get(key);
+          return error === undefined ? [] : [error];
+        }),
+      );
+
+      for (const error of duplicateErrorSet) {
+        notifyListenerError(entry.listener, error);
+      }
     }
+
+    for (const error of protocolErrors) {
+      for (const entry of currentEntries) {
+        notifyListenerError(entry.listener, error);
+      }
+    }
+
+    throwEntryRefreshErrors(entryErrorMap);
   }
 
   private getCurrentRefreshEntries(
@@ -727,7 +964,7 @@ export class CloudDeviceChannel {
     propertyMap: ReadonlyMap<string, CloudPropertyUpdate>,
     refreshToken: object,
   ): void {
-    const errors: unknown[] = [];
+    const entryErrorMap = new Map<CloudDeviceListenerEntry, unknown>();
 
     for (const entry of entries) {
       const properties = [...entry.snapshotPropertyMap.keys()].flatMap(key => {
@@ -737,16 +974,15 @@ export class CloudDeviceChannel {
 
       try {
         publishListenerState(entry, {did: this.did, online, properties});
+        this.updateSnapshotRetry(entry, false);
       } catch (error) {
-        errors.push(error);
+        entryErrorMap.set(entry, error);
       } finally {
         discardEntryNotifications(entry, refreshToken);
       }
     }
 
-    if (errors.length > 0) {
-      throw errors[0];
-    }
+    throwEntryRefreshErrors(entryErrorMap);
   }
 
   private handleMessage(message: CloudMqttDeviceMessage): void {
@@ -788,11 +1024,24 @@ export class CloudDeviceChannel {
         type: 'event',
         data: event,
       };
+      const refreshEntries: CloudDeviceListenerEntry[] = [];
 
       for (const entry of this.listenerEntrySet) {
         if (entry.eventKeySet.has(key)) {
-          queueOrDispatchEntryNotification(entry, notification);
+          if (entry.refreshSnapshotOnEventKeySet.has(key)) {
+            entry.pendingNotifications.push(notification);
+            refreshEntries.push(entry);
+          } else {
+            queueOrDispatchEntryNotification(entry, notification);
+          }
         }
+      }
+
+      if (refreshEntries.length > 0) {
+        void this.refreshEntries(refreshEntries, {
+          onlineOverride: true,
+          reportFailuresToListeners: true,
+        }).catch(() => undefined);
       }
     } else {
       this.stateGeneration++;
@@ -832,6 +1081,7 @@ export class CloudDeviceChannel {
       return;
     }
 
+    this.snapshotRetryEntrySet.delete(listenerEntry);
     listenerEntry.refreshOperation?.replace();
     listenerEntry.refreshOperation = undefined;
 
@@ -842,6 +1092,14 @@ export class CloudDeviceChannel {
     }
 
     if (this.listenerEntrySet.size > 0) {
+      if (
+        this.snapshotRetryEntrySet.size === 0 &&
+        this.stateRefreshRequest?.type === 'snapshot-retry'
+      ) {
+        this.stateRefreshRequest = undefined;
+        this.stopStateRefresh();
+      }
+
       return;
     }
 
@@ -895,8 +1153,8 @@ export type CloudDeviceSubscription = {
 
 export type CloudDeviceSubscriptionRequest = {
   /**
-   * Properties required in each complete state snapshot. Snapshot failures
-   * prevent the subscription from initializing or refreshing.
+   * Properties observed in each state snapshot when available. Snapshot
+   * failures do not prevent the subscription from initializing or refreshing.
    */
   readonly snapshotProperties: readonly MiotProperty[];
   /**
@@ -907,6 +1165,12 @@ export type CloudDeviceSubscriptionRequest = {
    * arrival order afterward.
    */
   readonly notifications?: readonly CloudDeviceNotificationTarget[];
+  /**
+   * Subscribed events that refresh the complete snapshot before the event is
+   * delivered. Every event must also appear in {@link notifications}, and the
+   * subscription must contain at least one snapshot property.
+   */
+  readonly refreshSnapshotOnEvents?: readonly MiotEvent[];
   /**
    * Snapshot properties whose buffered property-change notifications must be
    * replayed after the snapshot instead of being absorbed into it. Each entry
@@ -922,6 +1186,10 @@ export type CloudDeviceNotificationTarget =
 
 export type CloudDeviceListener = {
   readonly onStateChanged?: (state: CloudDeviceState) => void;
+  /** Invalidates snapshot properties whose current values are unavailable. */
+  readonly onSnapshotInvalidated?: (
+    properties: readonly MiotProperty[],
+  ) => void;
   readonly onNotification?: (notification: CloudDeviceNotification) => void;
   /** @deprecated Use {@link onNotification}. */
   readonly onPropertyChanged?: (update: CloudPropertyUpdate) => void;
@@ -934,6 +1202,8 @@ export type CloudDeviceState = {
   readonly did: string;
   readonly online: boolean;
   readonly properties: readonly CloudPropertyUpdate[];
+  /** Previously delivered snapshot properties invalidated by this state. */
+  readonly invalidatedProperties?: readonly MiotProperty[];
 };
 
 export type CloudPropertyUpdate = MiotProperty & {
@@ -979,15 +1249,23 @@ type CloudDeviceListenerEntry = {
   readonly propertyChangeMap: ReadonlyMap<string, MiotProperty>;
   readonly eventKeySet: ReadonlySet<string>;
   readonly replaySnapshotPropertyNotificationKeySet: ReadonlySet<string>;
+  readonly refreshSnapshotOnEventKeySet: ReadonlySet<string>;
   readonly listener: CloudDeviceListener;
   readonly pendingNotifications: CloudDeviceNotification[];
+  readonly deliveredSnapshotPropertyKeySet: Set<string>;
   initialized: boolean;
   bufferingNotifications: boolean;
   refreshOperation?: CloudDeviceRefreshOperation;
 };
 
 type CloudDeviceStateRefreshRequest = {
+  readonly type: 'state' | 'snapshot-retry';
   readonly onlineOverride: boolean | undefined;
+};
+
+type CloudDeviceRefreshOptions = {
+  readonly onlineOverride?: boolean | undefined;
+  readonly reportFailuresToListeners?: boolean;
 };
 
 type CloudDeviceRefreshOperation = {
@@ -996,6 +1274,55 @@ type CloudDeviceRefreshOperation = {
   readonly replaced: Promise<void>;
   replace(): void;
 };
+
+class CloudDeviceRefreshFailure {
+  readonly failedEntrySet: ReadonlySet<CloudDeviceListenerEntry>;
+
+  constructor(
+    readonly reason: unknown,
+    private readonly entryReasonMap: ReadonlyMap<
+      CloudDeviceListenerEntry,
+      unknown
+    >,
+  ) {
+    this.failedEntrySet = new Set(entryReasonMap.keys());
+  }
+
+  getEntryReason(entry: CloudDeviceListenerEntry): unknown {
+    return this.entryReasonMap.get(entry) ?? this.reason;
+  }
+}
+
+function createRefreshFailure(
+  reason: unknown,
+  entryReasonMap: ReadonlyMap<CloudDeviceListenerEntry, unknown>,
+): CloudDeviceRefreshFailure {
+  return new CloudDeviceRefreshFailure(reason, entryReasonMap);
+}
+
+function normalizeRefreshFailure(
+  error: unknown,
+  entries: readonly CloudDeviceListenerEntry[],
+): CloudDeviceRefreshFailure {
+  if (error instanceof CloudDeviceRefreshFailure) {
+    return error;
+  }
+
+  return createRefreshFailure(
+    error,
+    new Map(entries.map(entry => [entry, error] as const)),
+  );
+}
+
+function throwEntryRefreshErrors(
+  entryErrorMap: ReadonlyMap<CloudDeviceListenerEntry, unknown>,
+): void {
+  const firstError = entryErrorMap.values().next().value as unknown;
+
+  if (entryErrorMap.size > 0) {
+    throw createRefreshFailure(firstError, entryErrorMap);
+  }
+}
 
 function createRefreshOperation(
   token: object,
@@ -1058,11 +1385,11 @@ function collectSnapshotResults(
         new Error(`Cloud snapshot returned unexpected property ${key}.`),
       );
     } else if (resultMap.has(key) || resultErrorMap.has(key)) {
-      resultMap.delete(key);
-      resultErrorMap.set(
-        key,
-        new Error(`Cloud snapshot returned duplicate property ${key}.`),
+      const error = new Error(
+        `Cloud snapshot returned duplicate property ${key}.`,
       );
+      resultMap.delete(key);
+      resultErrorMap.set(key, error);
     } else {
       resultMap.set(key, result);
     }
@@ -1184,7 +1511,7 @@ function queueOrDispatchEntryNotification(
     return;
   }
 
-  dispatchListenerNotification(entry.listener, notification);
+  dispatchListenerNotification(entry, notification);
 }
 
 function replayEntryNotifications(
@@ -1203,7 +1530,7 @@ function replayEntryNotifications(
         return;
       }
 
-      dispatchListenerNotification(entry.listener, notification);
+      dispatchListenerNotification(entry, notification);
     }
   }
 
@@ -1236,7 +1563,7 @@ function recoverEntryNotifications(
         return;
       }
 
-      dispatchListenerNotification(entry.listener, notification);
+      dispatchListenerNotification(entry, notification);
     }
   }
 
@@ -1278,6 +1605,7 @@ function retainPostSnapshotNotifications(
   entry: CloudDeviceListenerEntry,
   replayedSnapshotUpdateMap: ReadonlyMap<string, CloudPropertyUpdate>,
   propertyBaselineMap: ReadonlyMap<string, number>,
+  unavailableSnapshotPropertyKeySet: ReadonlySet<string>,
 ): void {
   const notifications = entry.pendingNotifications.filter(notification => {
     if (notification.type === 'event') {
@@ -1289,8 +1617,9 @@ function retainPostSnapshotNotifications(
     return (
       !entry.snapshotPropertyMap.has(key) ||
       (entry.replaySnapshotPropertyNotificationKeySet.has(key) &&
-        replayedSnapshotUpdateMap.has(key) &&
-        notification.data.revision > (propertyBaselineMap.get(key) ?? 0))
+        (unavailableSnapshotPropertyKeySet.has(key) ||
+          (replayedSnapshotUpdateMap.has(key) &&
+            notification.data.revision > (propertyBaselineMap.get(key) ?? 0))))
     );
   });
 
@@ -1299,6 +1628,52 @@ function retainPostSnapshotNotifications(
     entry.pendingNotifications.length,
     ...notifications,
   );
+}
+
+function hasPendingSnapshotPropertyNotification(
+  entry: CloudDeviceListenerEntry,
+  key: string,
+  baselineRevision: number,
+): boolean {
+  return entry.pendingNotifications.some(notification => {
+    return (
+      notification.type === 'property-change' &&
+      getPropertyKey(notification.data) === key &&
+      notification.data.revision > baselineRevision
+    );
+  });
+}
+
+function invalidateDeliveredEntrySnapshot(
+  entry: CloudDeviceListenerEntry,
+): void {
+  const properties = [...entry.snapshotPropertyMap].flatMap(
+    ([key, property]) => {
+      return entry.deliveredSnapshotPropertyKeySet.has(key) ? [property] : [];
+    },
+  );
+
+  if (properties.length === 0) {
+    return;
+  }
+
+  entry.deliveredSnapshotPropertyKeySet.clear();
+  callListenerCallback(
+    entry.listener,
+    entry.listener.onSnapshotInvalidated,
+    properties,
+  );
+}
+
+function hasPendingSnapshotRefreshEvent(
+  entry: CloudDeviceListenerEntry,
+): boolean {
+  return entry.pendingNotifications.some(notification => {
+    return (
+      notification.type === 'event' &&
+      entry.refreshSnapshotOnEventKeySet.has(getEventKey(notification.data))
+    );
+  });
 }
 
 function isRefreshIndependentNotification(
@@ -1327,9 +1702,10 @@ function discardEntryNotifications(
 }
 
 function dispatchListenerNotification(
-  listener: CloudDeviceListener,
+  entry: CloudDeviceListenerEntry,
   notification: CloudDeviceNotification,
 ): void {
+  const {listener} = entry;
   callListenerCallback(listener, listener.onNotification, notification);
 
   if (notification.type === 'property-change') {
@@ -1341,6 +1717,15 @@ function dispatchListenerNotification(
   } else {
     callListenerCallback(listener, listener.onEventOccurred, notification.data);
   }
+
+  if (
+    notification.type === 'property-change' &&
+    entry.snapshotPropertyMap.has(getPropertyKey(notification.data))
+  ) {
+    entry.deliveredSnapshotPropertyKeySet.add(
+      getPropertyKey(notification.data),
+    );
+  }
 }
 
 function publishListenerState(
@@ -1349,6 +1734,18 @@ function publishListenerState(
 ): void {
   entry.listener.onStateChanged?.(state);
   entry.initialized = true;
+
+  if (state.online) {
+    entry.deliveredSnapshotPropertyKeySet.clear();
+
+    for (const property of state.properties) {
+      const key = getPropertyKey(property);
+
+      if (entry.snapshotPropertyMap.has(key)) {
+        entry.deliveredSnapshotPropertyKeySet.add(key);
+      }
+    }
+  }
 }
 
 function notifyListenerError(

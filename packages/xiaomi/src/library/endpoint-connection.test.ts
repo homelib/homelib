@@ -13,7 +13,7 @@ import {
   SetLightOnCommand,
   Temperature,
 } from '@homelib/core';
-import {autorun} from 'mobx';
+import {autorun, reaction} from 'mobx';
 
 import {
   CloudDeviceChannel,
@@ -40,6 +40,7 @@ import {
   type MiotEventArgument,
   type MiotExecutionRequest,
   type MiotExecutionResult,
+  type MiotProperty,
   type MiotPropertySchema,
   MiotSetPropertyRequest,
   type MiotSpecEvent,
@@ -579,8 +580,10 @@ test('rejects legacy single-service endpoint metadata', () => {
 
 test('separates snapshot properties from all notification targets', () => {
   const connection = createMultiResourceConnection();
+  const snapshotProperties: readonly MiotProperty[] =
+    connection.snapshotProperties;
 
-  expect(connection.snapshotProperties).toEqual([
+  expect(snapshotProperties).toEqual([
     {did: TEST_METADATA.device.did, siid: 2, piid: 1},
     {did: TEST_METADATA.device.did, siid: 3, piid: 1},
     {did: TEST_METADATA.device.did, siid: 3, piid: 2},
@@ -598,6 +601,287 @@ test('separates snapshot properties from all notification targets', () => {
     {
       type: 'property-change',
       data: {did: TEST_METADATA.device.did, siid: 3, piid: 2},
+    },
+  ]);
+});
+
+test('selects all participating snapshot properties', () => {
+  const connection = createSelectedSnapshotConnection();
+
+  expect(connection.snapshotProperties).toEqual([
+    {did: TEST_METADATA.device.did, siid: 2, piid: 1},
+    {did: TEST_METADATA.device.did, siid: 3, piid: 1},
+  ]);
+  expect(connection.replaySnapshotPropertyNotifications).toEqual([
+    {did: TEST_METADATA.device.did, siid: 2, piid: 1},
+    {did: TEST_METADATA.device.did, siid: 3, piid: 1},
+  ]);
+});
+
+test('accepts any valid online snapshot subset, including an empty subset', () => {
+  const connection = createSelectedSnapshotConnection();
+
+  expect(
+    connection.handleStateUpdate({
+      did: TEST_METADATA.device.did,
+      online: true,
+      properties: [],
+    }),
+  ).toEqual([]);
+  expect(connection.ready).toBe(true);
+
+  expect(
+    connection.handleStateUpdate({
+      did: TEST_METADATA.device.did,
+      online: true,
+      properties: [
+        {did: TEST_METADATA.device.did, siid: 3, piid: 1, value: 24.5},
+      ],
+    }),
+  ).toEqual([]);
+
+  expect(connection.ready).toBe(true);
+  expect(connection.getCommandEffectState('on')).toBeUndefined();
+  expect(connection.getCommandEffectState('temperature')).toBe(24.5);
+
+  expect(
+    connection.handleStateUpdate({
+      did: TEST_METADATA.device.did,
+      online: true,
+      properties: [
+        {did: TEST_METADATA.device.did, siid: 2, piid: 1, value: true},
+      ],
+    }),
+  ).toEqual([]);
+
+  expect(connection.ready).toBe(true);
+  expect(connection.getCommandEffectState('on')).toBe(true);
+  expect(connection.getCommandEffectState('temperature')).toBe(24.5);
+});
+
+test('keeps an online endpoint ready when only selected values are omitted', () => {
+  const connection = createSelectedSnapshotConnection();
+
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [
+      {did: TEST_METADATA.device.did, siid: 2, piid: 1, value: true},
+    ],
+  });
+
+  expect(connection.ready).toBe(true);
+  expect(connection.getCommandEffectState('on')).toBe(true);
+  expect(connection.getCommandEffectState('temperature')).toBeUndefined();
+});
+
+test('invalidates a snapshot property without losing readiness', () => {
+  const connection = createSelectedSnapshotConnection();
+  const temperature = {
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 1,
+  } as const;
+
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [
+      {did: TEST_METADATA.device.did, siid: 2, piid: 1, value: true},
+      {...temperature, value: 24.5},
+    ],
+  });
+  const revision = connection.stateRevision;
+
+  connection.handleSnapshotInvalidation([temperature]);
+
+  expect(connection.ready).toBe(true);
+  expect(connection.stateRevision).toBe(revision + 1);
+  expect(connection.getCommandEffectState('temperature')).toBeUndefined();
+  expect(connection.getObservationRevision(['temperature'])).toBe(revision + 1);
+  expect(connection.invalidatedSnapshotProperties).toEqual(['temperature']);
+});
+
+test('commits partial snapshot state and invalidation in one observable revision', () => {
+  const connection = createSelectedSnapshotConnection();
+  const on = {did: TEST_METADATA.device.did, siid: 2, piid: 1} as const;
+  const temperature = {
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 1,
+  } as const;
+
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [
+      {...on, value: true},
+      {...temperature, value: 24.5},
+    ],
+  });
+
+  const revision = connection.stateRevision;
+  const values: Array<readonly [boolean | undefined, number | undefined]> = [];
+  const disposeReaction = reaction(
+    () => [connection.observedOn, connection.observedTemperature] as const,
+    value => values.push(value),
+    {fireImmediately: true},
+  );
+
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [{...on, value: false}],
+    invalidatedProperties: [temperature],
+  });
+
+  expect(values).toEqual([
+    [true, 24.5],
+    [false, undefined],
+  ]);
+  expect(connection.ready).toBe(true);
+  expect(connection.stateRevision).toBe(revision + 1);
+  expect(connection.getObservationRevision(['on'])).toBe(revision + 1);
+  expect(connection.getObservationRevision(['temperature'])).toBe(revision + 1);
+  expect(connection.invalidatedSnapshotProperties).toEqual(['temperature']);
+  disposeReaction();
+});
+
+test('soft-invalidates invalid snapshot values while committing valid siblings', () => {
+  const connection = createSelectedSnapshotConnection();
+  const on = {did: TEST_METADATA.device.did, siid: 2, piid: 1} as const;
+  const temperature = {
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 1,
+  } as const;
+
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [
+      {...on, value: true},
+      {...temperature, value: 24.5},
+    ],
+  });
+  const revision = connection.stateRevision;
+
+  const errors = connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [
+      {...on, value: false},
+      {...temperature, value: 200},
+    ],
+  });
+
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toEqual(
+    new TypeError(
+      'Invalid MIoT ranged property state. temperature=200 at did device-1, siid 3, piid 1; expected -30..100.',
+    ),
+  );
+  expect(connection.ready).toBe(true);
+  expect(connection.stateRevision).toBe(revision + 1);
+  expect(connection.getCommandEffectState('on')).toBe(false);
+  expect(connection.getCommandEffectState('temperature')).toBeUndefined();
+  expect(connection.getObservationRevision(['on'])).toBe(revision + 1);
+  expect(connection.getObservationRevision(['temperature'])).toBe(revision + 1);
+  expect(connection.invalidatedSnapshotProperties).toEqual(['temperature']);
+});
+
+test('rejects invalid partial snapshot state atomically', () => {
+  const connection = createSelectedSnapshotConnection();
+  const on = {did: TEST_METADATA.device.did, siid: 2, piid: 1} as const;
+  const temperature = {
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 1,
+  } as const;
+  const relativeHumidity = {
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 2,
+  } as const;
+
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [
+      {...on, value: true},
+      {...temperature, value: 24.5},
+    ],
+  });
+
+  const revision = connection.stateRevision;
+  const expectUnchanged = (): void => {
+    expect(connection.ready).toBe(true);
+    expect(connection.stateRevision).toBe(revision);
+    expect(connection.getCommandEffectState('on')).toBe(true);
+    expect(connection.getCommandEffectState('temperature')).toBe(24.5);
+    expect(connection.getObservationRevision(['on'])).toBe(revision);
+    expect(connection.getObservationRevision(['temperature'])).toBe(revision);
+    expect(connection.invalidatedSnapshotProperties).toEqual([]);
+  };
+
+  expect(() =>
+    connection.handleStateUpdate({
+      did: TEST_METADATA.device.did,
+      online: true,
+      properties: [{...on, value: false}],
+      invalidatedProperties: [relativeHumidity],
+    }),
+  ).toThrow('Unexpected MIoT endpoint snapshot invalidation property.');
+  expectUnchanged();
+
+  expect(() =>
+    connection.handleStateUpdate({
+      did: TEST_METADATA.device.did,
+      online: true,
+      properties: [{...on, value: false}],
+      invalidatedProperties: [temperature, temperature],
+    }),
+  ).toThrow('Duplicate MIoT endpoint snapshot invalidation property.');
+  expectUnchanged();
+
+  expect(() =>
+    connection.handleStateUpdate({
+      did: TEST_METADATA.device.did,
+      online: true,
+      properties: [
+        {...on, value: false},
+        {...temperature, value: 20},
+      ],
+      invalidatedProperties: [temperature],
+    }),
+  ).toThrow('MIoT endpoint state update property is also invalidated.');
+  expectUnchanged();
+
+  expect(() =>
+    connection.handleStateUpdate({
+      did: TEST_METADATA.device.did,
+      online: true,
+      properties: [{...temperature, value: 'invalid'}],
+      invalidatedProperties: [temperature],
+    }),
+  ).toThrow('MIoT endpoint state update property is also invalidated.');
+  expectUnchanged();
+});
+
+test('selects resolved events that request snapshot refreshes', () => {
+  const defaultConnection = createEventConnection();
+  const refreshConnection = new TestSnapshotRefreshEventEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_EVENT_METADATA,
+    [new TestTransport()],
+  );
+
+  expect(defaultConnection.snapshotRefreshEvents).toEqual([]);
+  expect(refreshConnection.snapshotRefreshEvents).toEqual([
+    {
+      did: TEST_EVENT_METADATA.device.did,
+      siid: TEST_EVENT_METADATA.resources[0]?.service.iid,
+      eiid: TEST_EVENT.iid,
     },
   ]);
 });
@@ -634,10 +918,10 @@ test('can exclude a property from snapshots without dropping its notification', 
   expect(connection.relativeHumidity).toBe(55);
 });
 
-test('checks snapshot completeness by selected property addresses', () => {
+test('does not require selected property completeness for online updates', () => {
   const connection = createFilteredSnapshotConnection();
 
-  expect(() =>
+  expect(
     connection.handleStateUpdate({
       did: TEST_METADATA.device.did,
       online: true,
@@ -646,9 +930,76 @@ test('checks snapshot completeness by selected property addresses', () => {
         {did: TEST_METADATA.device.did, siid: 3, piid: 2, value: 55},
       ],
     }),
-  ).toThrow('Incomplete MIoT endpoint state update.');
-  expect(connection.ready).toBe(false);
-  expect(connection.relativeHumidity).toBe(0);
+  ).toEqual([]);
+  expect(connection.ready).toBe(true);
+  expect(connection.on).toBe(true);
+  expect(connection.temperature).toBe(0);
+  expect(connection.relativeHumidity).toBe(55);
+});
+
+test('invalidates selected snapshot properties atomically', () => {
+  const connection = createFilteredSnapshotConnection();
+  const on = {did: TEST_METADATA.device.did, siid: 2, piid: 1} as const;
+  const temperature = {
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 1,
+  } as const;
+  const relativeHumidity = {
+    did: TEST_METADATA.device.did,
+    siid: 3,
+    piid: 2,
+  } as const;
+
+  connection.handleStateUpdate({
+    did: TEST_METADATA.device.did,
+    online: true,
+    properties: [
+      {...on, value: true},
+      {...temperature, value: 24.5},
+    ],
+  });
+  connection.handleNotification({
+    type: 'property-change',
+    data: {...relativeHumidity, value: 55},
+  });
+
+  const revision = connection.stateRevision;
+  const expectUnchanged = (): void => {
+    expect(connection.ready).toBe(true);
+    expect(connection.stateRevision).toBe(revision);
+    expect(connection.getCommandEffectState('on')).toBe(true);
+    expect(connection.getCommandEffectState('temperature')).toBe(24.5);
+    expect(connection.getCommandEffectState('relativeHumidity')).toBe(55);
+  };
+
+  expect(() =>
+    connection.handleSnapshotInvalidation([on, {...temperature, piid: 999}]),
+  ).toThrow('Unexpected MIoT endpoint snapshot invalidation property.');
+  expectUnchanged();
+
+  expect(() => connection.handleSnapshotInvalidation([on, on])).toThrow(
+    'Duplicate MIoT endpoint snapshot invalidation property.',
+  );
+  expectUnchanged();
+
+  expect(() =>
+    connection.handleSnapshotInvalidation([relativeHumidity]),
+  ).toThrow('Unexpected MIoT endpoint snapshot invalidation property.');
+  expectUnchanged();
+
+  connection.handleSnapshotInvalidation([on, temperature]);
+
+  expect(connection.ready).toBe(true);
+  expect(connection.stateRevision).toBe(revision + 1);
+  expect(connection.getCommandEffectState('on')).toBeUndefined();
+  expect(connection.getCommandEffectState('temperature')).toBeUndefined();
+  expect(connection.getCommandEffectState('relativeHumidity')).toBe(55);
+  expect(connection.getObservationRevision(['on'])).toBe(revision + 1);
+  expect(connection.getObservationRevision(['temperature'])).toBe(revision + 1);
+  expect(connection.getObservationRevision(['relativeHumidity'])).toBe(
+    revision,
+  );
 });
 
 test('validates and dispatches tagged event notifications once', () => {
@@ -1620,7 +1971,7 @@ test('commits the initial light state and ready flag atomically', () => {
   });
 
   expect(values).toEqual([
-    [false, false, 0, 2_600],
+    [false, false, undefined, undefined],
     [true, true, 0.4, 4_000],
   ]);
 
@@ -1722,37 +2073,33 @@ test('tracks observation revisions independently for each property alias', () =>
   expect(connection.getObservationRevision(['on', 'brightness'])).toBe(4);
 });
 
-test('rejects incomplete initial state without exposing partial values', () => {
+test('accepts an initial light state missing other snapshot values', () => {
   const connection = new MiotLightEndpointConnection(
     new MiotProvider('provider'),
     TEST_DIMMABLE_METADATA,
     [new TestTransport()],
   );
 
-  expect(() =>
-    connection.handleStateUpdate({
-      did: TEST_DIMMABLE_METADATA.device.did,
-      online: true,
-      properties: [
-        {
-          did: TEST_DIMMABLE_METADATA.device.did,
-          siid: TEST_DIMMABLE_PRIMARY_RESOURCE.service.iid,
-          piid: 1,
-          value: true,
-        },
-      ],
-    }),
-  ).toThrow('Incomplete MIoT endpoint state update.');
-  expect(connection.ready).toBe(false);
-  expect(connection.on).toBe(false);
-  expect(connection.brightness).toBe(0);
-  expect(connection.colorTemperature).toBe(2_600);
+  connection.handleStateUpdate({
+    did: TEST_DIMMABLE_METADATA.device.did,
+    online: true,
+    properties: [
+      {
+        did: TEST_DIMMABLE_METADATA.device.did,
+        siid: TEST_DIMMABLE_PRIMARY_RESOURCE.service.iid,
+        piid: 1,
+        value: true,
+      },
+    ],
+  });
+
+  expect(connection.ready).toBe(true);
+  expect(connection.on).toBe(true);
+  expect(connection.brightness).toBeUndefined();
+  expect(connection.colorTemperature).toBeUndefined();
+  expect(connection.getObservationRevision(['on'])).toBe(1);
   expect(
-    connection.getObservationRevision([
-      'on',
-      'brightness',
-      'color-temperature',
-    ]),
+    connection.getObservationRevision(['brightness', 'color-temperature']),
   ).toBe(0);
 });
 
@@ -1787,9 +2134,9 @@ test('normalizes optional light property state', () => {
   });
 
   expect(values).toEqual([
-    [0, 2_600],
-    [0.01, 2_600],
-    [0.5, 2_600],
+    [undefined, undefined],
+    [0.01, undefined],
+    [0.5, undefined],
     [0.5, 4_000],
   ]);
   disposeAutorun();
@@ -1997,6 +2344,14 @@ function createFilteredSnapshotConnection(): TestFilteredSnapshotEndpointConnect
   );
 }
 
+function createSelectedSnapshotConnection(): TestSelectedSnapshotEndpointConnection {
+  return new TestSelectedSnapshotEndpointConnection(
+    new MiotProvider('provider'),
+    TEST_MULTI_RESOURCE_METADATA,
+    [new TestTransport()],
+  );
+}
+
 function createEventConnection(): TestEventEndpointConnection {
   return new TestEventEndpointConnection(
     new MiotProvider('provider'),
@@ -2188,6 +2543,30 @@ class TestFilteredSnapshotEndpointConnection extends TestMultiResourceEndpointCo
   }
 }
 
+class TestSelectedSnapshotEndpointConnection extends TestMultiResourceEndpointConnection {
+  readonly invalidatedSnapshotProperties: string[] = [];
+
+  get observedOn(): boolean | undefined {
+    return this.getBooleanPropertyState('on');
+  }
+
+  get observedTemperature(): number | undefined {
+    return this.getNumberPropertyState('temperature');
+  }
+
+  protected override isSnapshotProperty(name: string): boolean {
+    return name !== 'relativeHumidity';
+  }
+
+  protected override shouldReplaySnapshotPropertyNotifications(): boolean {
+    return true;
+  }
+
+  protected override handleSnapshotPropertyInvalidated(name: string): void {
+    this.invalidatedSnapshotProperties.push(name);
+  }
+}
+
 class TestEventEndpointConnection extends MiotEndpointConnection<never> {
   readonly receivedEvents: Array<{
     readonly name: string;
@@ -2204,6 +2583,15 @@ class TestEventEndpointConnection extends MiotEndpointConnection<never> {
 
   override prepareCommand(_command: never): CommandExecution {
     return {execute: () => Promise.resolve()};
+  }
+}
+
+class TestSnapshotRefreshEventEndpointConnection extends TestEventEndpointConnection {
+  protected override shouldRefreshSnapshotOnEvent(
+    name: string,
+    _event: MiotSpecEvent,
+  ): boolean {
+    return name === 'changed';
   }
 }
 

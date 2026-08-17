@@ -151,11 +151,13 @@ test('removes duplicate stale paths with retry and locked input', async () => {
     expect(terminal.frame()).toContain('removing stale binding');
 
     await terminal.input('\u001B');
+    await delay(25);
+    await terminal.flush();
     expect(backCallCount).toBe(0);
     expect(terminal.frame()).toContain('removing stale binding');
 
     rejectFirstWrite(new Error('write failed.'));
-    await terminal.flush();
+    await waitForFrame(terminal, 'write failed.');
     expect(terminal.frame()).toContain('write failed.');
 
     await terminal.input('r');
@@ -228,11 +230,13 @@ test('unbinds from the core device page without a provider renderer', async () =
     expect(terminal.frame()).toContain('removing binding');
 
     await terminal.input('\u001B');
+    await delay(25);
+    await terminal.flush();
     expect(backCallCount).toBe(0);
     expect(terminal.frame()).toContain('removing binding');
 
     rejectFirstWrite(new Error('write failed.'));
-    await terminal.flush();
+    await waitForFrame(terminal, 'write failed.');
     expect(terminal.frame()).toContain('write failed.');
 
     await terminal.input('r');
@@ -311,6 +315,21 @@ function getEndpointPathKey(path: EndpointPath): string {
   return JSON.stringify([path.scopePath, path.deviceName, path.endpointName]);
 }
 
+async function waitForFrame(
+  terminal: TestTerminal,
+  expected: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await terminal.flush();
+
+    if (terminal.frame().includes(expected)) {
+      return;
+    }
+  }
+
+  throw new Error(`Timed out waiting for terminal frame: ${expected}`);
+}
+
 function renderTestTerminal(node: React.ReactNode): TestTerminal {
   const stdin = new PassThrough() as PassThrough & NodeJS.ReadStream;
   const stdout = new PassThrough() as PassThrough & NodeJS.WriteStream;
@@ -379,3 +398,9 @@ type TestTerminal = {
   readonly input: (value: string) => Promise<void>;
   readonly close: () => Promise<void>;
 };
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(resolve, milliseconds);
+  });
+}

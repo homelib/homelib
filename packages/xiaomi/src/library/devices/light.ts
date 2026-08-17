@@ -55,7 +55,7 @@ export class MiotLightEndpointConnection
 
     const valueRange = this.getPropertyValueRange(brightness);
     const [, maximum] = valueRange;
-    const value = this.getNumberPropertyState('brightness', 0);
+    const value = this.getNumberPropertyState('brightness');
 
     return value === undefined ? undefined : value / maximum;
   }
@@ -68,9 +68,7 @@ export class MiotLightEndpointConnection
       return undefined;
     }
 
-    const valueRange = this.getPropertyValueRange(colorTemperature);
-    const [minimum] = valueRange;
-    return this.getNumberPropertyState('color-temperature', minimum);
+    return this.getNumberPropertyState('color-temperature');
   }
 
   override prepareCommand(command: LightEndpointCommand): CommandExecution {

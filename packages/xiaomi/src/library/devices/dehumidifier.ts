@@ -7,7 +7,7 @@ import {
   type DehumidifierMode,
   SetDehumidifierModeCommand,
   SetDehumidifierOnCommand,
-  SetDehumidifierTargetHumidityCommand,
+  SetDehumidifierTargetRelativeHumidityCommand,
   Temperature,
 } from '@homelib/core';
 import {computed, observable} from 'mobx';
@@ -125,6 +125,12 @@ export class MiotDehumidifierEndpointConnection
     this.waterTankFullValue = undefined;
   }
 
+  protected override handleSnapshotPropertyInvalidated(name: string): void {
+    if (name === 'fault') {
+      this.waterTankFullValue = undefined;
+    }
+  }
+
   override prepareCommand(
     command: DehumidifierEndpointCommand,
   ): CommandExecution {
@@ -141,7 +147,9 @@ export class MiotDehumidifierEndpointConnection
       effect = new MiotDehumidifierCommandEffect(this, {
         mode: command.value,
       });
-    } else if (command instanceof SetDehumidifierTargetHumidityCommand) {
+    } else if (
+      command instanceof SetDehumidifierTargetRelativeHumidityCommand
+    ) {
       if (this.properties['target-humidity'] === undefined) {
         throw new CommandError(
           'MIoT dehumidifier does not support target humidity.',

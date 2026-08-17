@@ -1,4 +1,7 @@
-import {MotionSensorEndpoint} from '@homelib/core';
+import {
+  MotionAmbientLightLevelSensorEndpoint,
+  MotionSensorEndpoint,
+} from '@homelib/core';
 
 import {
   createMiotEndpointConnectionMetadata,
@@ -8,6 +11,7 @@ import {
 import {
   type MiotEndpointConnectionResolvedMetadata,
   MiotEndpointConnectionTransport,
+  type MiotEndpointStateUpdate,
   type MiotEventUpdate,
   getMiotEndpointConnectionEvent,
   getMiotEndpointConnectionProperty,
@@ -21,6 +25,7 @@ import type {
 } from '../miot/index.js';
 import {MiotProvider} from '../provider.js';
 
+import {MiotMotionAmbientLightLevelSensorEndpointConnection} from './motion-ambient-light-level-sensor.js';
 import {MiotMotionSensorEndpointConnection} from './motion-sensor.js';
 
 const NO_MOTION_DURATION_PROPERTY_TYPE =
@@ -30,6 +35,394 @@ const MOTION_DETECTED_EVENT_TYPE =
   'urn:miot-spec-v2:event:motion-detected:00005001:lumi-bmgl01:1';
 
 const MOTION_CLEAR_TIMEOUT = 5 * 60_000;
+
+test('matches the exact lumi.motion.bmgl01 motion and ambient light resources', () => {
+  const spec = createSpec();
+  const resources = resolveMiotEndpointConnectionResources(
+    MiotMotionAmbientLightLevelSensorEndpointConnection,
+    spec,
+  );
+
+  expect(MiotMotionAmbientLightLevelSensorEndpointConnection.Endpoint).toBe(
+    MotionAmbientLightLevelSensorEndpoint,
+  );
+  expect(resources).toHaveLength(1);
+  expect(resources?.[0]).toMatchObject({
+    service: {iid: 2},
+    properties: {
+      'ambient-light-level': {
+        iid: 1,
+        access: ['read'],
+        enum: {low: 1, high: 2},
+      },
+      'no-motion-duration': {iid: 2},
+    },
+    events: {'motion-detected': {iid: 1}},
+  });
+
+  const {connection} = createMotionAmbientLightLevelConnection(spec);
+
+  expect(connection.snapshotProperties).toEqual([
+    {did: 'sensor-1', siid: 2, piid: 1},
+  ]);
+  expect(connection.snapshotRefreshEvents).toEqual([
+    {did: 'sensor-1', siid: 2, eiid: 1},
+  ]);
+  expect(connection.notificationTargets).toEqual([
+    {
+      type: 'property-change',
+      data: {did: 'sensor-1', siid: 2, piid: 2},
+    },
+    {
+      type: 'event',
+      data: {did: 'sensor-1', siid: 2, eiid: 1},
+    },
+  ]);
+  expect(connection.replaySnapshotPropertyNotifications).toEqual([]);
+});
+
+test('requires the exact lumi.motion.bmgl01 device and illumination property', () => {
+  const wrongDevice = createSpec();
+  wrongDevice.type =
+    'urn:miot-spec-v2:device:motion-sensor:0000A014:lumi-bmgl01:2';
+
+  expect(
+    resolveMiotEndpointConnectionResources(
+      MiotMotionAmbientLightLevelSensorEndpointConnection,
+      wrongDevice,
+    ),
+  ).toBeUndefined();
+
+  const missingIllumination = createSpec();
+  const service = requireService(missingIllumination, 2);
+  service.properties = service.properties?.filter(
+    property => property.iid !== 1,
+  );
+
+  expect(
+    resolveMiotEndpointConnectionResources(
+      MiotMotionAmbientLightLevelSensorEndpointConnection,
+      missingIllumination,
+    ),
+  ).toBeUndefined();
+
+  const wrongIlluminationIid = createSpec();
+  const [illumination] =
+    requireService(wrongIlluminationIid, 2).properties ?? [];
+
+  if (illumination === undefined) {
+    throw new Error('Test sensor has no illumination property.');
+  }
+
+  illumination.iid = 4;
+
+  expect(
+    resolveMiotEndpointConnectionResources(
+      MiotMotionAmbientLightLevelSensorEndpointConnection,
+      wrongIlluminationIid,
+    ),
+  ).toBeUndefined();
+});
+
+test('fails closed with multiple exact motion and ambient light services', () => {
+  const spec = createSpec();
+  spec.services.push({...createMotionSensorService(), iid: 4});
+
+  expect(
+    resolveMiotEndpointConnectionResources(
+      MiotMotionAmbientLightLevelSensorEndpointConnection,
+      spec,
+    ),
+  ).toBeUndefined();
+});
+
+test.each([
+  [1, 'low'],
+  [2, 'high'],
+])(
+  'exposes illumination %i as ambientLightLevel=%s only for detected motion',
+  (value, expected) => {
+    const {connection, metadata, ambientLightLevel, motionDetected} =
+      createMotionAmbientLightLevelConnection();
+    const noMotionDuration = getMiotEndpointConnectionProperty(
+      metadata,
+      'no-motion-duration',
+    );
+
+    expect(connection.ready).toBe(false);
+    expect(connection.motionDetected).toBeUndefined();
+    expect(connection.ambientLightLevel).toBeUndefined();
+
+    connection.handleStateUpdate({
+      did: connection.metadata.device.did,
+      online: true,
+      properties: [
+        {
+          did: connection.metadata.device.did,
+          siid: ambientLightLevel.service.iid,
+          piid: ambientLightLevel.property.iid,
+          value,
+        },
+      ],
+    });
+
+    expect(connection.ready).toBe(true);
+    expect(connection.motionDetected).toBe(false);
+    expect(connection.ambientLightLevel).toBeUndefined();
+
+    connection.handleNotification({
+      type: 'event',
+      data: createEventUpdate(connection, motionDetected),
+    });
+
+    expect(connection.motionDetected).toBe(true);
+    expect(connection.ambientLightLevel).toBe(expected);
+
+    connection.handleNotification({
+      type: 'property-change',
+      data: {
+        did: connection.metadata.device.did,
+        siid: noMotionDuration.service.iid,
+        piid: noMotionDuration.property.iid,
+        value: 0,
+      },
+    });
+
+    expect(connection.motionDetected).toBe(true);
+    expect(connection.ambientLightLevel).toBe(expected);
+
+    connection.handleNotification({
+      type: 'property-change',
+      data: {
+        did: connection.metadata.device.did,
+        siid: noMotionDuration.service.iid,
+        piid: noMotionDuration.property.iid,
+        value: 2,
+      },
+    });
+
+    expect(connection.motionDetected).toBe(false);
+    expect(connection.ambientLightLevel).toBeUndefined();
+
+    connection.handleNotification({
+      type: 'property-change',
+      data: {
+        did: connection.metadata.device.did,
+        siid: noMotionDuration.service.iid,
+        piid: noMotionDuration.property.iid,
+        value: 0,
+      },
+    });
+
+    expect(connection.motionDetected).toBe(true);
+    expect(connection.ambientLightLevel).toBeUndefined();
+
+    connection.dispose();
+  },
+);
+
+test('does not expose the initial snapshot for motion inferred without an event', () => {
+  const {connection, metadata, ambientLightLevel} =
+    createMotionAmbientLightLevelConnection();
+  const noMotionDuration = getMiotEndpointConnectionProperty(
+    metadata,
+    'no-motion-duration',
+  );
+
+  connection.handleStateUpdate({
+    did: connection.metadata.device.did,
+    online: true,
+    properties: [
+      {
+        did: connection.metadata.device.did,
+        siid: ambientLightLevel.service.iid,
+        piid: ambientLightLevel.property.iid,
+        value: 1,
+      },
+    ],
+  });
+  connection.handleNotification({
+    type: 'property-change',
+    data: {
+      did: connection.metadata.device.did,
+      siid: noMotionDuration.service.iid,
+      piid: noMotionDuration.property.iid,
+      value: 0,
+    },
+  });
+
+  expect(connection.ready).toBe(true);
+  expect(connection.motionDetected).toBe(true);
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  connection.dispose();
+});
+
+test('becomes ready for an empty online snapshot', () => {
+  const {connection} = createMotionAmbientLightLevelConnection();
+
+  expect(
+    connection.handleStateUpdate({
+      did: connection.metadata.device.did,
+      online: true,
+      properties: [],
+    }),
+  ).toEqual([]);
+  expect(connection.ready).toBe(true);
+  expect(connection.motionDetected).toBe(false);
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  connection.dispose();
+});
+
+test('never requests notification replay for a physical read-only property', () => {
+  class ReplayAllMotionAmbientLightLevelSensorEndpointConnection extends MiotMotionAmbientLightLevelSensorEndpointConnection {
+    protected override shouldReplaySnapshotPropertyNotifications(): boolean {
+      return true;
+    }
+  }
+
+  const resolved = createMotionAmbientLightLevelConnection();
+  const {metadata} = resolved;
+  resolved.connection.dispose();
+  const connection =
+    new ReplayAllMotionAmbientLightLevelSensorEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
+
+  expect(connection.replaySnapshotPropertyNotifications).toEqual([]);
+
+  connection.dispose();
+});
+
+test('clears the motion ambient sample for inline and explicit invalidation', () => {
+  const {connection, ambientLightLevel, motionDetected} =
+    createMotionAmbientLightLevelConnection();
+  const property = {
+    did: connection.metadata.device.did,
+    siid: ambientLightLevel.service.iid,
+    piid: ambientLightLevel.property.iid,
+  } as const;
+  const updateSnapshot = (): void => {
+    connection.handleStateUpdate({
+      did: connection.metadata.device.did,
+      online: true,
+      properties: [{...property, value: 1}],
+    });
+  };
+
+  updateSnapshot();
+  connection.handleNotification({
+    type: 'event',
+    data: createEventUpdate(connection, motionDetected),
+  });
+  expect(connection.motionDetected).toBe(true);
+  expect(connection.ambientLightLevel).toBe('low');
+
+  const revision = connection.stateRevision;
+
+  expect(
+    connection.handleStateUpdate({
+      did: connection.metadata.device.did,
+      online: true,
+      properties: [],
+      invalidatedProperties: [property],
+    }),
+  ).toEqual([]);
+
+  expect(connection.ready).toBe(true);
+  expect(connection.motionDetected).toBe(true);
+  expect(connection.ambientLightLevel).toBeUndefined();
+  expect(connection.stateRevision).toBe(revision + 1);
+
+  updateSnapshot();
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  connection.handleNotification({
+    type: 'event',
+    data: createEventUpdate(connection, motionDetected),
+  });
+  expect(connection.ambientLightLevel).toBe('low');
+
+  connection.handleSnapshotInvalidation([property]);
+  expect(connection.motionDetected).toBe(true);
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  connection.dispose();
+});
+
+test('soft-invalidates invalid illumination state and resets ambient light offline', () => {
+  const {connection, ambientLightLevel, motionDetected} =
+    createMotionAmbientLightLevelConnection();
+  const createUpdate = (value: unknown): MiotEndpointStateUpdate => ({
+    did: connection.metadata.device.did,
+    online: true,
+    properties: [
+      {
+        did: connection.metadata.device.did,
+        siid: ambientLightLevel.service.iid,
+        piid: ambientLightLevel.property.iid,
+        value,
+      },
+    ],
+  });
+
+  const invalidEnumErrors = connection.handleStateUpdate(createUpdate(3));
+  expect(invalidEnumErrors).toHaveLength(1);
+  expect(invalidEnumErrors[0]?.message).toBe(
+    'Invalid MIoT value-list property state.',
+  );
+  expect(connection.ready).toBe(true);
+  expect(connection.motionDetected).toBe(false);
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  const invalidTypeErrors = connection.handleStateUpdate(createUpdate('2'));
+  expect(invalidTypeErrors).toHaveLength(1);
+  expect(invalidTypeErrors[0]).toBeInstanceOf(TypeError);
+
+  connection.handleStateUpdate(createUpdate(2));
+  connection.handleNotification({
+    type: 'event',
+    data: createEventUpdate(connection, motionDetected),
+  });
+
+  expect(connection.motionDetected).toBe(true);
+  expect(connection.ambientLightLevel).toBe('high');
+
+  const refreshErrors = connection.handleStateUpdate(createUpdate(3));
+  expect(refreshErrors).toHaveLength(1);
+  expect(connection.motionDetected).toBe(true);
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  connection.handleStateUpdate(createUpdate(2));
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  connection.handleNotification({
+    type: 'event',
+    data: createEventUpdate(connection, motionDetected),
+  });
+  expect(connection.ambientLightLevel).toBe('high');
+
+  connection.handleStateUpdate({
+    did: connection.metadata.device.did,
+    online: false,
+    properties: [],
+  });
+
+  expect(connection.ready).toBe(false);
+  expect(connection.motionDetected).toBeUndefined();
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  connection.handleStateUpdate(createUpdate(1));
+
+  expect(connection.ready).toBe(true);
+  expect(connection.motionDetected).toBe(false);
+  expect(connection.ambientLightLevel).toBeUndefined();
+
+  connection.dispose();
+});
 
 test('matches the official motion sensor service with events', () => {
   const spec = createSpec();
@@ -58,6 +451,7 @@ test('matches the official motion sensor service with events', () => {
   const {connection} = createConnection(spec);
 
   expect(connection.snapshotProperties).toEqual([]);
+  expect(connection.snapshotRefreshEvents).toEqual([]);
   expect(connection.notificationTargets).toEqual([
     {
       type: 'property-change',
@@ -694,8 +1088,63 @@ function createConnection(spec: MiotSpecInstance = createSpec()): {
   };
 }
 
+function createMotionAmbientLightLevelConnection(
+  spec: MiotSpecInstance = createSpec(),
+): {
+  readonly connection: MiotMotionAmbientLightLevelSensorEndpointConnection;
+  readonly metadata: MiotEndpointConnectionResolvedMetadata;
+  readonly ambientLightLevel: ReturnType<
+    typeof getMiotEndpointConnectionProperty
+  >;
+  readonly motionDetected: {
+    readonly service: MiotSpecService;
+    readonly event: MiotSpecEvent;
+  };
+} {
+  const resources = resolveMiotEndpointConnectionResources(
+    MiotMotionAmbientLightLevelSensorEndpointConnection,
+    spec,
+  );
+
+  if (resources === undefined) {
+    throw new Error(
+      'Test motion ambient light level sensor did not resolve resources.',
+    );
+  }
+
+  const persistedMetadata = createMiotEndpointConnectionMetadata(
+    {did: 'sensor-1', model: 'lumi.motion.bmgl01'},
+    spec,
+  );
+  const metadata = resolveMiotEndpointConnectionMetadata(
+    MiotMotionAmbientLightLevelSensorEndpointConnection,
+    persistedMetadata,
+    spec,
+  );
+  const connection = new MiotMotionAmbientLightLevelSensorEndpointConnection(
+    new MiotProvider('provider'),
+    metadata,
+    [new TestTransport()],
+  );
+
+  expect(persistedMetadata).not.toHaveProperty('resources');
+  expect(metadata.resources.map(({service}) => service.iid)).toEqual([2]);
+
+  return {
+    connection,
+    metadata,
+    ambientLightLevel: getMiotEndpointConnectionProperty(
+      metadata,
+      'ambient-light-level',
+    ),
+    motionDetected: getMiotEndpointConnectionEvent(metadata, 'motion-detected'),
+  };
+}
+
 function createEventUpdate(
-  connection: MiotMotionSensorEndpointConnection,
+  connection: {
+    readonly metadata: MiotEndpointConnectionResolvedMetadata;
+  },
   motionDetected: {
     readonly service: MiotSpecService;
     readonly event: MiotSpecEvent;

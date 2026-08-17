@@ -1,5 +1,6 @@
 import {computed} from 'mobx';
 
+import type {MotionDetectionSource} from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
   Endpoint,
@@ -7,7 +8,7 @@ import {
   type EndpointLogState,
 } from '../endpoint.js';
 
-export class MotionSensor extends Device {
+export class MotionSensor extends Device implements MotionDetectionSource {
   protected readonly endpoint: MotionSensorEndpoint;
 
   /** Whether motion is currently detected. */

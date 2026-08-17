@@ -646,16 +646,22 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
           connection.metadata.device.did,
           {
             snapshotProperties: connection.snapshotProperties,
+            refreshSnapshotOnEvents: connection.snapshotRefreshEvents,
             notifications: connection.notificationTargets,
             replaySnapshotPropertyNotifications:
               connection.replaySnapshotPropertyNotifications,
           },
           {
             onStateChanged: state => {
-              connection.handleStateUpdate(state);
+              for (const error of connection.handleStateUpdate(state)) {
+                console.error(error);
+              }
             },
             onNotification: notification => {
               connection.handleNotification(notification);
+            },
+            onSnapshotInvalidated: properties => {
+              connection.handleSnapshotInvalidation(properties);
             },
             onError: console.error,
           },

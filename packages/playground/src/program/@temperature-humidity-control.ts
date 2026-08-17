@@ -1,9 +1,9 @@
 import {
   type AirConditioner,
   type Dehumidifier,
-  type HumiditySensor,
+  type RelativeHumiditySource,
   Temperature,
-  type TemperatureSensor,
+  type TemperatureSource,
 } from '@homelib/core';
 import {autorun} from '@homelib/core/mobx';
 import {
@@ -28,7 +28,7 @@ export function setupTemperatureHumidityControl(
   {
     airConditioner,
     dehumidifier,
-    onGetter = () => true,
+    onGetter = () => airConditioner.on,
     temperature: {
       sensor: temperatureSensor,
       idealApparentTemperatureUpperLimit,
@@ -46,13 +46,13 @@ export function setupTemperatureHumidityControl(
     dehumidifier: Dehumidifier;
     onGetter?: () => boolean | undefined;
     temperature: {
-      sensor: TemperatureSensor;
+      sensor: TemperatureSource;
       idealApparentTemperatureUpperLimit: number;
       idealApparentTemperatureLowerLimit: number;
       idealTemperatureTolerance: number;
     };
     humidity: {
-      sensor: HumiditySensor;
+      sensor: RelativeHumiditySource;
       idealRelativeHumidityUpperLimit: number;
       idealRelativeHumidityLowerLimit: number;
       idealRelativeHumidityTolerance: number;
@@ -205,7 +205,7 @@ export function setupTemperatureHumidityControl(
     const setAirConditionerDryMode = (): void => {
       airConditioner
         .setMode('dry')
-        .setTargetHumidity(idealRelativeHumidityLowerLimit)
+        .setTargetRelativeHumidity(idealRelativeHumidityLowerLimit)
         .setFanSpeed(
           _.clamp(
             (temperature - idealTemperatureUpperLimit) /
@@ -249,7 +249,7 @@ export function setupTemperatureHumidityControl(
         return;
       }
 
-      dehumidifier.setTargetHumidity(targetRelativeHumidity);
+      dehumidifier.setTargetRelativeHumidity(targetRelativeHumidity);
     };
 
     switch (temperatureState.state) {

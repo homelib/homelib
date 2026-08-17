@@ -9,7 +9,7 @@ import {
   type DehumidifierEndpointConnection,
   SetDehumidifierModeCommand,
   SetDehumidifierOnCommand,
-  SetDehumidifierTargetHumidityCommand,
+  SetDehumidifierTargetRelativeHumidityCommand,
 } from './dehumidifier.js';
 
 test('dehumidifier power commands support chaining', () => {
@@ -28,18 +28,18 @@ test('dehumidifier power commands support chaining', () => {
 test('chains dehumidifier setters after turning it on', async () => {
   const {connection, dehumidifier, endpoint} = createDehumidifier(false);
 
-  expect(dehumidifier.turnOn().setMode('sleep').setTargetHumidity(0.5)).toBe(
-    dehumidifier,
-  );
+  expect(
+    dehumidifier.turnOn().setMode('sleep').setTargetRelativeHumidity(0.5),
+  ).toBe(dehumidifier);
   await flushMicrotasks();
 
   expect(connection.commands).toEqual([
     new SetDehumidifierOnCommand(true),
     new SetDehumidifierModeCommand('sleep'),
-    new SetDehumidifierTargetHumidityCommand(0.5),
+    new SetDehumidifierTargetRelativeHumidityCommand(0.5),
   ]);
   expect(endpoint.setMode('auto')).toBe(endpoint);
-  expect(endpoint.setTargetHumidity(0.45)).toBe(endpoint);
+  expect(endpoint.setTargetRelativeHumidity(0.45)).toBe(endpoint);
   await flushMicrotasks();
 });
 

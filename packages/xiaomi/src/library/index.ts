@@ -3,6 +3,7 @@ import {
   Dehumidifier,
   Fan,
   Light,
+  MotionAmbientLightLevelSensor,
   MotionSensor,
   PetFeeder,
   TemperatureHumiditySensor,
@@ -19,6 +20,7 @@ import {
   MiotDehumidifierEndpointConnection,
   MiotFanEndpointConnection,
   MiotLightEndpointConnection,
+  MiotMotionAmbientLightLevelSensorEndpointConnection,
   MiotMotionSensorEndpointConnection,
   MiotPetFeederEndpointConnection,
   MiotPlaceholderDevice,
@@ -34,6 +36,10 @@ registerMiotDevice(AirConditioner, MiotAirConditionerEndpointConnection);
 registerMiotDevice(Dehumidifier, MiotDehumidifierEndpointConnection);
 registerMiotDevice(Fan, MiotFanEndpointConnection);
 registerMiotDevice(Light, MiotLightEndpointConnection);
+registerMiotDevice(
+  MotionAmbientLightLevelSensor,
+  MiotMotionAmbientLightLevelSensorEndpointConnection,
+);
 registerMiotDevice(MotionSensor, MiotMotionSensorEndpointConnection);
 registerMiotDevice(PetFeeder, MiotPetFeederEndpointConnection);
 registerMiotDevice(

@@ -9,7 +9,7 @@ import {
   SetAirConditionerFanSpeedCommand,
   SetAirConditionerModeCommand,
   SetAirConditionerOnCommand,
-  SetAirConditionerTargetHumidityCommand,
+  SetAirConditionerTargetRelativeHumidityCommand,
   SetAirConditionerTargetTemperatureCommand,
   Temperature,
 } from '@homelib/core';
@@ -196,7 +196,9 @@ export class MiotAirConditionerEndpointConnection
       effect = new MiotAirConditionerCommandEffect(this, {
         'target-temperature': command.value,
       });
-    } else if (command instanceof SetAirConditionerTargetHumidityCommand) {
+    } else if (
+      command instanceof SetAirConditionerTargetRelativeHumidityCommand
+    ) {
       if (this.properties['target-humidity'] === undefined) {
         throw new CommandError(
           'MIoT air conditioner does not support target humidity.',

@@ -1,21 +1,30 @@
 import {ExponentialBackoff} from './backoff.js';
 
 test('waits with exponentially increasing delays up to the maximum', async () => {
-  const backoff = new ExponentialBackoff(5, 10);
-  const elapsedTimes: number[] = [];
-  const startedAt = Date.now();
+  import.meta.jest.useFakeTimers();
 
-  await schedule();
-  await schedule();
-  await schedule();
+  try {
+    const backoff = new ExponentialBackoff(5, 10);
 
-  expect(elapsedTimes[0]).toBeGreaterThanOrEqual(5);
-  expect(elapsedTimes[1] - elapsedTimes[0]).toBeGreaterThanOrEqual(10);
-  expect(elapsedTimes[2] - elapsedTimes[1]).toBeGreaterThanOrEqual(10);
+    await expectDelay(5);
+    await expectDelay(10);
+    await expectDelay(10);
 
-  async function schedule(): Promise<void> {
-    await backoff;
-    elapsedTimes.push(Date.now() - startedAt);
+    async function expectDelay(delay: number): Promise<void> {
+      let completed = false;
+      const waiting = backoff.then(() => {
+        completed = true;
+      });
+
+      await import.meta.jest.advanceTimersByTimeAsync(delay - 1);
+      expect(completed).toBe(false);
+
+      await import.meta.jest.advanceTimersByTimeAsync(1);
+      await waiting;
+      expect(completed).toBe(true);
+    }
+  } finally {
+    import.meta.jest.useRealTimers();
   }
 });
 

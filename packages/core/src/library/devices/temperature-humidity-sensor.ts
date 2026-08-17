@@ -1,7 +1,10 @@
 import {computed} from 'mobx';
 
 import type {Temperature} from '../atomics/index.js';
-import type {HumiditySensor, TemperatureSensor} from '../device/index.js';
+import type {
+  RelativeHumiditySource,
+  TemperatureSource,
+} from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
   Endpoint,
@@ -11,7 +14,7 @@ import {
 
 export class TemperatureHumiditySensor
   extends Device
-  implements TemperatureSensor, HumiditySensor
+  implements TemperatureSource, RelativeHumiditySource
 {
   protected readonly endpoint: TemperatureHumiditySensorEndpoint;
 

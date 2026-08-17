@@ -13,6 +13,7 @@ import type {
 
 const PROPERTY = {did: 'device-1', siid: 2, piid: 1} as const;
 const SECOND_PROPERTY = {did: 'device-1', siid: 2, piid: 2} as const;
+const THIRD_PROPERTY = {did: 'device-1', siid: 2, piid: 3} as const;
 
 test('uses a complete cloud snapshot without reading local properties', async () => {
   const backend = createBackendClient();
@@ -171,7 +172,7 @@ test.each([
   },
 );
 
-test('preserves a cloud property error when local cannot fill it', async () => {
+test('publishes a cloud property error silently when local cannot fill it', async () => {
   const backend = createBackendClient();
   import.meta.jest
     .spyOn(backend, 'getProperties')
@@ -182,18 +183,22 @@ test('preserves a cloud property error when local cannot fill it', async () => {
     ]),
     getDeviceOnline: import.meta.jest.fn(async () => true),
   };
+  const states: CloudDeviceState[] = [];
+  const errors: unknown[] = [];
   const client = new CloudClient(backend, new TestMessageClient(), local);
 
-  await expect(
-    client.subscribeDevice(
-      PROPERTY.did,
-      {snapshotProperties: [PROPERTY]},
-      createStateListener([]),
-    ),
-  ).rejects.toThrow('Cloud snapshot property 2.1 failed: -704220043.');
+  const subscription = await client.subscribeDevice(
+    PROPERTY.did,
+    {snapshotProperties: [PROPERTY]},
+    createStateListener(states, errors),
+  );
+
+  expect(states).toEqual([{did: PROPERTY.did, online: true, properties: []}]);
+  expect(errors).toEqual([]);
+  await subscription.dispose();
 });
 
-test('preserves a cloud transport failure when local state is incomplete', async () => {
+test('uses an empty local snapshot when cloud transport fails', async () => {
   const backend = createBackendClient();
   const cloudError = new Error('Cloud unavailable.');
   import.meta.jest
@@ -203,16 +208,144 @@ test('preserves a cloud transport failure when local state is incomplete', async
     getProperties: import.meta.jest.fn(async () => []),
     getDeviceOnline: import.meta.jest.fn(async () => true),
   };
+  const states: CloudDeviceState[] = [];
+  const errors: unknown[] = [];
   const client = new CloudClient(backend, new TestMessageClient(), local);
 
-  await expect(
-    client.subscribeDevice(
-      PROPERTY.did,
-      {snapshotProperties: [PROPERTY]},
-      createStateListener([]),
-    ),
-  ).rejects.toBe(cloudError);
+  const subscription = await client.subscribeDevice(
+    PROPERTY.did,
+    {snapshotProperties: [PROPERTY]},
+    createStateListener(states, errors),
+  );
+
+  expect(states).toEqual([{did: PROPERTY.did, online: true, properties: []}]);
+  expect(errors).toEqual([]);
+  await subscription.dispose();
 });
+
+test('reports a whole cloud read failure when local fallback also fails', async () => {
+  const backend = createBackendClient();
+  const cloudError = new Error('Cloud unavailable.');
+  import.meta.jest
+    .spyOn(backend, 'getProperties')
+    .mockRejectedValue(cloudError);
+  const local: CloudDeviceStateReader = {
+    getProperties: import.meta.jest.fn(async () => {
+      throw new Error('Local unavailable.');
+    }),
+    getDeviceOnline: import.meta.jest.fn(async () => true),
+  };
+  const states: CloudDeviceState[] = [];
+  const errors: unknown[] = [];
+  const client = new CloudClient(backend, new TestMessageClient(), local);
+
+  const subscription = await client.subscribeDevice(
+    PROPERTY.did,
+    {snapshotProperties: [PROPERTY]},
+    createStateListener(states, errors),
+  );
+
+  expect(states).toEqual([{did: PROPERTY.did, online: true, properties: []}]);
+  expect(errors).toEqual([cloudError]);
+  await subscription.dispose();
+});
+
+test.each([
+  ['missing', []],
+  [
+    'duplicated',
+    [
+      {...SECOND_PROPERTY, code: 0, value: 40},
+      {...SECOND_PROPERTY, code: 0, value: 41},
+    ],
+  ],
+  ['failed', [{...SECOND_PROPERTY, code: -4004}]],
+] as const)(
+  'uses partial local state when cloud transport fails and a property is %s',
+  async (_description, partialResults) => {
+    const backend = createBackendClient();
+    const cloudError = new Error('Cloud unavailable.');
+    import.meta.jest
+      .spyOn(backend, 'getProperties')
+      .mockRejectedValue(cloudError);
+    const local: CloudDeviceStateReader = {
+      getProperties: import.meta.jest.fn(async () => [
+        {...PROPERTY, code: 0, value: true},
+        ...partialResults,
+      ]),
+      getDeviceOnline: import.meta.jest.fn(async () => true),
+    };
+    const states: CloudDeviceState[] = [];
+    const client = new CloudClient(backend, new TestMessageClient(), local);
+
+    const subscription = await client.subscribeDevice(
+      PROPERTY.did,
+      {
+        snapshotProperties: [PROPERTY, SECOND_PROPERTY],
+      },
+      createStateListener(states),
+    );
+
+    expect(states.at(-1)).toMatchObject({
+      online: true,
+      properties: [{...PROPERTY, value: true}],
+    });
+    expect(states.at(-1)?.properties).toHaveLength(1);
+    expect(local.getProperties).toHaveBeenCalledWith([
+      PROPERTY,
+      SECOND_PROPERTY,
+    ]);
+    await subscription.dispose();
+  },
+);
+
+test.each([
+  ['missing', [], undefined],
+  [
+    'duplicated',
+    [
+      {...SECOND_PROPERTY, code: 0, value: 40},
+      {...SECOND_PROPERTY, code: 0, value: 41},
+    ],
+    'Cloud snapshot returned duplicate property 2.2.',
+  ],
+  ['failed', [{...SECOND_PROPERTY, code: -4004}], undefined],
+] as const)(
+  'publishes partial local state when a local property is %s',
+  async (_description, partialResults, expectedError) => {
+    const backend = createBackendClient();
+    import.meta.jest
+      .spyOn(backend, 'getProperties')
+      .mockRejectedValue(new Error('Cloud unavailable.'));
+    const local: CloudDeviceStateReader = {
+      getProperties: import.meta.jest.fn(async () => [
+        {...PROPERTY, code: 0, value: true},
+        ...partialResults,
+      ]),
+      getDeviceOnline: import.meta.jest.fn(async () => true),
+    };
+    const states: CloudDeviceState[] = [];
+    const errors: unknown[] = [];
+    const client = new CloudClient(backend, new TestMessageClient(), local);
+
+    const subscription = await client.subscribeDevice(
+      PROPERTY.did,
+      {
+        snapshotProperties: [PROPERTY, SECOND_PROPERTY, THIRD_PROPERTY],
+      },
+      createStateListener(states, errors),
+    );
+
+    expect(states.at(-1)).toMatchObject({
+      online: true,
+      properties: [{...PROPERTY, value: true}],
+    });
+    expect(errors.map(error => (error as Error).message)).toEqual(
+      expectedError === undefined ? [] : [expectedError],
+    );
+    await subscription.dispose();
+  },
+);
 
 function createBackendClient(): BackendClient {
   return new BackendClient({
@@ -222,10 +355,16 @@ function createBackendClient(): BackendClient {
   });
 }
 
-function createStateListener(states: CloudDeviceState[]): CloudDeviceListener {
+function createStateListener(
+  states: CloudDeviceState[],
+  errors: unknown[] = [],
+): CloudDeviceListener {
   return {
     onStateChanged: state => {
       states.push(state);
+    },
+    onError: error => {
+      errors.push(error);
     },
   };
 }

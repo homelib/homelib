@@ -150,13 +150,22 @@ function assertTreeDeclarationTypes(): void {
   const modeledHome = $home('美岸', tree =>
     tree
       .$motionSensor('人体传感器')
+      .$motionAmbientLightLevelSensor('人体环境光传感器')
       .$scope('客厅', room =>
         room.$airConditioner('空调').$dehumidifier('除湿机'),
       ),
   );
 
+  const motionDetected: boolean | undefined =
+    modeledHome.人体环境光传感器.motionDetected;
+  const ambientLightLevel: 'low' | 'high' | undefined =
+    modeledHome.人体环境光传感器.ambientLightLevel;
+
   modeledHome.客厅.空调.turnOn();
   modeledHome.客厅.除湿机.turnOn();
+
+  void motionDetected;
+  void ambientLightLevel;
 
   const typedHome = $home('tree type fixture', tree =>
     tree

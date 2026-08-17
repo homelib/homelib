@@ -1,6 +1,7 @@
 import {$home, bootstrap} from '@homelib/core';
 import {autorun} from '@homelib/core/mobx';
 import {$xiaomi} from '@homelib/xiaomi';
+import ms from 'ms';
 
 import {setupAutoPetFeeding} from './@auto-pet-feeding.js';
 import {setupTemperatureHumidityControl} from './@temperature-humidity-control.js';
@@ -22,7 +23,9 @@ const 美岸 = $home('美岸', home =>
         .$dehumidifier('除湿机')
         .$temperatureHumiditySensor('温湿度传感器'),
     )
-    .$scope('卫生间走廊', corridor => corridor.$motionSensor('运动传感器')),
+    .$scope('卫生间走廊', corridor =>
+      corridor.$light('灯组').$motionAmbientLightLevelSensor('运动传感器'),
+    ),
 );
 
 await bootstrap();
@@ -30,12 +33,11 @@ await bootstrap();
 setupTemperatureHumidityControl('客厅', {
   airConditioner: 美岸.客厅.空调,
   dehumidifier: 美岸.客厅.除湿机,
-  onGetter: () => 美岸.客厅.空调.on,
   temperature: {
     sensor: 美岸.客厅.温湿度传感器,
     idealApparentTemperatureUpperLimit: 29,
     idealApparentTemperatureLowerLimit: 20,
-    idealTemperatureTolerance: 0.5,
+    idealTemperatureTolerance: 0.3,
   },
   humidity: {
     sensor: 美岸.客厅.温湿度传感器,
@@ -48,12 +50,11 @@ setupTemperatureHumidityControl('客厅', {
 setupTemperatureHumidityControl('主卧', {
   airConditioner: 美岸.主卧.空调,
   dehumidifier: 美岸.主卧.除湿机,
-  onGetter: () => 美岸.主卧.空调.on,
   temperature: {
     sensor: 美岸.主卧.温湿度传感器,
-    idealApparentTemperatureUpperLimit: 28,
+    idealApparentTemperatureUpperLimit: 29,
     idealApparentTemperatureLowerLimit: 20,
-    idealTemperatureTolerance: 0.5,
+    idealTemperatureTolerance: 0.3,
   },
   humidity: {
     sensor: 美岸.主卧.温湿度传感器,
@@ -70,7 +71,14 @@ autorun(() => {
     return;
   }
 
-  console.info('卫生间走廊运动传感器', {
-    motionDetected: 美岸.卫生间走廊.运动传感器.motionDetected,
-  });
+  if (
+    美岸.卫生间走廊.运动传感器.motionDetected &&
+    美岸.卫生间走廊.运动传感器.ambientLightLevel === 'low'
+  ) {
+    美岸.卫生间走廊.灯组.turnOn();
+
+    setTimeout(() => {
+      美岸.卫生间走廊.灯组.turnOff();
+    }, ms('1m'));
+  }
 });

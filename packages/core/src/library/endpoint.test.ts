@@ -146,6 +146,21 @@ test('skips a stateful command already satisfied by observed state', async () =>
   expect(connection.processedValues).toEqual([]);
 });
 
+test('executes a stateful command while ready when its state is unknown', async () => {
+  const endpoint = new TestEndpoint();
+  const connection = new TestEndpointConnection();
+  connection.returnEffects = true;
+  connection.setReady(true);
+  endpoint.bindConnection(connection);
+
+  expect(connection.observedValue).toBeUndefined();
+
+  endpoint.send(1);
+  await flushMicrotasks();
+
+  expect(connection.processedValues).toEqual([1]);
+});
+
 test('executes a stateful command when checking its prepared effect throws', async () => {
   const endpoint = new TestEndpoint();
   const connection = new TestEndpointConnection();
@@ -366,6 +381,27 @@ test('reconciles effects on every relevant observation revision', async () => {
   expect(connection.processedValues).toEqual([1]);
 
   connection.setObservedValue(2);
+  endpoint.send(1);
+  await flushMicrotasks();
+
+  expect(connection.processedValues).toEqual([1, 1]);
+});
+
+test('re-executes an acknowledged command after its state is invalidated', async () => {
+  const endpoint = new TestEndpoint();
+  const connection = new TestEndpointConnection();
+  connection.returnEffects = true;
+  connection.setReady(true);
+  endpoint.bindConnection(connection);
+
+  endpoint.send(1);
+  await flushMicrotasks();
+  connection.setObservedValue(1);
+  connection.setObservedValue(undefined);
+
+  expect(connection.ready).toBe(true);
+  expect(connection.observedValue).toBeUndefined();
+
   endpoint.send(1);
   await flushMicrotasks();
 

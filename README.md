@@ -84,8 +84,7 @@ try it out with the current examples and project setup:
    `npm install` remotely. The remote directory defaults to `~/homelib`:
 
    ```sh
-   npm run deploy -- pi@meian-hub
-   npm run deploy -- home-server /srv/homelib
+   npm run deploy -- home-server
    ```
 
    The script requires Bash, rsync, and npm on the remote host. It mirrors the

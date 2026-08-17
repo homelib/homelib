@@ -100,16 +100,11 @@ export class CloudClient {
     } catch (error) {
       if (this.localStateReader !== undefined) {
         try {
-          const localSnapshot =
-            await this.localStateReader.getProperties(properties);
-          const localResultMap = collectSuccessfulPropertyResults(
+          const localSnapshot = selectExpectedPropertyResults(
             properties,
-            localSnapshot,
+            await this.localStateReader.getProperties(properties),
           );
-
-          if (localResultMap.size === countUniqueProperties(properties)) {
-            return [...localResultMap.values()];
-          }
+          return localSnapshot;
         } catch {
           // Preserve the original cloud transport failure.
         }
@@ -246,8 +241,13 @@ function collectSuccessfulPropertyResults(
   return resultMap;
 }
 
-function countUniqueProperties(properties: readonly MiotProperty[]): number {
-  return new Set(properties.map(getPropertyKey)).size;
+function selectExpectedPropertyResults(
+  properties: readonly MiotProperty[],
+  snapshot: readonly CloudPropertySnapshot[],
+): readonly CloudPropertySnapshot[] {
+  const expectedKeySet = new Set(properties.map(getPropertyKey));
+
+  return snapshot.filter(result => expectedKeySet.has(getPropertyKey(result)));
 }
 
 function getPropertyKey(property: MiotProperty): string {

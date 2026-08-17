@@ -310,11 +310,756 @@ test('replays only selected property changes newer than a replacement snapshot b
   await subscription.dispose();
 });
 
-test('rejects an incomplete initial state, removes the listener, and can retry', async () => {
+test('replays a selected property change after a sibling newer snapshot supersedes a failed read', async () => {
+  const olderSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const newerSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const olderError = new Error('Older snapshot failed.');
+  const source = createMessageSource();
+  const firstStates: CloudDeviceState[] = [];
+  const firstUpdates: CloudPropertyUpdate[] = [];
+  const firstErrors: unknown[] = [];
+  const secondUpdates: CloudPropertyUpdate[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      if (readCount <= 2) {
+        return [{...FIRST_PROPERTY, value: 0, code: 0}];
+      } else if (readCount === 3) {
+        return olderSnapshot.promise;
+      }
+
+      return newerSnapshot.promise;
+    },
+    async () => true,
+    () => undefined,
+  );
+  const request = {
+    snapshotProperties: [FIRST_PROPERTY],
+    notifications: [FIRST_PROPERTY_CHANGE],
+    replaySnapshotPropertyNotifications: [FIRST_PROPERTY],
+  } as const;
+  const firstSubscription = await channel.subscribe(request, {
+    onStateChanged: state => {
+      firstStates.push(state);
+    },
+    onPropertyChanged: update => {
+      firstUpdates.push(update);
+    },
+    onError: error => {
+      firstErrors.push(error);
+    },
+  });
+  const secondSubscription = await channel.subscribe(request, {
+    onPropertyChanged: update => {
+      secondUpdates.push(update);
+    },
+  });
+  const olderRefresh = firstSubscription.refresh();
+
+  await waitFor(() => readCount === 3);
+  const newerRefresh = secondSubscription.refresh();
+  await waitFor(() => readCount === 4);
+
+  source.send({
+    type: 'property-change',
+    data: {...FIRST_PROPERTY, value: 5},
+  });
+  newerSnapshot.resolve([{...FIRST_PROPERTY, value: 1, code: 0}]);
+  await newerRefresh;
+
+  olderSnapshot.reject(olderError);
+  await olderRefresh;
+
+  expect(secondUpdates).toEqual([
+    expect.objectContaining({
+      ...FIRST_PROPERTY,
+      value: 5,
+      source: 'mqtt',
+    }),
+  ]);
+  expect(firstStates.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [FIRST_PROPERTY],
+  });
+  expect(firstUpdates).toEqual([
+    expect.objectContaining({
+      ...FIRST_PROPERTY,
+      value: 5,
+      source: 'mqtt',
+    }),
+  ]);
+  expect(firstErrors).toEqual([olderError]);
+
+  await firstSubscription.dispose();
+  await secondSubscription.dispose();
+});
+
+test('replays a selected property change after a sibling newer snapshot supersedes a successful read', async () => {
+  import.meta.jest.useFakeTimers();
+
+  const olderSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const newerSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const source = createMessageSource();
+  const firstStates: CloudDeviceState[] = [];
+  const firstUpdates: CloudPropertyUpdate[] = [];
+  const firstErrors: unknown[] = [];
+  const secondUpdates: CloudPropertyUpdate[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      if (readCount <= 2) {
+        return [{...FIRST_PROPERTY, value: 0, code: 0}];
+      } else if (readCount === 3) {
+        return olderSnapshot.promise;
+      }
+
+      return newerSnapshot.promise;
+    },
+    async () => true,
+    () => undefined,
+  );
+  const request = {
+    snapshotProperties: [FIRST_PROPERTY],
+    notifications: [FIRST_PROPERTY_CHANGE],
+    replaySnapshotPropertyNotifications: [FIRST_PROPERTY],
+  } as const;
+
+  try {
+    const firstSubscription = await channel.subscribe(request, {
+      onStateChanged: state => {
+        firstStates.push(state);
+      },
+      onPropertyChanged: update => {
+        firstUpdates.push(update);
+      },
+      onError: error => {
+        firstErrors.push(error);
+      },
+    });
+    const secondSubscription = await channel.subscribe(request, {
+      onPropertyChanged: update => {
+        secondUpdates.push(update);
+      },
+    });
+    const olderRefresh = firstSubscription.refresh();
+
+    await waitFor(() => readCount === 3);
+    const newerRefresh = secondSubscription.refresh();
+    await waitFor(() => readCount === 4);
+
+    source.send({
+      type: 'property-change',
+      data: {...FIRST_PROPERTY, value: 5},
+    });
+    newerSnapshot.resolve([{...FIRST_PROPERTY, value: 1, code: 0}]);
+    await newerRefresh;
+
+    olderSnapshot.resolve([{...FIRST_PROPERTY, value: 2, code: 0}]);
+    await olderRefresh;
+
+    expect(secondUpdates).toEqual([
+      expect.objectContaining({
+        ...FIRST_PROPERTY,
+        value: 5,
+        source: 'mqtt',
+      }),
+    ]);
+    expect(firstStates.at(-1)).toMatchObject({
+      online: true,
+      properties: [],
+      invalidatedProperties: [FIRST_PROPERTY],
+    });
+    expect(firstUpdates).toEqual([
+      expect.objectContaining({
+        ...FIRST_PROPERTY,
+        value: 5,
+        source: 'mqtt',
+      }),
+    ]);
+    expect(firstErrors).toEqual([]);
+    expect(import.meta.jest.getTimerCount()).toBe(0);
+
+    await firstSubscription.dispose();
+    await secondSubscription.dispose();
+  } finally {
+    import.meta.jest.useRealTimers();
+  }
+});
+
+test('initializes from a partial snapshot when a property is unavailable', async () => {
+  const source = createMessageSource();
+  const states: CloudDeviceState[] = [];
+  const independentInvalidations: Array<readonly unknown[]> = [];
+  const errors: unknown[] = [];
+  const reads: Array<readonly unknown[]> = [];
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async properties => {
+      reads.push(properties);
+      return [
+        {...FIRST_PROPERTY, value: true, code: 0},
+        {...SECOND_PROPERTY, code: -704220043},
+      ];
+    },
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY, SECOND_PROPERTY],
+      notifications: [SECOND_PROPERTY_CHANGE],
+      replaySnapshotPropertyNotifications: [SECOND_PROPERTY],
+    },
+    {
+      onStateChanged: state => {
+        states.push(state);
+      },
+      onSnapshotInvalidated: properties => {
+        independentInvalidations.push(properties);
+      },
+      onError: error => {
+        errors.push(error);
+      },
+    },
+  );
+
+  expect(reads).toEqual([[FIRST_PROPERTY, SECOND_PROPERTY]]);
+  expect(states).toHaveLength(1);
+  expect(states[0]).toMatchObject({
+    did: DID,
+    online: true,
+    properties: [{...FIRST_PROPERTY, value: true, source: 'snapshot'}],
+  });
+  expect(states[0]?.invalidatedProperties).toBeUndefined();
+  expect(independentInvalidations).toEqual([]);
+  expect(errors).toEqual([]);
+
+  await subscription.dispose();
+});
+
+test('retries an unavailable snapshot property silently in the background', async () => {
+  import.meta.jest.useFakeTimers();
+
+  const source = createMessageSource();
+  const states: CloudDeviceState[] = [];
+  const errors: unknown[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      return readCount === 1
+        ? [
+            {...FIRST_PROPERTY, value: true, code: 0},
+            {...SECOND_PROPERTY, code: -704220043},
+          ]
+        : [
+            {...FIRST_PROPERTY, value: true, code: 0},
+            {...SECOND_PROPERTY, value: 42, code: 0},
+          ];
+    },
+    async () => true,
+    () => undefined,
+  );
+
+  try {
+    const subscription = await channel.subscribe(
+      {snapshotProperties: [FIRST_PROPERTY, SECOND_PROPERTY]},
+      {
+        onStateChanged: state => {
+          states.push(state);
+        },
+        onError: error => {
+          errors.push(error);
+        },
+      },
+    );
+
+    expect(states.at(-1)?.properties).toHaveLength(1);
+    expect(errors).toEqual([]);
+    expect(import.meta.jest.getTimerCount()).toBe(1);
+
+    await import.meta.jest.advanceTimersByTimeAsync(
+      CLOUD_MQTT_RECONNECT_INTERVAL,
+    );
+    await waitFor(() => states.length === 2);
+
+    expect(states.at(-1)).toMatchObject({
+      online: true,
+      properties: [
+        {...FIRST_PROPERTY, value: true, source: 'snapshot'},
+        {...SECOND_PROPERTY, value: 42, source: 'snapshot'},
+      ],
+    });
+    expect(errors).toEqual([]);
+    expect(import.meta.jest.getTimerCount()).toBe(0);
+
+    await subscription.dispose();
+  } finally {
+    import.meta.jest.useRealTimers();
+  }
+});
+
+test('schedules a new entry retry when it fails while an older retry settles', async () => {
+  import.meta.jest.useFakeTimers();
+
+  const firstRetry = deferred<readonly CloudPropertySnapshot[]>();
+  const secondFailure = deferred<readonly CloudPropertySnapshot[]>();
+  const source = createMessageSource();
+  const secondStates: CloudDeviceState[] = [];
+  let firstReadCount = 0;
+  let secondReadCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async properties => {
+      if (properties[0]?.piid === FIRST_PROPERTY.piid) {
+        firstReadCount++;
+
+        if (firstReadCount === 2) {
+          return [{...FIRST_PROPERTY, code: -704220043}];
+        } else if (firstReadCount === 3) {
+          return firstRetry.promise;
+        }
+
+        return [{...FIRST_PROPERTY, value: firstReadCount, code: 0}];
+      }
+
+      secondReadCount++;
+
+      if (secondReadCount === 2) {
+        return secondFailure.promise;
+      }
+
+      return [{...SECOND_PROPERTY, value: secondReadCount, code: 0}];
+    },
+    async () => true,
+    () => undefined,
+  );
+
+  try {
+    const firstSubscription = await channel.subscribe(
+      {snapshotProperties: [FIRST_PROPERTY]},
+      {},
+    );
+    const secondSubscription = await channel.subscribe(
+      {snapshotProperties: [SECOND_PROPERTY]},
+      {
+        onStateChanged: state => {
+          secondStates.push(state);
+        },
+      },
+    );
+
+    await firstSubscription.refresh();
+    expect(import.meta.jest.getTimerCount()).toBe(1);
+
+    await import.meta.jest.advanceTimersByTimeAsync(
+      CLOUD_MQTT_RECONNECT_INTERVAL,
+    );
+    await waitFor(() => firstReadCount === 3);
+
+    const secondRefresh = secondSubscription.refresh();
+    await waitFor(() => secondReadCount === 2);
+
+    firstRetry.resolve([{...FIRST_PROPERTY, value: 3, code: 0}]);
+    secondFailure.resolve([{...SECOND_PROPERTY, code: -704220043}]);
+    await secondRefresh;
+    await waitFor(() => import.meta.jest.getTimerCount() === 1);
+
+    await import.meta.jest.advanceTimersByTimeAsync(
+      CLOUD_MQTT_RECONNECT_INTERVAL,
+    );
+    await waitFor(() => secondReadCount === 3);
+
+    expect(secondStates.at(-1)).toMatchObject({
+      online: true,
+      properties: [{...SECOND_PROPERTY, value: 3, source: 'snapshot'}],
+    });
+    expect(import.meta.jest.getTimerCount()).toBe(0);
+
+    await firstSubscription.dispose();
+    await secondSubscription.dispose();
+  } finally {
+    import.meta.jest.useRealTimers();
+  }
+});
+
+test('invalidates a stale snapshot value and restores it after recovery', async () => {
+  const source = createMessageSource();
+  const states: CloudDeviceState[] = [];
+  const independentInvalidations: Array<readonly unknown[]> = [];
+  const errors: unknown[] = [];
+  const order: string[] = [];
+  let results: readonly CloudPropertySnapshot[] = [
+    {...FIRST_PROPERTY, value: 1, code: 0},
+    {...SECOND_PROPERTY, value: 2, code: 0},
+  ];
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => results,
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY, SECOND_PROPERTY],
+    },
+    {
+      onStateChanged: state => {
+        states.push(state);
+        order.push(
+          `state:${state.properties.map(property => property.piid).join(',')}:${
+            state.invalidatedProperties
+              ?.map(property => property.piid)
+              .join(',') ?? ''
+          }`,
+        );
+      },
+      onSnapshotInvalidated: properties => {
+        independentInvalidations.push(properties);
+      },
+      onError: error => {
+        errors.push(error);
+      },
+    },
+  );
+
+  results = [
+    {...FIRST_PROPERTY, value: 3, code: 0},
+    {...SECOND_PROPERTY, code: -704220043},
+  ];
+  await subscription.refresh();
+
+  expect(order).toEqual(['state:1,2:', 'state:1:2']);
+  expect(independentInvalidations).toEqual([]);
+  expect(states.at(-1)).toMatchObject({
+    online: true,
+    properties: [{...FIRST_PROPERTY, value: 3, source: 'snapshot'}],
+    invalidatedProperties: [SECOND_PROPERTY],
+  });
+  expect(errors).toEqual([]);
+
+  results = [
+    {...FIRST_PROPERTY, value: 4, code: 0},
+    {...SECOND_PROPERTY, value: 5, code: 0},
+  ];
+  await subscription.refresh();
+
+  expect(order.at(-1)).toBe('state:1,2:');
+  expect(independentInvalidations).toHaveLength(0);
+  expect(states.at(-1)).toMatchObject({
+    online: true,
+    properties: [
+      {...FIRST_PROPERTY, value: 4, source: 'snapshot'},
+      {...SECOND_PROPERTY, value: 5, source: 'snapshot'},
+    ],
+  });
+  expect(errors).toEqual([]);
+
+  await subscription.dispose();
+});
+
+test('invalidates a snapshot property only after it was delivered', async () => {
+  const source = createMessageSource();
+  const states: CloudDeviceState[] = [];
+  const updates: CloudPropertyUpdate[] = [];
+  const independentInvalidations: Array<readonly unknown[]> = [];
+  const errors: unknown[] = [];
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => [{...SECOND_PROPERTY, code: -704220043}],
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [SECOND_PROPERTY],
+      notifications: [SECOND_PROPERTY_CHANGE],
+    },
+    {
+      onStateChanged: state => {
+        states.push(state);
+      },
+      onPropertyChanged: update => {
+        updates.push(update);
+      },
+      onSnapshotInvalidated: properties => {
+        independentInvalidations.push(properties);
+      },
+      onError: error => {
+        errors.push(error);
+      },
+    },
+  );
+
+  expect(states).toHaveLength(1);
+  expect(states[0]?.invalidatedProperties).toBeUndefined();
+
+  await subscription.refresh();
+  expect(states).toHaveLength(2);
+  expect(states[1]?.invalidatedProperties).toBeUndefined();
+
+  source.send({
+    type: 'property-change',
+    data: {...SECOND_PROPERTY, value: 5},
+  });
+  expect(updates).toHaveLength(1);
+
+  await subscription.refresh();
+  expect(states).toHaveLength(3);
+  expect(states[2]).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [SECOND_PROPERTY],
+  });
+
+  await subscription.refresh();
+  expect(states).toHaveLength(4);
+  expect(states[3]?.invalidatedProperties).toBeUndefined();
+  expect(independentInvalidations).toEqual([]);
+  expect(errors).toEqual([]);
+
+  await subscription.dispose();
+});
+
+test('preserves snapshot availability offline so reconnect can invalidate it', async () => {
+  const source = createMessageSource();
+  const states: CloudDeviceState[] = [];
+  const errors: unknown[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+      return readCount === 1
+        ? [
+            {...FIRST_PROPERTY, value: true, code: 0},
+            {...SECOND_PROPERTY, value: 2, code: 0},
+          ]
+        : [
+            {...FIRST_PROPERTY, value: false, code: 0},
+            {...SECOND_PROPERTY, code: -704220043},
+          ];
+    },
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY, SECOND_PROPERTY],
+    },
+    {
+      onStateChanged: state => {
+        states.push(state);
+      },
+      onError: error => {
+        errors.push(error);
+      },
+    },
+  );
+
+  source.send({type: 'state', data: {did: DID, online: false}});
+  await waitFor(() => states.length === 2);
+  expect(states.at(-1)).toEqual({did: DID, online: false, properties: []});
+
+  source.send({type: 'state', data: {did: DID, online: true}});
+  await waitFor(() => states.length === 3);
+
+  expect(states.at(-1)).toMatchObject({
+    online: true,
+    properties: [{...FIRST_PROPERTY, value: false, source: 'snapshot'}],
+    invalidatedProperties: [SECOND_PROPERTY],
+  });
+  expect(errors).toEqual([]);
+
+  await subscription.dispose();
+});
+
+test('publishes unavailable snapshot properties silently to every listener during reconnect', async () => {
+  const source = createMessageSource();
+  const firstStates: CloudDeviceState[] = [];
+  const secondStates: CloudDeviceState[] = [];
+  const firstInvalidations: Array<readonly unknown[]> = [];
+  const secondInvalidations: Array<readonly unknown[]> = [];
+  const firstErrors: unknown[] = [];
+  const secondErrors: unknown[] = [];
+  let failSnapshot = false;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => [
+      failSnapshot
+        ? {...SECOND_PROPERTY, code: -704220043}
+        : {...SECOND_PROPERTY, value: 2, code: 0},
+    ],
+    async () => true,
+    () => undefined,
+  );
+  const firstSubscription = await channel.subscribe(
+    {snapshotProperties: [SECOND_PROPERTY]},
+    {
+      onStateChanged: state => {
+        firstStates.push(state);
+      },
+      onSnapshotInvalidated: properties => {
+        firstInvalidations.push(properties);
+      },
+      onError: error => {
+        firstErrors.push(error);
+      },
+    },
+  );
+  const secondSubscription = await channel.subscribe(
+    {
+      snapshotProperties: [SECOND_PROPERTY],
+    },
+    {
+      onStateChanged: state => {
+        secondStates.push(state);
+      },
+      onSnapshotInvalidated: properties => {
+        secondInvalidations.push(properties);
+      },
+      onError: error => {
+        secondErrors.push(error);
+      },
+    },
+  );
+
+  failSnapshot = true;
+  channel.handleConnectionState(false);
+  channel.handleConnectionState(true);
+  await waitFor(() => firstStates.length === 2 && secondStates.length === 2);
+
+  expect(firstStates.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [SECOND_PROPERTY],
+  });
+  expect(firstInvalidations).toEqual([]);
+  expect(firstErrors).toEqual([]);
+  expect(secondStates.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [SECOND_PROPERTY],
+  });
+  expect(secondInvalidations).toEqual([]);
+  expect(secondErrors).toEqual([]);
+
+  await firstSubscription.dispose();
+  await secondSubscription.dispose();
+});
+
+test('reports a duplicate snapshot result only to the refreshed listener', async () => {
+  const source = createMessageSource();
+  const firstStates: CloudDeviceState[] = [];
+  const firstErrors: unknown[] = [];
+  const secondErrors: unknown[] = [];
+  let firstReadCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async properties => {
+      if (properties[0]?.piid === FIRST_PROPERTY.piid) {
+        firstReadCount++;
+
+        if (firstReadCount === 2) {
+          return [
+            {...FIRST_PROPERTY, value: 2, code: 0},
+            {...FIRST_PROPERTY, value: 3, code: 0},
+          ];
+        }
+
+        return [{...FIRST_PROPERTY, value: 1, code: 0}];
+      }
+
+      return [{...SECOND_PROPERTY, value: 2, code: 0}];
+    },
+    async () => true,
+    () => undefined,
+  );
+  const firstSubscription = await channel.subscribe(
+    {snapshotProperties: [FIRST_PROPERTY]},
+    {
+      onStateChanged: state => {
+        firstStates.push(state);
+      },
+      onError: error => {
+        firstErrors.push(error);
+      },
+    },
+  );
+  const secondSubscription = await channel.subscribe(
+    {snapshotProperties: [SECOND_PROPERTY]},
+    {
+      onError: error => {
+        secondErrors.push(error);
+      },
+    },
+  );
+
+  await firstSubscription.refresh();
+
+  expect(firstStates.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [FIRST_PROPERTY],
+  });
+  expect(firstErrors.map(error => (error as Error).message)).toEqual([
+    'Cloud snapshot returned duplicate property 2.1.',
+  ]);
+  expect(secondErrors).toEqual([]);
+
+  await firstSubscription.dispose();
+  await secondSubscription.dispose();
+});
+
+test('rejects a snapshot property for another device', async () => {
+  const source = createMessageSource();
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => [],
+    async () => true,
+    () => undefined,
+  );
+
+  await expect(
+    channel.subscribe(
+      {
+        snapshotProperties: [{...FIRST_PROPERTY, did: 'different-device'}],
+      },
+      {},
+    ),
+  ).rejects.toThrow(
+    'Cloud device device-1 cannot subscribe to property for different-device',
+  );
+
+  expect(source.subscribeCount).toBe(0);
+});
+
+test('initializes from an incomplete state and recovers on manual refresh', async () => {
   const source = createMessageSource();
   let results: readonly CloudPropertySnapshot[] = [
     {...FIRST_PROPERTY, value: false, code: 0},
     {...SECOND_PROPERTY, code: -1},
+    {...THIRD_PROPERTY, value: 'optional', code: 0},
   ];
   const channel = new CloudDeviceChannel(
     DID,
@@ -338,16 +1083,23 @@ test('rejects an incomplete initial state, removes the listener, and can retry',
     },
   };
 
-  await expect(
-    channel.subscribe(
-      {snapshotProperties: [FIRST_PROPERTY, SECOND_PROPERTY]},
-      listener,
-    ),
-  ).rejects.toThrow('Cloud snapshot property 2.2 failed: -1.');
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY, SECOND_PROPERTY, THIRD_PROPERTY],
+    },
+    listener,
+  );
 
-  expect(states).toEqual([]);
+  expect(states.at(-1)).toMatchObject({
+    did: DID,
+    online: true,
+    properties: [
+      {...FIRST_PROPERTY, value: false, source: 'snapshot'},
+      {...THIRD_PROPERTY, value: 'optional', source: 'snapshot'},
+    ],
+  });
   expect(errors).toEqual([]);
-  expect(source.unsubscribeCount).toBe(1);
+  expect(source.unsubscribeCount).toBe(0);
 
   source.send({
     type: 'property-change',
@@ -358,20 +1110,18 @@ test('rejects an incomplete initial state, removes the listener, and can retry',
   results = [
     {...FIRST_PROPERTY, value: true, code: 0},
     {...SECOND_PROPERTY, value: 75, code: 0},
+    {...THIRD_PROPERTY, value: 'recovered', code: 0},
   ];
-  const subscription = await channel.subscribe(
-    {snapshotProperties: [FIRST_PROPERTY, SECOND_PROPERTY]},
-    listener,
-  );
+  await subscription.refresh();
 
-  expect(source.subscribeCount).toBe(2);
-  expect(states).toHaveLength(1);
-  expect(states[0]).toMatchObject({
+  expect(source.subscribeCount).toBe(1);
+  expect(states.at(-1)).toMatchObject({
     did: DID,
     online: true,
     properties: [
       {...FIRST_PROPERTY, value: true, source: 'snapshot'},
       {...SECOND_PROPERTY, value: 75, source: 'snapshot'},
+      {...THIRD_PROPERTY, value: 'recovered', source: 'snapshot'},
     ],
   });
 
@@ -439,6 +1189,7 @@ test.each([
   async ({readProperties}) => {
     const source = createMessageSource();
     const states: CloudDeviceState[] = [];
+    const errors: unknown[] = [];
     const channel = new CloudDeviceChannel(
       DID,
       source,
@@ -452,10 +1203,14 @@ test.each([
         onStateChanged: state => {
           states.push(state);
         },
+        onError: error => {
+          errors.push(error);
+        },
       },
     );
 
     expect(states).toEqual([{did: DID, online: false, properties: []}]);
+    expect(errors).toEqual([]);
     await subscription.dispose();
   },
 );
@@ -649,25 +1404,32 @@ test('allows MQTT to supply a property omitted by the in-flight snapshot', async
   await subscription.dispose();
 });
 
-test('rejects and removes the listener when initial state loading fails', async () => {
+test('initializes after a whole snapshot read failure and retries it', async () => {
+  import.meta.jest.useFakeTimers();
+
   const source = createMessageSource();
   const snapshotError = new Error('Snapshot failed.');
   const errors: unknown[] = [];
   const states: CloudDeviceState[] = [];
-  let emptyCount = 0;
+  let readCount = 0;
   const channel = new CloudDeviceChannel(
     DID,
     source,
     async () => {
-      throw snapshotError;
+      readCount++;
+
+      if (readCount === 1) {
+        throw snapshotError;
+      }
+
+      return [{...FIRST_PROPERTY, value: true, code: 0}];
     },
     async () => true,
-    () => {
-      emptyCount++;
-    },
+    () => undefined,
   );
-  await expect(
-    channel.subscribe(
+
+  try {
+    const subscription = await channel.subscribe(
       {snapshotProperties: [FIRST_PROPERTY]},
       {
         onStateChanged: state => {
@@ -677,13 +1439,30 @@ test('rejects and removes the listener when initial state loading fails', async 
           errors.push(error);
         },
       },
-    ),
-  ).rejects.toBe(snapshotError);
+    );
 
-  expect(errors).toEqual([]);
-  expect(states).toEqual([]);
-  expect(source.unsubscribeCount).toBe(1);
-  expect(emptyCount).toBe(1);
+    expect(states).toEqual([{did: DID, online: true, properties: []}]);
+    expect(errors).toEqual([snapshotError]);
+    expect(source.unsubscribeCount).toBe(0);
+    expect(import.meta.jest.getTimerCount()).toBe(1);
+
+    await import.meta.jest.advanceTimersByTimeAsync(
+      CLOUD_MQTT_RECONNECT_INTERVAL,
+    );
+    await waitFor(() => states.length === 2);
+
+    expect(readCount).toBe(2);
+    expect(states.at(-1)).toMatchObject({
+      online: true,
+      properties: [{...FIRST_PROPERTY, value: true, source: 'snapshot'}],
+    });
+    expect(errors).toEqual([snapshotError]);
+    expect(import.meta.jest.getTimerCount()).toBe(0);
+
+    await subscription.dispose();
+  } finally {
+    import.meta.jest.useRealTimers();
+  }
 });
 
 test('publishes offline immediately and refreshes fully before online', async () => {
@@ -923,15 +1702,21 @@ test('retries one reconnect refresh at a time until it succeeds', async () => {
     channel.handleConnectionState(true);
     channel.handleConnectionState(true);
     await waitFor(() => errors.length === 1);
+    await waitFor(() => import.meta.jest.getTimerCount() === 1);
 
     expect(readCount).toBe(2);
     expect(errors).toEqual([refreshError]);
+    expect(states.at(-1)).toMatchObject({
+      online: true,
+      properties: [],
+      invalidatedProperties: [FIRST_PROPERTY],
+    });
     expect(import.meta.jest.getTimerCount()).toBe(1);
 
     await import.meta.jest.advanceTimersByTimeAsync(
       CLOUD_MQTT_RECONNECT_INTERVAL,
     );
-    await waitFor(() => states.length === 2);
+    await waitFor(() => states.length === 3);
 
     expect(readCount).toBe(3);
     expect(states.at(-1)).toMatchObject({
@@ -988,6 +1773,7 @@ test('retries reconnect refresh when an initialized listener rejects the full st
     channel.handleConnectionState(false);
     channel.handleConnectionState(true);
     await waitFor(() => errors.length === 1);
+    await waitFor(() => import.meta.jest.getTimerCount() === 1);
 
     expect(readCount).toBe(2);
     expect(callbackCount).toBe(2);
@@ -1065,6 +1851,7 @@ test.each([true, false])(
 
       source.send({type: 'state', data: {did: DID, online}});
       await waitFor(() => errors.length === 1);
+      await waitFor(() => import.meta.jest.getTimerCount() === 1);
 
       expect(propertyReadCount).toBe(online ? 2 : 1);
       expect(onlineReadCount).toBe(1);
@@ -1381,6 +2168,73 @@ test('keeps state and updates scoped to each listener', async () => {
   expect(source.unsubscribeCount).toBe(1);
 });
 
+test('accepts a shared refresh response after one listener is disposed', async () => {
+  const reconnectSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const source = createMessageSource();
+  const reads: Array<readonly string[]> = [];
+  const firstStates: CloudDeviceState[] = [];
+  const secondStates: CloudDeviceState[] = [];
+  const secondErrors: unknown[] = [];
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async properties => {
+      reads.push(
+        properties.map(property => `${property.siid}.${property.piid}`),
+      );
+
+      if (reads.length === 1) {
+        return [{...FIRST_PROPERTY, value: 10, code: 0}];
+      } else if (reads.length === 2) {
+        return [{...SECOND_PROPERTY, value: 20, code: 0}];
+      }
+
+      return reconnectSnapshot.promise;
+    },
+    async () => true,
+    () => undefined,
+  );
+  const firstSubscription = await channel.subscribe(
+    {snapshotProperties: [FIRST_PROPERTY]},
+    {
+      onStateChanged: state => {
+        firstStates.push(state);
+      },
+    },
+  );
+  const secondSubscription = await channel.subscribe(
+    {snapshotProperties: [SECOND_PROPERTY]},
+    {
+      onStateChanged: state => {
+        secondStates.push(state);
+      },
+      onError: error => {
+        secondErrors.push(error);
+      },
+    },
+  );
+
+  channel.handleConnectionState(false);
+  channel.handleConnectionState(true);
+  await waitFor(() => reads.length === 3);
+  expect(reads.at(-1)).toEqual(['2.1', '2.2']);
+
+  await firstSubscription.dispose();
+  reconnectSnapshot.resolve([
+    {...FIRST_PROPERTY, value: 11, code: 0},
+    {...SECOND_PROPERTY, value: 21, code: 0},
+  ]);
+  await waitFor(() => secondStates.length === 2);
+
+  expect(firstStates).toHaveLength(1);
+  expect(secondStates.at(-1)?.properties).toEqual([
+    expect.objectContaining({...SECOND_PROPERTY, value: 21}),
+  ]);
+  expect(secondErrors).toEqual([]);
+
+  await secondSubscription.dispose();
+});
+
 test('does not read properties for a notification-only subscription', async () => {
   const source = createMessageSource();
   const states: CloudDeviceState[] = [];
@@ -1436,6 +2290,7 @@ test.each(['online', 'read', 'result'] as const)(
     const onlineRead = deferred<boolean>();
     const source = createMessageSource();
     const order: string[] = [];
+    const errors: unknown[] = [];
     let propertyReadCount = 0;
     let onlineReadCount = 0;
     const channel = new CloudDeviceChannel(
@@ -1475,6 +2330,9 @@ test.each(['online', 'read', 'result'] as const)(
               ? 'event'
               : `${notification.data.piid}:${String(notification.data.value)}`,
           );
+        },
+        onError: error => {
+          errors.push(error);
         },
       },
     );
@@ -1526,21 +2384,18 @@ test.each(['online', 'read', 'result'] as const)(
       onlineRead.resolve(true);
     }
 
-    if (failure === 'result') {
-      await expect(refresh).rejects.toThrow(
-        'Cloud snapshot property 2.2 failed: -1.',
-      );
-    } else {
+    if (failure === 'online') {
       await expect(refresh).rejects.toBe(refreshError);
+    } else {
+      await expect(refresh).resolves.toBeUndefined();
     }
 
-    expect(order).toEqual([
-      '1:before-event',
-      '3:first',
-      'event',
-      '1:after-event',
-      '3:second',
-    ]);
+    expect(order).toEqual(
+      failure === 'online'
+        ? ['1:before-event', '3:first', 'event', '1:after-event', '3:second']
+        : ['3:first', 'event', '3:second'],
+    );
+    expect(errors).toEqual(failure === 'read' ? [refreshError] : []);
 
     source.send({
       type: 'property-change',
@@ -1702,7 +2557,12 @@ test('keeps notification-only listeners live when a sibling snapshot read fails'
   await waitFor(() => snapshotErrors.length === 1);
 
   expect(snapshotErrors).toEqual([snapshotError]);
-  expect(snapshotStates).toHaveLength(1);
+  expect(snapshotStates).toHaveLength(2);
+  expect(snapshotStates.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [FIRST_PROPERTY],
+  });
   expect(notificationStates).toEqual([
     {did: DID, online: true, properties: []},
     {did: DID, online: true, properties: []},
@@ -2119,6 +2979,694 @@ test('carries only refresh-independent notifications into a replacement', async 
   ]);
 
   await subscription.dispose();
+});
+
+test('refreshes a snapshot before delivering a selected event', async () => {
+  const refreshedSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const source = createMessageSource();
+  const order: string[] = [];
+  const errors: unknown[] = [];
+  let readCount = 0;
+  let onlineReadCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      if (readCount === 1) {
+        return [{...FIRST_PROPERTY, value: false, code: 0}];
+      }
+
+      return refreshedSnapshot.promise;
+    },
+    async () => {
+      onlineReadCount++;
+      return true;
+    },
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY],
+      notifications: [FIRST_EVENT],
+      refreshSnapshotOnEvents: [FIRST_EVENT.data],
+    },
+    {
+      onStateChanged: state => {
+        order.push(`state:${String(state.properties[0]?.value)}`);
+      },
+      onSnapshotInvalidated: () => {
+        order.push('invalidate');
+      },
+      onEventOccurred: () => {
+        order.push('event');
+      },
+      onError: error => {
+        errors.push(error);
+      },
+    },
+  );
+
+  source.send({
+    type: 'event',
+    data: {
+      ...FIRST_EVENT.data,
+      arguments: {type: 'identified', data: []},
+    },
+  });
+
+  await waitFor(() => readCount === 2);
+  expect(order).toEqual(['state:false']);
+  expect(onlineReadCount).toBe(1);
+
+  refreshedSnapshot.resolve([{...FIRST_PROPERTY, value: true, code: 0}]);
+  await waitFor(() => order.length === 3);
+
+  expect(order).toEqual(['state:false', 'state:true', 'event']);
+  expect(errors).toEqual([]);
+
+  await subscription.dispose();
+});
+
+test('delivers an event after a partial snapshot refresh', async () => {
+  const source = createMessageSource();
+  const states: CloudDeviceState[] = [];
+  const order: string[] = [];
+  const independentInvalidations: Array<readonly unknown[]> = [];
+  const errors: unknown[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      return readCount === 1
+        ? [{...FIRST_PROPERTY, value: false, code: 0}]
+        : [{...FIRST_PROPERTY, code: -704220043}];
+    },
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY],
+      notifications: [FIRST_EVENT],
+      refreshSnapshotOnEvents: [FIRST_EVENT.data],
+    },
+    {
+      onStateChanged: state => {
+        states.push(state);
+        order.push(
+          `state:${String(state.properties[0]?.value)}:${
+            state.invalidatedProperties
+              ?.map(property => property.piid)
+              .join(',') ?? ''
+          }`,
+        );
+      },
+      onSnapshotInvalidated: properties => {
+        independentInvalidations.push(properties);
+      },
+      onEventOccurred: () => {
+        order.push('event');
+      },
+      onError: error => {
+        errors.push(error);
+      },
+    },
+  );
+
+  source.send({
+    type: 'event',
+    data: {
+      ...FIRST_EVENT.data,
+      arguments: {type: 'identified', data: []},
+    },
+  });
+  await waitFor(() => order.length === 3);
+
+  expect(order).toEqual(['state:false:', 'state:undefined:1', 'event']);
+  expect(states.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [FIRST_PROPERTY],
+  });
+  expect(independentInvalidations).toEqual([]);
+  expect(errors).toEqual([]);
+
+  await subscription.dispose();
+});
+
+test('publishes unavailable event snapshots independently to each listener', async () => {
+  const source = createMessageSource();
+  const firstStates: CloudDeviceState[] = [];
+  const secondStates: CloudDeviceState[] = [];
+  const firstInvalidations: Array<readonly unknown[]> = [];
+  const secondInvalidations: Array<readonly unknown[]> = [];
+  const firstEvents: unknown[] = [];
+  const secondEvents: unknown[] = [];
+  const firstErrors: unknown[] = [];
+  const secondErrors: unknown[] = [];
+  let failSnapshot = false;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => [
+      failSnapshot
+        ? {...SECOND_PROPERTY, code: -704220043}
+        : {...SECOND_PROPERTY, value: 2, code: 0},
+    ],
+    async () => true,
+    () => undefined,
+  );
+  const firstSubscription = await channel.subscribe(
+    {
+      snapshotProperties: [SECOND_PROPERTY],
+      notifications: [FIRST_EVENT],
+      refreshSnapshotOnEvents: [FIRST_EVENT.data],
+    },
+    {
+      onStateChanged: state => {
+        firstStates.push(state);
+      },
+      onSnapshotInvalidated: properties => {
+        firstInvalidations.push(properties);
+      },
+      onEventOccurred: event => {
+        firstEvents.push(event);
+      },
+      onError: error => {
+        firstErrors.push(error);
+      },
+    },
+  );
+  const secondSubscription = await channel.subscribe(
+    {
+      snapshotProperties: [SECOND_PROPERTY],
+      notifications: [FIRST_EVENT],
+      refreshSnapshotOnEvents: [FIRST_EVENT.data],
+    },
+    {
+      onStateChanged: state => {
+        secondStates.push(state);
+      },
+      onSnapshotInvalidated: properties => {
+        secondInvalidations.push(properties);
+      },
+      onEventOccurred: event => {
+        secondEvents.push(event);
+      },
+      onError: error => {
+        secondErrors.push(error);
+      },
+    },
+  );
+
+  failSnapshot = true;
+  source.send({
+    type: 'event',
+    data: {
+      ...FIRST_EVENT.data,
+      arguments: {type: 'identified', data: []},
+    },
+  });
+  await waitFor(
+    () =>
+      firstStates.length === 2 &&
+      secondStates.length === 2 &&
+      firstEvents.length === 1 &&
+      secondEvents.length === 1,
+  );
+
+  expect(firstStates.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [SECOND_PROPERTY],
+  });
+  expect(firstInvalidations).toEqual([]);
+  expect(firstErrors).toEqual([]);
+  expect(secondStates.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [SECOND_PROPERTY],
+  });
+  expect(secondInvalidations).toEqual([]);
+  expect(secondErrors).toEqual([]);
+
+  await firstSubscription.dispose();
+  await secondSubscription.dispose();
+});
+
+test('restores event snapshot availability from a replayed property change', async () => {
+  const firstFailedSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const secondFailedSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const firstError = new Error('First event snapshot failed.');
+  const secondError = new Error('Second event snapshot failed.');
+  const source = createMessageSource();
+  const states: CloudDeviceState[] = [];
+  const invalidations: Array<readonly unknown[]> = [];
+  const events: unknown[] = [];
+  const updates: CloudPropertyUpdate[] = [];
+  const errors: unknown[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      if (readCount === 1) {
+        return [{...FIRST_PROPERTY, value: false, code: 0}];
+      } else if (readCount === 2) {
+        return firstFailedSnapshot.promise;
+      }
+
+      return secondFailedSnapshot.promise;
+    },
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY],
+      notifications: [FIRST_PROPERTY_CHANGE, FIRST_EVENT],
+      refreshSnapshotOnEvents: [FIRST_EVENT.data],
+      replaySnapshotPropertyNotifications: [FIRST_PROPERTY],
+    },
+    {
+      onStateChanged: state => {
+        states.push(state);
+      },
+      onSnapshotInvalidated: properties => {
+        invalidations.push(properties);
+      },
+      onEventOccurred: event => {
+        events.push(event);
+      },
+      onPropertyChanged: update => {
+        updates.push(update);
+      },
+      onError: error => {
+        errors.push(error);
+      },
+    },
+  );
+  const sendEvent = (): void => {
+    source.send({
+      type: 'event',
+      data: {
+        ...FIRST_EVENT.data,
+        arguments: {type: 'identified', data: []},
+      },
+    });
+  };
+
+  sendEvent();
+  await waitFor(() => readCount === 2);
+  source.send({
+    type: 'property-change',
+    data: {...FIRST_PROPERTY, value: true},
+  });
+  firstFailedSnapshot.reject(firstError);
+  await waitFor(
+    () => errors.length === 1 && events.length === 1 && updates.length === 1,
+  );
+
+  expect(states.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [FIRST_PROPERTY],
+  });
+  expect(invalidations).toEqual([]);
+  expect(errors).toEqual([firstError]);
+
+  sendEvent();
+  await waitFor(() => readCount === 3);
+  secondFailedSnapshot.reject(secondError);
+  await waitFor(() => errors.length === 2 && events.length === 2);
+
+  expect(states.at(-1)).toMatchObject({
+    online: true,
+    properties: [],
+    invalidatedProperties: [FIRST_PROPERTY],
+  });
+  expect(invalidations).toEqual([]);
+  expect(errors).toEqual([firstError, secondError]);
+
+  await subscription.dispose();
+});
+
+test('invalidates a failed event snapshot before delivering the event and can retry', async () => {
+  const failedSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const retrySnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const refreshError = new Error('Event snapshot failed.');
+  const source = createMessageSource();
+  const order: string[] = [];
+  const invalidations: Array<readonly unknown[]> = [];
+  const errors: unknown[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      if (readCount === 1) {
+        return [{...FIRST_PROPERTY, value: false, code: 0}];
+      } else if (readCount === 2) {
+        return failedSnapshot.promise;
+      }
+
+      return retrySnapshot.promise;
+    },
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY],
+      notifications: [FIRST_EVENT],
+      refreshSnapshotOnEvents: [FIRST_EVENT.data],
+    },
+    {
+      onStateChanged: state => {
+        order.push(`state:${String(state.properties[0]?.value)}`);
+      },
+      onSnapshotInvalidated: properties => {
+        invalidations.push(properties);
+        order.push('invalidate');
+      },
+      onEventOccurred: () => {
+        order.push('event');
+      },
+      onError: error => {
+        errors.push(error);
+        order.push('error');
+      },
+    },
+  );
+  const sendEvent = (): void => {
+    source.send({
+      type: 'event',
+      data: {
+        ...FIRST_EVENT.data,
+        arguments: {type: 'identified', data: []},
+      },
+    });
+  };
+
+  sendEvent();
+  await waitFor(() => readCount === 2);
+  failedSnapshot.reject(refreshError);
+  await waitFor(() => errors.length === 1);
+
+  expect(invalidations).toEqual([]);
+  expect(errors).toEqual([refreshError]);
+  expect(order).toEqual(['state:false', 'state:undefined', 'event', 'error']);
+
+  sendEvent();
+  await waitFor(() => readCount === 3);
+  retrySnapshot.resolve([{...FIRST_PROPERTY, value: true, code: 0}]);
+  await waitFor(() => order.length === 6);
+
+  expect(order).toEqual([
+    'state:false',
+    'state:undefined',
+    'event',
+    'error',
+    'state:true',
+    'event',
+  ]);
+  expect(invalidations).toHaveLength(0);
+  expect(errors).toHaveLength(1);
+
+  await subscription.dispose();
+});
+
+test('invalidates an event snapshot when a replacing manual refresh fails', async () => {
+  const eventSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const replacementSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const replacementError = new Error('Manual replacement failed.');
+  const source = createMessageSource();
+  const order: string[] = [];
+  const listenerErrors: unknown[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      if (readCount === 1) {
+        return [{...FIRST_PROPERTY, value: false, code: 0}];
+      } else if (readCount === 2) {
+        return eventSnapshot.promise;
+      }
+
+      return replacementSnapshot.promise;
+    },
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY],
+      notifications: [FIRST_EVENT],
+      refreshSnapshotOnEvents: [FIRST_EVENT.data],
+    },
+    {
+      onStateChanged: state => {
+        if (state.invalidatedProperties !== undefined) {
+          order.push('invalidate');
+        }
+      },
+      onEventOccurred: () => {
+        order.push('event');
+      },
+      onError: error => {
+        listenerErrors.push(error);
+        order.push('error');
+      },
+    },
+  );
+
+  source.send({
+    type: 'event',
+    data: {
+      ...FIRST_EVENT.data,
+      arguments: {type: 'identified', data: []},
+    },
+  });
+  await waitFor(() => readCount === 2);
+
+  const replacement = subscription.refresh();
+
+  await waitFor(() => readCount === 3);
+  replacementSnapshot.reject(replacementError);
+  await expect(replacement).resolves.toBeUndefined();
+
+  expect(order).toEqual(['invalidate', 'event', 'error']);
+  expect(listenerErrors).toEqual([replacementError]);
+
+  eventSnapshot.resolve([{...FIRST_PROPERTY, value: true, code: 0}]);
+  await Promise.resolve();
+  expect(order).toHaveLength(3);
+
+  await subscription.dispose();
+});
+
+test.each(['reconnect', 'online-state'] as const)(
+  'invalidates an event snapshot when a replacing %s refresh fails',
+  async replacementType => {
+    const eventSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+    const replacementSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+    const replacementError = new Error(`${replacementType} failed.`);
+    const source = createMessageSource();
+    const order: string[] = [];
+    const errors: unknown[] = [];
+    let readCount = 0;
+    const channel = new CloudDeviceChannel(
+      DID,
+      source,
+      async () => {
+        readCount++;
+
+        if (readCount === 1) {
+          return [{...FIRST_PROPERTY, value: false, code: 0}];
+        } else if (readCount === 2) {
+          return eventSnapshot.promise;
+        }
+
+        return replacementSnapshot.promise;
+      },
+      async () => true,
+      () => undefined,
+    );
+    const subscription = await channel.subscribe(
+      {
+        snapshotProperties: [FIRST_PROPERTY],
+        notifications: [FIRST_EVENT],
+        refreshSnapshotOnEvents: [FIRST_EVENT.data],
+      },
+      {
+        onStateChanged: state => {
+          if (state.invalidatedProperties !== undefined) {
+            order.push('invalidate');
+          }
+        },
+        onEventOccurred: () => {
+          order.push('event');
+        },
+        onError: error => {
+          errors.push(error);
+          order.push('error');
+        },
+      },
+    );
+
+    if (replacementType === 'reconnect') {
+      channel.handleConnectionState(false);
+    }
+
+    source.send({
+      type: 'event',
+      data: {
+        ...FIRST_EVENT.data,
+        arguments: {type: 'identified', data: []},
+      },
+    });
+    await waitFor(() => readCount === 2);
+
+    if (replacementType === 'reconnect') {
+      channel.handleConnectionState(true);
+    } else {
+      source.send({type: 'state', data: {did: DID, online: true}});
+    }
+
+    await waitFor(() => readCount === 3);
+    replacementSnapshot.reject(replacementError);
+    await waitFor(() => errors.length === 1);
+
+    expect(order).toEqual(['invalidate', 'event', 'error']);
+    expect(errors).toEqual([replacementError]);
+
+    eventSnapshot.resolve([{...FIRST_PROPERTY, value: true, code: 0}]);
+    await Promise.resolve();
+    expect(order).toHaveLength(3);
+
+    await subscription.dispose();
+  },
+);
+
+test('replaces an event snapshot refresh while retaining events in order', async () => {
+  const olderSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const newerSnapshot = deferred<readonly CloudPropertySnapshot[]>();
+  const source = createMessageSource();
+  const order: string[] = [];
+  let readCount = 0;
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => {
+      readCount++;
+
+      if (readCount === 1) {
+        return [{...FIRST_PROPERTY, value: 0, code: 0}];
+      } else if (readCount === 2) {
+        return olderSnapshot.promise;
+      }
+
+      return newerSnapshot.promise;
+    },
+    async () => true,
+    () => undefined,
+  );
+  const subscription = await channel.subscribe(
+    {
+      snapshotProperties: [FIRST_PROPERTY],
+      notifications: [FIRST_EVENT],
+      refreshSnapshotOnEvents: [FIRST_EVENT.data],
+    },
+    {
+      onStateChanged: state => {
+        order.push(`state:${String(state.properties[0]?.value)}`);
+      },
+      onSnapshotInvalidated: () => {
+        order.push('invalidate');
+      },
+      onEventOccurred: event => {
+        const value =
+          event.arguments.type === 'identified'
+            ? event.arguments.data[0]?.value
+            : event.arguments.data[0];
+        order.push(`event:${String(value)}`);
+      },
+    },
+  );
+  const sendEvent = (value: string): void => {
+    source.send({
+      type: 'event',
+      data: {
+        ...FIRST_EVENT.data,
+        arguments: {
+          type: 'identified',
+          data: [{piid: 1, value}],
+        },
+      },
+    });
+  };
+
+  sendEvent('first');
+  await waitFor(() => readCount === 2);
+  sendEvent('second');
+  await waitFor(() => readCount === 3);
+
+  newerSnapshot.resolve([{...FIRST_PROPERTY, value: 2, code: 0}]);
+  await waitFor(() => order.length === 4);
+
+  expect(order).toEqual(['state:0', 'state:2', 'event:first', 'event:second']);
+
+  olderSnapshot.resolve([{...FIRST_PROPERTY, value: 1, code: 0}]);
+  await Promise.resolve();
+  expect(order).toHaveLength(4);
+
+  await subscription.dispose();
+});
+
+test('rejects invalid event-triggered snapshot refresh requests', async () => {
+  const source = createMessageSource();
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => [{...FIRST_PROPERTY, value: true, code: 0}],
+    async () => true,
+    () => undefined,
+  );
+
+  await expect(
+    channel.subscribe(
+      {
+        snapshotProperties: [],
+        notifications: [FIRST_EVENT],
+        refreshSnapshotOnEvents: [FIRST_EVENT.data],
+      },
+      {},
+    ),
+  ).rejects.toThrow('cannot refresh an empty snapshot on events');
+
+  await expect(
+    channel.subscribe(
+      {
+        snapshotProperties: [FIRST_PROPERTY],
+        refreshSnapshotOnEvents: [FIRST_EVENT.data],
+      },
+      {},
+    ),
+  ).rejects.toThrow('can only refresh snapshots for subscribed events');
+
+  expect(source.subscribeCount).toBe(0);
 });
 
 test('routes events only to listeners subscribed to the matching event', async () => {

@@ -41,12 +41,24 @@ export type MiotPropertyValueListMapping = Readonly<
   Record<MiotUrnPattern, MiotSpecValueList>
 >;
 
+/** Required state access for a mapped property. */
+export type MiotPropertyAccessRequirement = 'read' | 'read-notify';
+
 export type MiotPropertyMapping =
   | string
   | {
       readonly name: string;
+      /**
+       * Defaults to `read-notify`; use `read` when notify access is not
+       * required.
+       */
+      readonly access?: MiotPropertyAccessRequirement;
       readonly enum?: MiotEnumMapping;
       readonly iid?: MiotPropertyIidMapping;
+      /**
+       * Allows this capability to be absent while matching. Once resolved,
+       * observation availability remains independent of endpoint readiness.
+       */
       readonly optional?: true;
       /**
        * Replaces the declared value list for matching device URNs.
@@ -188,10 +200,15 @@ export function assertMiotPropertySchema(schema: MiotPropertySchema): void {
 
       const {
         name,
+        access,
         enum: enumMapping,
         iid: iidMapping,
         'value-list': valueListMapping,
       } = getPropertyMapping(mapping);
+
+      if (!isValidMiotPropertyAccessRequirement(access)) {
+        throw new TypeError('Invalid MIoT property schema access.');
+      }
 
       if (iidMapping !== undefined && !isValidIidMapping(iidMapping)) {
         throw new TypeError('Invalid MIoT property schema IID.');
@@ -537,6 +554,7 @@ function resolveServiceProperties(
         : findPropertyCandidates(
             service,
             propertyType,
+            mapping.access,
             enumMapping,
             mapping.enum !== undefined,
             iid,
@@ -594,6 +612,7 @@ function resolveServiceProperties(
 function findPropertyCandidates(
   service: MiotSpecService,
   propertyType: string,
+  access: MiotPropertyAccessRequirement,
   enumMapping: MiotEnumValueMapping | undefined,
   requiresEnumMapping: boolean,
   iid: number | undefined,
@@ -607,12 +626,12 @@ function findPropertyCandidates(
     }
 
     // Vendor instances can declare different access modes for the same base
-    // property type.
-    // State-backed aliases must remain observable between commands so that
-    // acknowledged effects can be reconciled with manual device changes.
+    // property type. Mappings require observable state by default so that
+    // acknowledged effects can be reconciled with manual device changes;
+    // snapshot-readable sensor state can opt out of requiring notifications.
     if (
       !property.access.includes('read') ||
-      !property.access.includes('notify')
+      (access === 'read-notify' && !property.access.includes('notify'))
     ) {
       return false;
     }
@@ -680,15 +699,17 @@ function resolveProperty(
 
 function getPropertyMapping(mapping: MiotPropertyMapping): {
   readonly name: string;
+  readonly access: MiotPropertyAccessRequirement;
   readonly enum?: MiotEnumMapping;
   readonly iid?: MiotPropertyIidMapping;
   readonly optional: boolean;
   readonly 'value-list'?: MiotPropertyValueListMapping;
 } {
   return typeof mapping === 'string'
-    ? {name: mapping, optional: false}
+    ? {name: mapping, access: 'read-notify', optional: false}
     : {
         name: mapping.name,
+        access: mapping.access === undefined ? 'read-notify' : mapping.access,
         enum: mapping.enum,
         iid: mapping.iid,
         optional: mapping.optional === true,
@@ -742,6 +763,12 @@ function isValidEnumValueMapping(mapping: MiotEnumValueMapping): boolean {
     entries.every(([key, value]) => key.length > 0 && Number.isFinite(value)) &&
     new Set(entries.map(([, value]) => value)).size === entries.length
   );
+}
+
+function isValidMiotPropertyAccessRequirement(
+  value: unknown,
+): value is MiotPropertyAccessRequirement {
+  return value === 'read' || value === 'read-notify';
 }
 
 /** Selects a matching pattern that is nested within every other match. */

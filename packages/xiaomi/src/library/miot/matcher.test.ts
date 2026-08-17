@@ -210,6 +210,41 @@ test.each([
   },
 );
 
+test('allows a property to explicitly require snapshot read access only', () => {
+  const schema = {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:property:brightness:0000000D': {
+        name: 'brightness',
+        access: 'read',
+      },
+    },
+  } as const satisfies MiotPropertySchema;
+  const service = createLightService({
+    properties: [
+      createProperty(2, BRIGHTNESS_PROPERTY_TYPE, {access: ['read']}),
+    ],
+  });
+
+  expect(resolveTestSchema([service], schema)).toMatchObject([
+    {
+      service: {iid: 2},
+      properties: {brightness: {iid: 2, access: ['read']}},
+    },
+  ]);
+  expect(
+    resolveTestSchema(
+      [
+        createLightService({
+          properties: [
+            createProperty(2, BRIGHTNESS_PROPERTY_TYPE, {access: ['notify']}),
+          ],
+        }),
+      ],
+      schema,
+    ),
+  ).toBeUndefined();
+});
+
 test('omits an optional property that cannot provide observable state', () => {
   const service = createLightService({
     properties: [
@@ -854,6 +889,28 @@ test.each([
     {
       'urn:miot-spec-v2:service:light:00007802': {
         'urn:miot-spec-v2:property:on:00000006': {name: ''},
+      },
+    },
+  ],
+  [
+    'an invalid access requirement',
+    {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': {
+          name: 'on',
+          access: 'typo',
+        },
+      },
+    },
+  ],
+  [
+    'a null access requirement',
+    {
+      'urn:miot-spec-v2:service:light:00007802': {
+        'urn:miot-spec-v2:property:on:00000006': {
+          name: 'on',
+          access: null,
+        },
       },
     },
   ],

@@ -19,7 +19,7 @@ import {
   SetAirConditionerFanSpeedCommand,
   SetAirConditionerModeCommand,
   SetAirConditionerOnCommand,
-  SetAirConditionerTargetHumidityCommand,
+  SetAirConditionerTargetRelativeHumidityCommand,
   SetAirConditionerTargetTemperatureCommand,
 } from './air-conditioner.js';
 import {
@@ -29,7 +29,7 @@ import {
   type DehumidifierEndpointConnection,
   SetDehumidifierModeCommand,
   SetDehumidifierOnCommand,
-  SetDehumidifierTargetHumidityCommand,
+  SetDehumidifierTargetRelativeHumidityCommand,
 } from './dehumidifier.js';
 import {
   Fan,
@@ -175,14 +175,14 @@ test('air conditioner exposes mode, fan speed, targets, and commands', async () 
   airConditioner.setFanSpeed(0);
   const nextTargetTemperature = Temperature.fromCelsius(24);
   airConditioner.setTargetTemperature(nextTargetTemperature);
-  airConditioner.setTargetHumidity(0.6);
+  airConditioner.setTargetRelativeHumidity(0.6);
   await flushMicrotasks();
 
   expect(connection.commands).toEqual([
     new SetAirConditionerModeCommand('cool'),
     new SetAirConditionerFanSpeedCommand(0),
     new SetAirConditionerTargetTemperatureCommand(nextTargetTemperature),
-    new SetAirConditionerTargetHumidityCommand(0.6),
+    new SetAirConditionerTargetRelativeHumidityCommand(0.6),
   ]);
 });
 
@@ -218,12 +218,12 @@ test('dehumidifier exposes mode, target relative humidity, and commands', async 
   expect(endpoint.relativeHumidity).toBe(0.57);
 
   dehumidifier.setMode('sleep');
-  dehumidifier.setTargetHumidity(0.6);
+  dehumidifier.setTargetRelativeHumidity(0.6);
   await flushMicrotasks();
 
   expect(connection.commands).toEqual([
     new SetDehumidifierModeCommand('sleep'),
-    new SetDehumidifierTargetHumidityCommand(0.6),
+    new SetDehumidifierTargetRelativeHumidityCommand(0.6),
   ]);
 });
 
@@ -402,7 +402,7 @@ test.each([0, 0.5, 1])(
   'accepts target relative humidity %p',
   relativeHumidity => {
     expect(
-      new SetDehumidifierTargetHumidityCommand(relativeHumidity)
+      new SetDehumidifierTargetRelativeHumidityCommand(relativeHumidity)
         .relativeHumidity,
     ).toBe(relativeHumidity);
   },
@@ -412,7 +412,7 @@ test.each([0, 0.5, 1])(
   'accepts air conditioner target relative humidity %p',
   relativeHumidity => {
     expect(
-      new SetAirConditionerTargetHumidityCommand(relativeHumidity)
+      new SetAirConditionerTargetRelativeHumidityCommand(relativeHumidity)
         .relativeHumidity,
     ).toBe(relativeHumidity);
   },
@@ -422,7 +422,7 @@ test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 1.1, Infinity])(
   'rejects invalid target relative humidity %p',
   relativeHumidity => {
     expect(
-      () => new SetDehumidifierTargetHumidityCommand(relativeHumidity),
+      () => new SetDehumidifierTargetRelativeHumidityCommand(relativeHumidity),
     ).toThrow(RangeError);
   },
 );
@@ -431,16 +431,17 @@ test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 1.1, Infinity])(
   'rejects invalid air conditioner target relative humidity %p',
   relativeHumidity => {
     expect(
-      () => new SetAirConditionerTargetHumidityCommand(relativeHumidity),
+      () =>
+        new SetAirConditionerTargetRelativeHumidityCommand(relativeHumidity),
     ).toThrow(RangeError);
 
     const airConditioner = new DeviceEntry('air conditioner').createInstance(
       AirConditioner,
     );
 
-    expect(() => airConditioner.setTargetHumidity(relativeHumidity)).toThrow(
-      RangeError,
-    );
+    expect(() =>
+      airConditioner.setTargetRelativeHumidity(relativeHumidity),
+    ).toThrow(RangeError);
   },
 );
 
@@ -449,11 +450,11 @@ test('new device commands only supersede commands of the same class', () => {
   const airConditionerFanSpeed = new SetAirConditionerFanSpeedCommand('auto');
   const airConditionerTemperature =
     new SetAirConditionerTargetTemperatureCommand(Temperature.fromCelsius(24));
-  const airConditionerTargetHumidityCommand =
-    new SetAirConditionerTargetHumidityCommand(0.5);
+  const airConditionerTargetRelativeHumidityCommand =
+    new SetAirConditionerTargetRelativeHumidityCommand(0.5);
   const dehumidifierMode = new SetDehumidifierModeCommand('auto');
-  const dehumidifierTargetHumidityCommand =
-    new SetDehumidifierTargetHumidityCommand(0.5);
+  const dehumidifierTargetRelativeHumidityCommand =
+    new SetDehumidifierTargetRelativeHumidityCommand(0.5);
   const fanMode = new SetFanModeCommand('normal');
   const fanSpeed = new SetFanSpeedCommand(0.5);
   const fanHorizontalSwing = new SetFanHorizontalSwingCommand(true);
@@ -470,7 +471,7 @@ test('new device commands only supersede commands of the same class', () => {
   ).toBe(true);
   expect(airConditionerFanSpeed.supersedes(airConditionerMode)).toBe(false);
   expect(
-    airConditionerMode.supersedes(airConditionerTargetHumidityCommand),
+    airConditionerMode.supersedes(airConditionerTargetRelativeHumidityCommand),
   ).toBe(false);
   expect(
     airConditionerTemperature.supersedes(
@@ -480,25 +481,29 @@ test('new device commands only supersede commands of the same class', () => {
     ),
   ).toBe(true);
   expect(
-    airConditionerTemperature.supersedes(airConditionerTargetHumidityCommand),
+    airConditionerTemperature.supersedes(
+      airConditionerTargetRelativeHumidityCommand,
+    ),
   ).toBe(false);
   expect(
-    airConditionerTargetHumidityCommand.supersedes(
-      new SetAirConditionerTargetHumidityCommand(0.6),
+    airConditionerTargetRelativeHumidityCommand.supersedes(
+      new SetAirConditionerTargetRelativeHumidityCommand(0.6),
     ),
   ).toBe(true);
   expect(
-    airConditionerTargetHumidityCommand.supersedes(airConditionerTemperature),
+    airConditionerTargetRelativeHumidityCommand.supersedes(
+      airConditionerTemperature,
+    ),
   ).toBe(false);
   expect(
     dehumidifierMode.supersedes(new SetDehumidifierModeCommand('sleep')),
   ).toBe(true);
-  expect(dehumidifierMode.supersedes(dehumidifierTargetHumidityCommand)).toBe(
-    false,
-  );
   expect(
-    dehumidifierTargetHumidityCommand.supersedes(
-      new SetDehumidifierTargetHumidityCommand(0.6),
+    dehumidifierMode.supersedes(dehumidifierTargetRelativeHumidityCommand),
+  ).toBe(false);
+  expect(
+    dehumidifierTargetRelativeHumidityCommand.supersedes(
+      new SetDehumidifierTargetRelativeHumidityCommand(0.6),
     ),
   ).toBe(true);
   expect(fanMode.supersedes(new SetFanModeCommand('natural'))).toBe(true);
@@ -525,15 +530,15 @@ test('new device commands have semantic log strings', () => {
       Temperature.fromCelsius(24),
     ).toLogString(),
   ).toBe('set targetTemperatureCelsius=24');
-  expect(new SetAirConditionerTargetHumidityCommand(0.5).toLogString()).toBe(
-    'set targetRelativeHumidity=0.5',
-  );
+  expect(
+    new SetAirConditionerTargetRelativeHumidityCommand(0.5).toLogString(),
+  ).toBe('set targetRelativeHumidity=0.5');
   expect(new SetDehumidifierModeCommand('laundry').toLogString()).toBe(
     'set mode=laundry',
   );
-  expect(new SetDehumidifierTargetHumidityCommand(0.5).toLogString()).toBe(
-    'set targetRelativeHumidity=0.5',
-  );
+  expect(
+    new SetDehumidifierTargetRelativeHumidityCommand(0.5).toLogString(),
+  ).toBe('set targetRelativeHumidity=0.5');
   expect(new SetFanModeCommand('natural').toLogString()).toBe(
     'set mode=natural',
   );

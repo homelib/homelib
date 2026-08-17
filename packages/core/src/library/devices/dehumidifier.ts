@@ -2,7 +2,10 @@ import {computed} from 'mobx';
 
 import type {Temperature} from '../atomics/index.js';
 import {StatefulCommand} from '../command.js';
-import type {HumiditySensor, TemperatureSensor} from '../device/index.js';
+import type {
+  RelativeHumiditySource,
+  TemperatureSource,
+} from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
   Endpoint,
@@ -14,7 +17,7 @@ export type DehumidifierMode = 'auto' | 'sleep' | 'laundry';
 
 export class Dehumidifier
   extends Device
-  implements TemperatureSensor, HumiditySensor
+  implements TemperatureSource, RelativeHumiditySource
 {
   protected readonly endpoint: DehumidifierEndpoint;
 
@@ -72,8 +75,8 @@ export class Dehumidifier
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(relativeHumidity: number): this {
-    this.endpoint.setTargetHumidity(relativeHumidity);
+  setTargetRelativeHumidity(relativeHumidity: number): this {
+    this.endpoint.setTargetRelativeHumidity(relativeHumidity);
     return this;
   }
 }
@@ -144,9 +147,9 @@ export class DehumidifierEndpoint<
   }
 
   /** Sets target relative humidity using a normalized ratio from 0 to 1. */
-  setTargetHumidity(relativeHumidity: number): this {
+  setTargetRelativeHumidity(relativeHumidity: number): this {
     return this.enqueueCommand(
-      new SetDehumidifierTargetHumidityCommand(relativeHumidity),
+      new SetDehumidifierTargetRelativeHumidityCommand(relativeHumidity),
     );
   }
 }
@@ -185,7 +188,7 @@ export class SetDehumidifierModeCommand extends DehumidifierCommand {
   }
 }
 
-export class SetDehumidifierTargetHumidityCommand extends DehumidifierCommand {
+export class SetDehumidifierTargetRelativeHumidityCommand extends DehumidifierCommand {
   /** A normalized relative-humidity ratio from 0 to 1. */
   constructor(readonly relativeHumidity: number) {
     super();
@@ -209,4 +212,4 @@ export class SetDehumidifierTargetHumidityCommand extends DehumidifierCommand {
 export type DehumidifierEndpointCommand =
   | SetDehumidifierOnCommand
   | SetDehumidifierModeCommand
-  | SetDehumidifierTargetHumidityCommand;
+  | SetDehumidifierTargetRelativeHumidityCommand;

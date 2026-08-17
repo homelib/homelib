@@ -477,11 +477,12 @@ export type CommandEffect = {
   /**
    * Revision of the observations relevant to the result of {@link matches}.
    *
-   * It must increase only after every value relevant to {@link matches} has
+   * It must increase only after every state relevant to {@link matches} has
    * been observed since its previous revision, including observations equal to
-   * the previous values. It must remain unchanged for partial or unrelated
-   * updates. Every change must accompany a change to the owning connection's
-   * `stateRevision`; equality deliberately ignores this lifecycle value.
+   * the previous values and invalidations that make a state unknown. It must
+   * remain unchanged for partial or unrelated updates. Every change must
+   * accompany a change to the owning connection's `stateRevision`; equality
+   * deliberately ignores this lifecycle value.
    */
   readonly observationRevision: number;
   /**
@@ -493,10 +494,13 @@ export type CommandEffect = {
    */
   equals(effect: CommandEffect): boolean;
   /**
-   * Whether the endpoint's latest complete state already reflects this effect.
+   * Whether the endpoint's currently available observations reflect this
+   * effect. It must return false when any observation relevant to the effect is
+   * unknown or has been invalidated.
    *
    * Core only calls this with the endpoint that owns the effect while its
-   * current connection is ready. Implementations need not repeat connection
+   * current connection is ready. Readiness does not guarantee that any state
+   * was observed successfully; implementations need not repeat connection
    * readiness or endpoint ownership checks.
    */
   matches(endpoint: EndpointReference): boolean;
@@ -516,10 +520,17 @@ export type CommandExecution = {
 };
 
 export type EndpointConnection<in TCommand extends Command> = {
+  /**
+   * Whether the connection is connected and has completed lifecycle
+   * initialization. Readiness does not guarantee that any state property was
+   * observed successfully; each property defines its own unknown or default
+   * representation.
+   */
   readonly ready: boolean;
   /**
-   * Monotonically increases after every complete or incremental state update,
-   * including updates whose values equal the previously observed state.
+   * Monotonically increases after every complete or incremental state update
+   * and state-availability change, including equal observations and
+   * invalidations that make a state unknown.
    */
   readonly stateRevision: number;
   /**

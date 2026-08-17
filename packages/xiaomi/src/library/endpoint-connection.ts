@@ -147,7 +147,7 @@ export abstract class MiotEndpointConnection<
     return this.stateRevisionValue;
   }
 
-  /** Properties whose complete snapshot defines readiness. */
+  /** Properties selected for snapshot observation. */
   get snapshotProperties(): readonly MiotProperty[] {
     return this.getProperties((name, property) => {
       return this.isSnapshotProperty(name, property);
@@ -157,27 +157,30 @@ export abstract class MiotEndpointConnection<
   /** Snapshot properties whose buffered notifications must replay afterward. */
   get replaySnapshotPropertyNotifications(): readonly MiotProperty[] {
     return this.getProperties((name, property) => {
-      return this.shouldReplaySnapshotPropertyNotifications(name, property);
+      return (
+        property.access.includes('notify') &&
+        this.isSnapshotProperty(name, property) &&
+        this.shouldReplaySnapshotPropertyNotifications(name, property)
+      );
+    });
+  }
+
+  /** Events after which this endpoint needs a fresh property snapshot. */
+  get snapshotRefreshEvents(): readonly MiotEvent[] {
+    return this.getEvents((name, event) => {
+      return this.shouldRefreshSnapshotOnEvent(name, event);
     });
   }
 
   /** Incremental property and event notifications handled by this endpoint. */
   get notificationTargets(): readonly MiotEndpointNotificationTarget[] {
-    const properties = this.getProperties(() => true).map(data => {
+    const properties = this.getProperties((_name, property) =>
+      property.access.includes('notify'),
+    ).map(data => {
       return {type: 'property-change', data} as const;
     });
-    const {metadata} = this;
-    const events = metadata.resources.flatMap(resource => {
-      return Object.values(resource.events ?? {}).map(event => {
-        return {
-          type: 'event',
-          data: {
-            did: metadata.device.did,
-            siid: resource.service.iid,
-            eiid: event.iid,
-          },
-        } as const;
-      });
+    const events = this.getEvents(() => true).map(data => {
+      return {type: 'event', data} as const;
     });
 
     return [...properties, ...events];
@@ -207,6 +210,23 @@ export abstract class MiotEndpointConnection<
             did: metadata.device.did,
             siid: resource.service.iid,
             piid: property.iid,
+          };
+        });
+    });
+  }
+
+  private getEvents(
+    select: (name: string, event: MiotSpecEvent) => boolean,
+  ): readonly MiotEvent[] {
+    const {metadata} = this;
+    return metadata.resources.flatMap(resource => {
+      return Object.entries(resource.events ?? {})
+        .filter(([name, event]) => select(name, event))
+        .map(([, event]) => {
+          return {
+            did: metadata.device.did,
+            siid: resource.service.iid,
+            eiid: event.iid,
           };
         });
     });
@@ -272,8 +292,28 @@ export abstract class MiotEndpointConnection<
     this.handleNotification({type: 'event', data: update});
   }
 
+  /** Invalidates selected snapshot values without taking the endpoint offline. */
   @action
-  handleStateUpdate(update: MiotEndpointStateUpdate): void {
+  handleSnapshotInvalidation(properties: readonly MiotProperty[]): void {
+    const invalidations = this.prepareSnapshotInvalidations(properties);
+
+    if (invalidations.length === 0) {
+      return;
+    }
+
+    const revision = this.stateRevisionValue + 1;
+
+    for (const {name} of invalidations) {
+      this.stateMap.delete(name);
+      this.observationRevisionMap.set(name, revision);
+      this.handleSnapshotPropertyInvalidated(name);
+    }
+
+    this.stateRevisionValue = revision;
+  }
+
+  @action
+  handleStateUpdate(update: MiotEndpointStateUpdate): readonly Error[] {
     if (update.did !== this.metadata.device.did) {
       throw new TypeError('Unexpected MIoT endpoint state update.');
     }
@@ -282,36 +322,51 @@ export abstract class MiotEndpointConnection<
       this.readyValue = false;
       this.handleStateInvalidated();
       this.stateRevisionValue++;
-      return;
+      return [];
     }
 
-    const states = this.prepareStateUpdates(update.properties);
-    const missingSnapshotPropertyKeySet = new Set(
-      this.snapshotProperties.map(getMiotPropertyKey),
+    const prepared = this.prepareSnapshotStateUpdates(update.properties);
+    const explicitInvalidations = this.prepareSnapshotInvalidations(
+      update.invalidatedProperties ?? [],
     );
 
-    for (const {property} of states) {
-      missingSnapshotPropertyKeySet.delete(getMiotPropertyKey(property));
+    for (const {property} of explicitInvalidations) {
+      if (prepared.propertyKeySet.has(getMiotPropertyKey(property))) {
+        throw new TypeError(
+          'MIoT endpoint state update property is also invalidated.',
+        );
+      }
     }
 
-    if (missingSnapshotPropertyKeySet.size > 0) {
-      throw new TypeError('Incomplete MIoT endpoint state update.');
+    const invalidations = [...explicitInvalidations, ...prepared.invalidations];
+
+    const revision = this.stateRevisionValue + 1;
+
+    for (const {name} of invalidations) {
+      this.stateMap.delete(name);
+      this.handleSnapshotPropertyInvalidated(name);
     }
 
-    for (const {name, value} of states) {
+    for (const {name, value} of prepared.states) {
       this.stateMap.set(name, value);
     }
 
     this.readyValue = true;
-    this.stateRevisionValue++;
+    this.stateRevisionValue = revision;
 
-    for (const {name} of states) {
-      this.observationRevisionMap.set(name, this.stateRevisionValue);
+    for (const {name} of invalidations) {
+      this.observationRevisionMap.set(name, revision);
     }
 
-    for (const {name, value} of states) {
+    for (const {name} of prepared.states) {
+      this.observationRevisionMap.set(name, revision);
+    }
+
+    for (const {name, value} of prepared.states) {
       this.handlePropertyStateChange(name, value);
     }
+
+    return prepared.errors;
   }
 
   protected handleEvent(
@@ -322,7 +377,7 @@ export abstract class MiotEndpointConnection<
     throw new TypeError(`Unhandled MIoT endpoint event: ${name}.`);
   }
 
-  /** Selects whether a resolved property participates in readiness snapshots. */
+  /** Selects whether a resolved property participates in snapshots. */
   protected isSnapshotProperty(
     _name: string,
     _property: MiotResolvedSpecProperty,
@@ -338,8 +393,19 @@ export abstract class MiotEndpointConnection<
     return false;
   }
 
+  /** Selects events that require refreshing this endpoint's snapshot. */
+  protected shouldRefreshSnapshotOnEvent(
+    _name: string,
+    _event: MiotSpecEvent,
+  ): boolean {
+    return false;
+  }
+
   /** Handles loss of the currently valid state within the owning action. */
   protected handleStateInvalidated(): void {}
+
+  /** Handles loss of one snapshot property within the owning action. */
+  protected handleSnapshotPropertyInvalidated(_name: string): void {}
 
   /**
    * Handles a committed property state change.
@@ -699,10 +765,149 @@ export abstract class MiotEndpointConnection<
     return states;
   }
 
+  private prepareSnapshotStateUpdates(updates: readonly MiotPropertyUpdate[]): {
+    readonly states: Array<{
+      readonly name: string;
+      readonly value: unknown;
+      readonly property: MiotProperty;
+    }>;
+    readonly invalidations: Array<{
+      readonly name: string;
+      readonly property: MiotProperty;
+    }>;
+    readonly errors: readonly Error[];
+    readonly propertyKeySet: ReadonlySet<string>;
+  } {
+    const states: Array<{
+      readonly name: string;
+      readonly value: unknown;
+      readonly property: MiotProperty;
+    }> = [];
+    const invalidations: Array<{
+      readonly name: string;
+      readonly property: MiotProperty;
+    }> = [];
+    const errors: Error[] = [];
+    const stateNameSet = new Set<string>();
+    const propertyKeySet = new Set<string>();
+
+    for (const update of updates) {
+      const state = this.resolveStateUpdate(update);
+
+      if (stateNameSet.has(state.name)) {
+        throw new TypeError('Duplicate MIoT endpoint property update.');
+      }
+
+      stateNameSet.add(state.name);
+      propertyKeySet.add(getMiotPropertyKey(state.property));
+
+      try {
+        assertMiotPropertyValue(
+          state.specProperty,
+          state.value,
+          state.name,
+          update,
+        );
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !this.isSnapshotProperty(state.name, state.specProperty)
+        ) {
+          throw error;
+        }
+
+        invalidations.push({name: state.name, property: state.property});
+        errors.push(error);
+        continue;
+      }
+
+      states.push({
+        name: state.name,
+        value: state.value,
+        property: state.property,
+      });
+    }
+
+    return {states, invalidations, errors, propertyKeySet};
+  }
+
+  private prepareSnapshotInvalidations(
+    properties: readonly MiotProperty[],
+  ): Array<{
+    readonly name: string;
+    readonly property: MiotProperty;
+  }> {
+    const snapshotPropertyNameMap = new Map<string, string>();
+
+    for (const resource of this.metadata.resources) {
+      for (const [name, property] of Object.entries(resource.properties)) {
+        if (!this.isSnapshotProperty(name, property)) {
+          continue;
+        }
+
+        snapshotPropertyNameMap.set(
+          getMiotPropertyKey({
+            did: this.metadata.device.did,
+            siid: resource.service.iid,
+            piid: property.iid,
+          }),
+          name,
+        );
+      }
+    }
+
+    const invalidations: Array<{
+      readonly name: string;
+      readonly property: MiotProperty;
+    }> = [];
+    const invalidatedPropertyKeySet = new Set<string>();
+
+    for (const property of properties) {
+      const propertyKey = getMiotPropertyKey(property);
+      const name = snapshotPropertyNameMap.get(propertyKey);
+
+      if (name === undefined) {
+        throw new TypeError(
+          'Unexpected MIoT endpoint snapshot invalidation property.',
+        );
+      } else if (invalidatedPropertyKeySet.has(propertyKey)) {
+        throw new TypeError(
+          'Duplicate MIoT endpoint snapshot invalidation property.',
+        );
+      }
+
+      invalidatedPropertyKeySet.add(propertyKey);
+      invalidations.push({name, property});
+    }
+
+    return invalidations;
+  }
+
   private getStateUpdate(update: MiotPropertyUpdate): {
     readonly name: string;
     readonly value: unknown;
     readonly property: MiotProperty;
+  } {
+    const state = this.resolveStateUpdate(update);
+
+    assertMiotPropertyValue(
+      state.specProperty,
+      state.value,
+      state.name,
+      update,
+    );
+    return {
+      name: state.name,
+      value: state.value,
+      property: state.property,
+    };
+  }
+
+  private resolveStateUpdate(update: MiotPropertyUpdate): {
+    readonly name: string;
+    readonly value: unknown;
+    readonly property: MiotProperty;
+    readonly specProperty: MiotResolvedSpecProperty;
   } {
     const {metadata} = this;
 
@@ -738,11 +943,11 @@ export abstract class MiotEndpointConnection<
       throw new TypeError('Unexpected MIoT endpoint property update.');
     }
 
-    assertMiotPropertyValue(stateProperty, update.value, stateName, update);
     return {
       name: stateName,
       value: update.value,
       property: {did: update.did, siid: update.siid, piid: update.piid},
+      specProperty: stateProperty,
     };
   }
 
@@ -1029,6 +1234,7 @@ export type MiotEndpointStateUpdate = {
   readonly did: string;
   readonly online: boolean;
   readonly properties: readonly MiotPropertyUpdate[];
+  readonly invalidatedProperties?: readonly MiotProperty[];
 };
 
 export type MiotEventUpdate = MiotEvent & {

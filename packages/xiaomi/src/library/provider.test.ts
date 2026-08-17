@@ -12,6 +12,11 @@ import {
   LightEndpoint,
 } from '@homelib/core';
 
+import type {
+  CloudDeviceListener,
+  CloudDeviceSubscription,
+  CloudDeviceSubscriptionRequest,
+} from './cloud/index.js';
 import {
   createMiotEndpointConnectionMetadata,
   resolveMiotEndpointConnectionMetadata,
@@ -22,7 +27,7 @@ import {
   type MiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
-import type {MiotSpecInstance} from './miot/index.js';
+import type {MiotEvent, MiotProperty, MiotSpecInstance} from './miot/index.js';
 import {$xiaomi, MiotProvider} from './provider.js';
 import './index.js';
 
@@ -394,6 +399,92 @@ test.each([
   },
 );
 
+test('wires snapshot state, refresh events, and invalidation through the cloud subscription', async () => {
+  const provider = new MiotProvider('snapshot-refresh-wiring');
+  const internals = getProviderCleanupInternals(provider);
+  const property = {did: 'device', siid: 2, piid: 1} as const;
+  const secondProperty = {did: 'device', siid: 2, piid: 2} as const;
+  const event = {did: 'device', siid: 2, eiid: 1} as const;
+  const notification = {type: 'event', data: event} as const;
+  const stateErrors = [
+    new Error('First snapshot property failed.'),
+    new Error('Second snapshot property failed.'),
+  ];
+  const handleStateUpdate = import.meta.jest.fn(() => stateErrors);
+  const handleSnapshotInvalidation = import.meta.jest.fn();
+  const connection: ProviderSubscriptionConnection = {
+    metadata: {device: {did: 'device'}},
+    snapshotProperties: [property, secondProperty],
+    snapshotRefreshEvents: [event],
+    notificationTargets: [notification],
+    replaySnapshotPropertyNotifications: [],
+    handleStateUpdate,
+    handleNotification: import.meta.jest.fn(),
+    handleSnapshotInvalidation,
+  };
+  const subscription: CloudDeviceSubscription = {
+    refresh: async () => undefined,
+    dispose: async () => undefined,
+  };
+  let request: CloudDeviceSubscriptionRequest | undefined;
+  let listener: CloudDeviceListener | undefined;
+  const subscribeDevice = import.meta.jest.fn(
+    async (
+      _did: string,
+      nextRequest: CloudDeviceSubscriptionRequest,
+      nextListener: CloudDeviceListener,
+    ) => {
+      request = nextRequest;
+      listener = nextListener;
+      return subscription;
+    },
+  );
+
+  await internals.subscribeEndpointConnection(
+    connection,
+    {subscribeDevice},
+    {active: true},
+  );
+
+  expect(subscribeDevice).toHaveBeenCalledTimes(1);
+  expect(subscribeDevice).toHaveBeenCalledWith(
+    'device',
+    {
+      snapshotProperties: [property, secondProperty],
+      refreshSnapshotOnEvents: [event],
+      notifications: [notification],
+      replaySnapshotPropertyNotifications: [],
+    },
+    expect.any(Object),
+  );
+
+  const state = {did: 'device', online: true, properties: []} as const;
+  const consoleError = import.meta.jest
+    .spyOn(console, 'error')
+    .mockImplementation(() => undefined);
+
+  try {
+    listener?.onStateChanged?.(state);
+
+    expect(handleStateUpdate).toHaveBeenCalledWith(state);
+    expect(consoleError).toHaveBeenNthCalledWith(1, stateErrors[0]);
+    expect(consoleError).toHaveBeenNthCalledWith(2, stateErrors[1]);
+  } finally {
+    consoleError.mockRestore();
+  }
+
+  const invalidatedProperties = [property];
+  listener?.onSnapshotInvalidated?.(invalidatedProperties);
+
+  expect(request?.refreshSnapshotOnEvents).toEqual([event]);
+  expect(handleSnapshotInvalidation).toHaveBeenCalledWith(
+    invalidatedProperties,
+  );
+  expect(internals.endpointConnectionSubscriptionMap.get(connection)).toBe(
+    subscription,
+  );
+});
+
 test('forgets the local session while preserving identity and configuration', async () => {
   const previousEnvironmentDirectory = process.env.HOMELIB_DIRECTORY;
   const environmentDirectory = await mkdtemp(
@@ -589,6 +680,25 @@ type TestCloud = {
   readonly transport: {};
 };
 
+type ProviderSubscriptionConnection = {
+  readonly metadata: {readonly device: {readonly did: string}};
+  readonly snapshotProperties: readonly MiotProperty[];
+  readonly snapshotRefreshEvents: readonly MiotEvent[];
+  readonly notificationTargets: readonly object[];
+  readonly replaySnapshotPropertyNotifications: readonly MiotProperty[];
+  handleStateUpdate(state: unknown): readonly Error[];
+  handleNotification(notification: unknown): void;
+  handleSnapshotInvalidation(properties: readonly MiotProperty[]): void;
+};
+
+type ProviderSubscriptionCloudClient = {
+  subscribeDevice(
+    did: string,
+    request: CloudDeviceSubscriptionRequest,
+    listener: CloudDeviceListener,
+  ): Promise<CloudDeviceSubscription>;
+};
+
 type ProviderCleanupInternals = {
   endpointConnectionValues: object[];
   endpointConnectionRuntimeMap: Map<
@@ -610,6 +720,11 @@ type ProviderCleanupInternals = {
     endpoint: LightEndpoint,
     metadata: ReturnType<typeof createTestLightResolvedMetadata>,
   ): Promise<unknown>;
+  subscribeEndpointConnection(
+    connection: ProviderSubscriptionConnection,
+    cloudClient: ProviderSubscriptionCloudClient,
+    runtime: {active: boolean},
+  ): Promise<void>;
   disposeEndpointConnection(connection: object): Promise<void>;
   disposeCloudIfUnused(expectedCloud?: TestCloud): Promise<void>;
 };

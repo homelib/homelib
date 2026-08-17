@@ -11,7 +11,7 @@ The current program demonstrates:
 - reactive temperature/humidity control using device-scoped sensor
   capabilities;
 - automatic pet feeding; and
-- observing a read-only motion sensor with MobX `autorun`.
+- observing motion and categorical ambient light level with MobX `autorun`.
 
 Build and run the playground from the repository root:
 
