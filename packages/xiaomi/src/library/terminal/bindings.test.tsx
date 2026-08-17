@@ -1,5 +1,6 @@
 import {PassThrough} from 'node:stream';
 import {setTimeout as delay} from 'node:timers/promises';
+import {stripVTControlCharacters} from 'node:util';
 
 import {
   EndpointPath,
@@ -51,6 +52,10 @@ test('confirms the default device match as one batch and returns after saving', 
     expect(terminal.frame()).toContain('Living Room');
 
     await terminal.input('\r');
+    await terminal.flushUntil(
+      frame =>
+        frame.includes('device match') && frame.includes('› bind device'),
+    );
     const summary = terminal.frame();
     const summaryLines = summary.split('\n').map(line => line.trim());
     const endpointIndex = summaryLines.indexOf('● main [ready]');
@@ -207,7 +212,12 @@ test('groups devices by location and emphasizes binding status', async () => {
   );
 
   try {
-    await terminal.flushUntil(frame => frame.includes('choose a device'));
+    await terminal.flushUntil(
+      frame =>
+        frame.includes('› Ceiling Light [bound here]') &&
+        frame.includes('Used Light [used elsewhere]') &&
+        frame.includes('1–6 of 7'),
+    );
     const frame = terminal.frame();
     const lines = frame.split('\n').map(line => line.trim());
     const livingRoomIndex = lines.indexOf('My Home › Living Room');
@@ -450,7 +460,7 @@ function renderTestTerminal(node: React.ReactNode): TestTerminal {
   });
 
   stdout.on('data', chunk => {
-    frame = String(chunk);
+    frame = stripVTControlCharacters(String(chunk));
   });
 
   const instance = render(node, {
