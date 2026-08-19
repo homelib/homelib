@@ -17,6 +17,14 @@ provider is disconnected or a binding has not been configured yet.
 The built-in device namespace includes lights, fans, air conditioners,
 dehumidifiers, temperature/humidity sensors, motion sensors, and pet feeders.
 
+## Conventions
+
+- Percentage-like values use a normalized scale from `0` to `1`.
+- Device implementations clamp numeric commands to their supported ranges.
+  A lower bound describes the minimum of that value rather than another state.
+  For example, brightness `0` means minimum brightness, while turning a light
+  off is a separate operation.
+
 ## License
 
 MIT License.
