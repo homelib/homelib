@@ -28,34 +28,32 @@ import {$home, bootstrap} from '@homelib/core';
 import {autorun} from '@homelib/core';
 import {$xiaomi} from '@homelib/xiaomi';
 
-$xiaomi('home');
+$xiaomi('家');
 
-const home = $home('home', home =>
-  home.$scope('livingRoom', room =>
-    room.$light('light').$motionSensor('motionSensor'),
-  ),
+const 家 = $home('家', home =>
+  home.$scope('客厅', room => room.$light('灯').$motionSensor('运动传感器')),
 );
 
 await bootstrap();
 
 autorun(() => {
-  if (home.livingRoom.motionSensor.motionDetected) {
-    home.livingRoom.light.turnOn();
+  if (家.客厅.运动传感器.motionDetected) {
+    家.客厅.灯.turnOn();
   }
 });
 ```
 
 声明回调会创建一棵完全类型安全的树：每一层只能通过属性访问该层已经声明的空间和设备。
-更完整的例子请参考 [playground home](./packages/playground/src/program/home.ts)。
 
 终端前端会在 `bootstrap()` 期间处理设置和设备绑定。
 已有绑定时，可以使用 `--run` 直接运行。
-它会尽可能跟随系统语言，也可以通过 `--locale=zh-CN` 或
-`HOMELIB_LOCALE` 环境变量覆盖语言设置。
 
 ## 试用
 
-HomeLib 仍在积极开发中。通过 playground 可以最方便地体验当前示例和项目配置：
+HomeLib 仍在积极开发中。可以先查看
+[playground home 源码](./packages/playground/src/program/home.ts)，直观感受一套完整的实际配置。
+最方便的试用方式，是让 AI 编程 agent 结合 playground 和项目内置技能协助你开发设备或调整
+设备信息。需要真实设备时，技能也会指导你安全地完成授权与调试。
 
 1. 克隆仓库并安装依赖：
 
@@ -65,21 +63,23 @@ HomeLib 仍在积极开发中。通过 playground 可以最方便地体验当前
    npm install
    ```
 
-2. 在 `packages/playground/src/program/home.ts` 中编写自动化。
-3. 构建并启动 playground，然后按照终端界面的指引配置 provider 和设备绑定：
+2. 使用 AI 编程 agent 打开该工作区。需要开发设备或调整设备信息时，让它遵循项目内置的
+   [设备开发技能](./.github/skills/device-development/SKILL.md)。
+3. 在 `packages/playground/src/program/home.ts` 中编写自动化。
+4. 构建并启动 playground，然后按照终端界面的指引配置 provider 和设备绑定：
 
    ```sh
    npm run build
    node packages/playground/bld/program/home.js
    ```
 
-4. 完成设置后，使用已有绑定直接运行：
+5. 完成设置后，使用已有绑定直接运行：
 
    ```sh
    node packages/playground/bld/program/home.js --run
    ```
 
-5. 如需在另一台机器上试用当前工作区，可以运行部署工具。
+6. 如需在另一台机器上试用当前工作区，可以运行部署工具。
    它会构建项目，通过 SSH 同步工作区，并在远程运行 `npm install`。
    远程目录默认为 `~/homelib`：
 

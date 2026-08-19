@@ -47,18 +47,19 @@ autorun(() => {
 
 The declaration callback creates a fully type-safe tree: only scopes and
 devices declared at each level are available as properties.
-See the [playground home](./packages/playground/src/program/home.ts) for a more
-complete example.
 
 The terminal frontend handles setup and device binding during `bootstrap()`.
 Use `--run` to run directly with existing bindings.
-It follows the system language when possible. Override it with
-`--locale=zh-CN` or the `HOMELIB_LOCALE` environment variable.
 
 ## Try it out
 
-HomeLib is still under active development. The playground is the easiest way to
-try it out with the current examples and project setup:
+HomeLib is still under active development. Start with the
+[playground home source](./packages/playground/src/program/home.ts) to get a
+feel for a complete, real-world setup. The easiest way to explore it yourself is
+to use an AI coding agent together with the playground and the project skills
+included in this repository. These skills cover device development and device
+information adjustments, including guidance for safely authorizing access to
+real devices when needed.
 
 1. Clone the repository and install dependencies:
 
@@ -68,8 +69,11 @@ try it out with the current examples and project setup:
    npm install
    ```
 
-2. Write your automation in `packages/playground/src/program/home.ts`.
-3. Build and start the playground, then follow the terminal UI to configure
+2. Open the checkout with your AI coding agent. For device development or
+   device information adjustments, ask it to follow the built-in
+   [device development skill](./.github/skills/device-development/SKILL.md).
+3. Write your automation in `packages/playground/src/program/home.ts`.
+4. Build and start the playground, then follow the terminal UI to configure
    providers and bindings:
 
    ```sh
@@ -77,13 +81,13 @@ try it out with the current examples and project setup:
    node packages/playground/bld/program/home.js
    ```
 
-4. After setup, run it directly with the saved bindings:
+5. After setup, run it directly with the saved bindings:
 
    ```sh
    node packages/playground/bld/program/home.js --run
    ```
 
-5. To try the current working tree on another machine, run the deployment tool.
+6. To try the current working tree on another machine, run the deployment tool.
    It builds the project, synchronizes the working tree over SSH, and runs
    `npm install` remotely. The remote directory defaults to `~/homelib`:
 
