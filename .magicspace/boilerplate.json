@@ -80,6 +80,12 @@
         "name": "@homelib/xiaomi",
         "projects": [
           {
+            "name": "cli",
+            "type": "program",
+            "test": true,
+            "references": ["library"]
+          },
+          {
             "name": "library",
             "test": true,
             "references": [

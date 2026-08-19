@@ -16,6 +16,9 @@
       "path": "packages/utils/src/library"
     },
     {
+      "path": "packages/xiaomi/src/cli"
+    },
+    {
       "path": "packages/xiaomi/src/library"
     },
     {

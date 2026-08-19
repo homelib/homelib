@@ -1,4 +1,8 @@
 *
+!/src/cli/**/*.{ts,tsx}
+/src/cli/**/*.test.{ts,tsx}
+!/bld/cli/**
+/bld/cli/**/*.test.*
 !/src/library/**/*.{ts,tsx}
 /src/library/**/*.test.{ts,tsx}
 !/bld/library/**
