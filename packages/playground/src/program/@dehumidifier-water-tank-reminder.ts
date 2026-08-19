@@ -7,9 +7,6 @@ import {
 import {createHeartbeat} from '@homelib/utils';
 import ms from 'ms';
 
-const REMINDER_INTERVAL = ms('15m');
-const REMINDER_TEXT = '客厅除湿机水箱已满，请及时清空水箱。';
-
 export function setupDehumidifierWaterTankReminder({
   lights,
   dehumidifier,
@@ -19,7 +16,7 @@ export function setupDehumidifierWaterTankReminder({
   dehumidifier: Dehumidifier;
   speaker: SmartSpeaker;
 }): void {
-  const heartbeat = createHeartbeat(REMINDER_INTERVAL);
+  const heartbeat = createHeartbeat(ms('15m'));
 
   autorun(() => {
     if (!dehumidifier.ready || !speaker.ready) {
@@ -32,7 +29,7 @@ export function setupDehumidifierWaterTankReminder({
     }
 
     if (dehumidifier.waterTankFull) {
-      speaker.speak(REMINDER_TEXT);
+      speaker.speak('客厅除湿机水箱已满，请及时清空水箱。');
       heartbeat();
     }
   });
