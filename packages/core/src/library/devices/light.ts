@@ -42,17 +42,10 @@ export class Light extends Device {
     return this;
   }
 
-  /**
-   * Sets brightness using a normalized ratio from 0 to 1.
-   * A value of 0 turns the light off.
-   */
+  /** Sets brightness using a normalized ratio, clamped by the provider. */
   setBrightness(value: number): this {
-    if (value === 0) {
-      return this.turnOff();
-    } else {
-      this.endpoint.setBrightness(value);
-      return this;
-    }
+    this.endpoint.setBrightness(value);
+    return this;
   }
 
   setColorTemperature(value: number): this {
@@ -101,16 +94,9 @@ export class LightEndpoint<
     return this.enqueueCommand(new SetLightOnCommand(false));
   }
 
-  /**
-   * Sets brightness using a normalized ratio from 0 to 1.
-   * A value of 0 turns the light off.
-   */
+  /** Sets brightness using a normalized ratio, clamped by the provider. */
   setBrightness(value: number): this {
-    if (value === 0) {
-      return this.turnOff();
-    } else {
-      return this.enqueueCommand(new SetLightBrightnessCommand(value));
-    }
+    return this.enqueueCommand(new SetLightBrightnessCommand(value));
   }
 
   setColorTemperature(value: number): this {
@@ -139,14 +125,12 @@ export class SetLightOnCommand extends LightCommand {
 }
 
 export class SetLightBrightnessCommand extends LightCommand {
-  /** `value` is a normalized brightness ratio greater than 0 and at most 1. */
+  /** `value` is a normalized brightness request clamped by the provider. */
   constructor(readonly value: number) {
     super();
 
-    if (!Number.isFinite(value) || value <= 0 || value > 1) {
-      throw new RangeError(
-        'Brightness must be a finite number greater than 0 and at most 1.',
-      );
+    if (Number.isNaN(value)) {
+      throw new RangeError('Brightness must not be NaN.');
     }
   }
 
@@ -159,10 +143,8 @@ export class SetLightColorTemperatureCommand extends LightCommand {
   constructor(readonly value: number) {
     super();
 
-    if (!Number.isFinite(value) || value <= 0) {
-      throw new RangeError(
-        'Color temperature must be a finite number greater than 0.',
-      );
+    if (Number.isNaN(value)) {
+      throw new RangeError('Color temperature must not be NaN.');
     }
   }
 

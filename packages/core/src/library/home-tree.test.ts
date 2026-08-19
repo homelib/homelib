@@ -156,6 +156,7 @@ function assertTreeDeclarationTypes(): void {
     tree
       .$motionSensor('人体传感器')
       .$motionAmbientLightLevelSensor('人体环境光传感器')
+      .$smartSpeaker('智能音箱')
       .$scope('客厅', room =>
         room.$airConditioner('空调').$dehumidifier('除湿机'),
       )
@@ -169,6 +170,9 @@ function assertTreeDeclarationTypes(): void {
 
   modeledHome.客厅.空调.turnOn();
   modeledHome.客厅.除湿机.turnOn();
+  modeledHome.智能音箱
+    .speak('欢迎回家')
+    .executeVoiceCommand('关闭客厅灯', {silent: true});
   const switch_: Switch = modeledHome.卫生间.灯;
   switch_.turnOn();
   const bathHeater: BathHeater = modeledHome.卫生间.浴霸;

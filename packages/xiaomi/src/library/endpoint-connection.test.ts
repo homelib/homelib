@@ -1585,12 +1585,14 @@ test('clamps brightness to a non-zero device minimum before quantizing', async (
 
   await executeCommand(
     connection,
-    new SetLightBrightnessCommand(Number.MIN_VALUE),
+    new SetLightBrightnessCommand(Number.NEGATIVE_INFINITY),
   );
+  await executeCommand(connection, new SetLightBrightnessCommand(0));
   await executeCommand(connection, new SetLightBrightnessCommand(0.23));
-  await executeCommand(connection, new SetLightBrightnessCommand(1));
+  await executeCommand(connection, new SetLightBrightnessCommand(Infinity));
 
   expect(transport.requests).toEqual([
+    createExpectedSetPropertyRequest(2, 20),
     createExpectedSetPropertyRequest(2, 20),
     createExpectedSetPropertyRequest(2, 25),
     createExpectedSetPropertyRequest(2, 100),
@@ -1831,15 +1833,25 @@ test('rejects unsupported light property commands and clamps device ranges', asy
   ).rejects.toThrow('MIoT light does not support color temperature.');
   await executeCommand(
     dimmableConnection,
+    new SetLightColorTemperatureCommand(Number.NEGATIVE_INFINITY),
+  );
+  await executeCommand(
+    dimmableConnection,
+    new SetLightColorTemperatureCommand(0),
+  );
+  await executeCommand(
+    dimmableConnection,
     new SetLightColorTemperatureCommand(2_599),
   );
   await executeCommand(
     dimmableConnection,
-    new SetLightColorTemperatureCommand(6_101),
+    new SetLightColorTemperatureCommand(Infinity),
   );
 
   expect(unsupportedTransport.requests).toEqual([]);
   expect(dimmableTransport.requests).toEqual([
+    createExpectedSetPropertyRequest(3, 2_600),
+    createExpectedSetPropertyRequest(3, 2_600),
     createExpectedSetPropertyRequest(3, 2_600),
     createExpectedSetPropertyRequest(3, 6_100),
   ]);

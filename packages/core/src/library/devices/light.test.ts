@@ -50,7 +50,7 @@ test('light exposes state and commands', async () => {
   ]);
 });
 
-test('setting brightness to zero enqueues off and supersedes pending on', async () => {
+test('setting brightness to zero does not imply turning off', async () => {
   const entry = new DeviceEntry('light');
   const light = entry.createInstance(Light);
   const endpoint = entry.getEndpoint();
@@ -67,32 +67,35 @@ test('setting brightness to zero enqueues off and supersedes pending on', async 
   endpoint.bindConnection(connection);
   await flushMicrotasks();
 
-  expect(connection.commands).toEqual([new SetLightOnCommand(false)]);
+  expect(connection.commands).toEqual([
+    new SetLightOnCommand(true),
+    new SetLightBrightnessCommand(0),
+  ]);
 });
 
-test.each([Number.MIN_VALUE, 0.5, 1])('accepts brightness %p', value => {
-  expect(new SetLightBrightnessCommand(value).value).toBe(value);
-});
-
-test.each([Number.NaN, Number.NEGATIVE_INFINITY, -0.1, 0, 1.1, Infinity])(
-  'rejects invalid brightness %p',
+test.each([Number.NEGATIVE_INFINITY, -1, 0, 0.5, 1, 2, Infinity])(
+  'accepts brightness %p',
   value => {
-    expect(() => new SetLightBrightnessCommand(value)).toThrow(RangeError);
+    expect(new SetLightBrightnessCommand(value).value).toBe(value);
   },
 );
 
-test.each([Number.MIN_VALUE, 2700])('accepts color temperature %p', value => {
-  expect(new SetLightColorTemperatureCommand(value).value).toBe(value);
+test('rejects NaN brightness', () => {
+  expect(() => new SetLightBrightnessCommand(Number.NaN)).toThrow(RangeError);
 });
 
-test.each([Number.NaN, Number.NEGATIVE_INFINITY, -1, 0, Infinity])(
-  'rejects invalid color temperature %p',
+test.each([Number.NEGATIVE_INFINITY, -1, 0, Number.MIN_VALUE, 2700, Infinity])(
+  'accepts color temperature %p',
   value => {
-    expect(() => new SetLightColorTemperatureCommand(value)).toThrow(
-      RangeError,
-    );
+    expect(new SetLightColorTemperatureCommand(value).value).toBe(value);
   },
 );
+
+test('rejects NaN color temperature', () => {
+  expect(() => new SetLightColorTemperatureCommand(Number.NaN)).toThrow(
+    RangeError,
+  );
+});
 
 test('light commands only supersede commands of the same class', () => {
   const on = new SetLightOnCommand(true);

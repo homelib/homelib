@@ -10,8 +10,11 @@ The current program demonstrates:
 - logical device and provider declarations in `home.ts`;
 - reactive temperature/humidity control using device-scoped sensor
   capabilities;
-- automatic pet feeding; and
-- observing motion and categorical ambient light level with MobX `autorun`.
+- automatic pet feeding;
+- bathroom ventilation based on how long the light was on;
+- motion-activated corridor lighting using categorical ambient light level;
+  and
+- recurring smart-speaker reminders while the dehumidifier water tank is full.
 
 Build and run the playground from the repository root:
 

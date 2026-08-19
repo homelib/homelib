@@ -9,6 +9,7 @@ import {
   MotionAmbientLightLevelSensor,
   MotionSensor,
   PetFeeder,
+  SmartSpeaker,
   Switch,
   TemperatureHumiditySensor,
 } from './devices/index.js';
@@ -23,6 +24,7 @@ test.each([
   ['motionAmbientLightLevelSensor', MotionAmbientLightLevelSensor],
   ['motionSensor', MotionSensor],
   ['petFeeder', PetFeeder],
+  ['smartSpeaker', SmartSpeaker],
   ['switch', Switch],
   ['temperatureHumiditySensor', TemperatureHumiditySensor],
 ])('registers the %s device constructor', (name, Constructor) => {

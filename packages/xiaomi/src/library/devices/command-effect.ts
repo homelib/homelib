@@ -76,7 +76,7 @@ export function canonicalizeMiotPropertyValue(
     return value;
   }
 
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
     throw new TypeError('Invalid MIoT numeric property value.');
   }
 
@@ -105,6 +105,10 @@ export function canonicalizeMiotPropertyValue(
 
   if (canonicalValue === undefined) {
     throw new TypeError('Invalid MIoT property value range.');
+  }
+
+  if (!Number.isFinite(canonicalValue)) {
+    throw new TypeError('Invalid MIoT numeric property value.');
   }
 
   if (

@@ -77,7 +77,7 @@ export class BathHeater extends Device implements TemperatureSource {
     return this;
   }
 
-  /** Sets light brightness using a normalized ratio from 0 to 1. */
+  /** Sets light brightness using a normalized ratio, clamped by the provider. */
   setLightBrightness(value: number): this {
     this.lightEndpoint.setBrightness(value);
     return this;

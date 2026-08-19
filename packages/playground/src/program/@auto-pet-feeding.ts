@@ -1,9 +1,9 @@
 import {type PetFeeder, autorun} from '@homelib/core';
-import {createKeepAlive, debounce} from '@homelib/utils';
+import {createHeartbeat, debounce} from '@homelib/utils';
 import ms from 'ms';
 
 const RECENT_LOWEST_FOOD_WEIGHTS_TIME_WINDOW = ms('12h');
-const AUTORUN_KEEP_ALIVE_INTERVAL = ms('3h');
+const AUTORUN_HEARTBEAT_INTERVAL = ms('3h');
 
 const FOOD_WEIGHT_LOW_THRESHOLD = 3;
 
@@ -22,14 +22,14 @@ export function setupAutoPetFeeding(feeder: PetFeeder): void {
     feeder.dispense(1);
   }, ms('10m'));
 
-  const keepAlive = createKeepAlive(AUTORUN_KEEP_ALIVE_INTERVAL);
+  const heartbeat = createHeartbeat(AUTORUN_HEARTBEAT_INTERVAL);
 
   autorun(() => {
     if (!feeder.ready || feeder.bowlFoodWeight === undefined) {
       return;
     }
 
-    keepAlive();
+    heartbeat();
 
     const now = Date.now();
 

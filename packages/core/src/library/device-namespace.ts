@@ -7,6 +7,7 @@ import {
   MotionAmbientLightLevelSensor,
   MotionSensor,
   PetFeeder,
+  SmartSpeaker,
   Switch,
   TemperatureHumiditySensor,
 } from './devices/index.js';
@@ -21,6 +22,7 @@ register({
   motionAmbientLightLevelSensor: MotionAmbientLightLevelSensor,
   motionSensor: MotionSensor,
   petFeeder: PetFeeder,
+  smartSpeaker: SmartSpeaker,
   switch: Switch,
   temperatureHumiditySensor: TemperatureHumiditySensor,
 });
@@ -37,6 +39,7 @@ declare global {
       motionAmbientLightLevelSensor: MotionAmbientLightLevelSensor;
       motionSensor: MotionSensor;
       petFeeder: PetFeeder;
+      smartSpeaker: SmartSpeaker;
       switch: Switch;
       temperatureHumiditySensor: TemperatureHumiditySensor;
     }

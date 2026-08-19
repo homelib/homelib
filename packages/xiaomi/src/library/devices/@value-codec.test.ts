@@ -220,6 +220,8 @@ test('canonicalizes only physical raw values without domain conversion', () => {
 
   expect(canonicalizeMiotPropertyValue(rangedProperty, 23)).toBe(25);
   expect(canonicalizeMiotPropertyValue(rangedProperty, 0.23)).toBe(20);
+  expect(canonicalizeMiotPropertyValue(rangedProperty, -Infinity)).toBe(20);
+  expect(canonicalizeMiotPropertyValue(rangedProperty, Infinity)).toBe(100);
   expect(() => canonicalizeMiotPropertyValue(MODE_PROPERTY, 3)).toThrow(
     'Invalid MIoT value-list property value.',
   );

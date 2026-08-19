@@ -7,6 +7,7 @@ import {
   MotionAmbientLightLevelSensor,
   MotionSensor,
   PetFeeder,
+  SmartSpeaker,
   Switch,
   TemperatureHumiditySensor,
   register,
@@ -27,6 +28,7 @@ import {
   MiotMotionSensorEndpointConnection,
   MiotPetFeederEndpointConnection,
   MiotPlaceholderDevice,
+  MiotSmartSpeakerEndpointConnection,
   MiotSwitchEndpointConnection,
   MiotTemperatureHumiditySensorEndpointConnection,
 } from './devices/index.js';
@@ -51,6 +53,7 @@ registerMiotDevice(
 );
 registerMiotDevice(MotionSensor, MiotMotionSensorEndpointConnection);
 registerMiotDevice(PetFeeder, MiotPetFeederEndpointConnection);
+registerMiotDevice(SmartSpeaker, MiotSmartSpeakerEndpointConnection);
 registerMiotDevice(Switch, MiotSwitchEndpointConnection);
 registerMiotDevice(
   TemperatureHumiditySensor,

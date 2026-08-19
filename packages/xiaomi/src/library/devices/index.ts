@@ -7,6 +7,7 @@ export * from './light.js';
 export * from './motion-ambient-light-level-sensor.js';
 export * from './motion-sensor.js';
 export * from './pet-feeder.js';
+export * from './smart-speaker.js';
 export * from './placeholder.js';
 export * from './switch.js';
 export * from './temperature-humidity-sensor.js';
