@@ -16,20 +16,29 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 - 对非标准、型号特有或与官方 spec 不一致的行为，在代码注释或测试 fixture 中记录证据来源与适用范围。
 - 第一版只实现当前明确需要且已验证的能力。
 
-### 2. 定义 core 模型
+### 2. 获取真实设备调试授权
+
+- Xiaomi 调试需要新凭据时，先构建项目，再运行 `node packages/xiaomi/bld/cli/auth.js --help`；默认使用隔离的 `development` 鉴权名称，不要覆盖正在运行的 provider session。
+- 授权 CLI 只负责让用户完成 OAuth 并把私有 session 保存到 `HOMELIB_DIRECTORY`（默认 `~/.homelib`）下的 `providers/miot/<name>.json`。用户在自己的浏览器中登录；agent 不读取、代填或请求账号密码。
+- 浏览器无法访问回调页面时，可将地址栏中的完整回调 URL 交给仍在等待的 CLI。callback code 和 session 都按凭据处理，不写入仓库、测试 fixture、普通日志或对话结论。
+- 后续由 agent 基于 `loadValidOAuthSession` 和现有 backend、local、spec client 编写任务所需的最小临时脚本，读取 metadata、snapshot 或事件并验证真实实体；不要为了单次调试把 discovery、读写或设备专用命令继续堆进授权 CLI。
+- 调试命令使用明确超时，只输出完成判断所需的结构、地址、状态或计数，避免输出 token 和无关的家庭、房间、设备信息。授权不扩大操作范围：状态读取与诊断仍服从当前任务，真实设备写入必须另有明确授权。
+- 凭据留在完成授权的主机，不跨主机复制。完成后确认 session 文件权限、可加载性和回调 listener 已关闭；调试结束后是否保留或删除凭据由用户决定。
+
+### 3. 定义 core 模型
 
 - 在 `packages/core/src/library/devices` 中保持 Device、Endpoint、EndpointConnection 和 Command 与具体协议无关。
 - 让 Device 聚合 Endpoint，Endpoint 暴露状态与命令，EndpointConnection 声明 provider 连接契约，Command 校验领域输入。
 - 补充 namespace/index 导出和对应单元测试。
 
-### 3. 实现 provider 适配
+### 4. 实现 provider 适配
 
 - 在目标 provider package 中实现 core EndpointConnection，并沿用该 provider 现有的连接、schema、导出和注册结构。
 - 对 Xiaomi MIoT，继承 `MiotEndpointConnection`，定义 `static readonly Endpoint`，并让 properties、actions、events 使用 `as const satisfies ...Schema`。
 - 明确 required/optional 能力；资源缺失、重复或歧义时 fail closed。
 - 实现状态映射和命令请求，补充对应导出与注册入口。
 
-### 4. MIoT 物理域与设备 codec
+### 5. MIoT 物理域与设备 codec
 
 - property schema 只按 URN、IID、access 匹配物理属性；`value-list` override 只修正物理 raw domain。resolved property 保留 spec 物理信息，不携带 core named state 或 sentinel 语义。
 - 把 raw 与 core domain 的 named state、sentinel 双向映射放在具体 device 拥有的 typed codec 中；型号差异也由该 codec 按完整 device URN 选择。
@@ -38,7 +47,7 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 - encode 必须生成 canonical raw，并按 resolved property 的物理 domain 校验；缺少适用映射或 raw 不合法时 fail closed。
 - `MiotCommandEffect` 只接收 codec 已生成的 canonical raw，不解释 core domain，也不选择型号映射。
 
-### 5. MIoT URN pattern 使用字面量
+### 6. MIoT URN pattern 使用字面量
 
 - 在声明或业务匹配位置，把每个具体 URN pattern 的整个表达式写成一个字符串字面量。
 - 该规则适用于 schema key、action `in`/`out`、`iid`/`value-list` selector、device codec/model mapping selector，以及 `matchesMiotUrnPattern` 等 matcher 的 pattern 实参。
@@ -47,7 +56,7 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 - 通用 matcher 基础设施可接收运行时 pattern 参数；这不是具体 pattern 声明。若其他位置确实不适合使用字面量，先告知开发者并说明原因，不要自行例外。
 - 实际 spec、metadata 和测试 fixture 中的完整 URN 是数据而非 pattern，可以保留为变量或常量。
 
-### 6. 测试与验证
+### 7. 测试与验证
 
 - 测试 core 状态、日志，以及设备支持命令时的命令和输入校验。
 - 测试 provider 成功匹配、缺失/重复/歧义时拒绝、状态更新、错误路径，以及设备支持命令时的命令请求；MIoT codec 还要覆盖 canonical round-trip、合法但未映射的 raw、型号分支和物理 domain 拒绝路径。
