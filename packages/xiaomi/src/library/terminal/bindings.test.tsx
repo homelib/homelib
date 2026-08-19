@@ -9,6 +9,7 @@ import {
   type ProviderBindingDevice,
   type ProviderBindingRequest,
 } from '@homelib/core';
+import {I18nProvider} from '@homelib/terminal';
 import {render} from 'ink';
 import {createElement} from 'react';
 
@@ -52,20 +53,14 @@ test('confirms the default device match as one batch and returns after saving', 
     expect(terminal.frame()).toContain('Living Room');
 
     await terminal.input('\r');
-    await terminal.flushUntil(
-      frame =>
-        frame.includes('device match') && frame.includes('› bind device'),
-    );
+    await terminal.flushUntil(frame => frame.includes('› bind device'));
     const summary = terminal.frame();
-    const summaryLines = summary.split('\n').map(line => line.trim());
-    const endpointIndex = summaryLines.indexOf('● main [ready]');
 
-    expect(summary).toContain('device match');
-    expect(summary).toContain('main');
-    expect(summary).toContain('[ready]');
-    expect(summary).toContain('Main Light');
     expect(summary).toContain('› bind device');
-    expect(summaryLines[endpointIndex + 1]).toBe('Main Light');
+    expect(summary).not.toContain('device match');
+    expect(summary).not.toContain('main');
+    expect(summary).not.toContain('[ready]');
+    expect(summary).not.toContain('Main Light');
     expect(summary).not.toContain('matched automatically');
     expect(summary).not.toContain('1 endpoint');
     expectInternalDetailsToBeHidden(summary);
@@ -126,6 +121,36 @@ test('does not offer ambiguous service combinations for manual matching', async 
     expect(terminal.frame()).not.toContain('endpoint matching');
     expect(terminal.frame()).not.toContain('possible matches');
     expectInternalDetailsToBeHidden(terminal.frame());
+  } finally {
+    await terminal.close();
+    restoreFetch();
+  }
+}, 10_000);
+
+test('inherits simplified Chinese from the terminal locale', async () => {
+  const spec = createLightSpec('chinese-locale', ['Main Light']);
+  const restoreFetch = installSpecFetch(spec);
+  const provider = createFakeProvider('chinese-locale', spec, {devices: []});
+  const terminal = renderTestTerminal(
+    createElement(
+      I18nProvider,
+      {locale: 'zh-HK'},
+      createElement(MiotProviderBindings, {
+        provider,
+        device: createLogicalDevice(),
+        providerBindings: [],
+        onBind: () => Promise.resolve(),
+        onBack: () => undefined,
+        onComplete: () => undefined,
+      }),
+    ),
+  );
+
+  try {
+    await terminal.flushUntil(frame => frame.includes('选择一个设备'));
+    expect(terminal.frame()).toContain('未找到可匹配的设备。');
+    expect(terminal.frame()).toContain('r 重新加载 · esc 返回');
+    expect(terminal.frame()).not.toContain('endpoint');
   } finally {
     await terminal.close();
     restoreFetch();
@@ -225,13 +250,15 @@ test('groups devices by location and emphasizes binding status', async () => {
     const rangeIndex = lines.indexOf('1–6 of 7');
 
     expect(frame.match(/My Home › Living Room/g)).toHaveLength(1);
-    expect(lines.slice(livingRoomIndex, livingRoomIndex + 3)).toEqual([
+    expect(lines.slice(livingRoomIndex, livingRoomIndex + 4)).toEqual([
       'My Home › Living Room',
+      '',
       '› Ceiling Light [bound here]',
       'Used Light [used elsewhere]',
     ]);
-    expect(lines.slice(bedroomIndex, bedroomIndex + 2)).toEqual([
+    expect(lines.slice(bedroomIndex, bedroomIndex + 3)).toEqual([
       'My Home › Bedroom',
+      '',
       'Offline Light [offline]',
     ]);
     expect(frame).not.toContain('endpoint ready');

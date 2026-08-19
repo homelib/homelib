@@ -1,5 +1,7 @@
 import {Box, Text} from 'ink';
 
+import {useTerminalI18n} from '../@i18n.js';
+
 import type {ProviderListItem} from './providers-page.js';
 
 export type ProviderPageModel = {
@@ -16,20 +18,22 @@ export function ProviderPage({
   children,
   model,
 }: ProviderPageProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold>homelib · {model.scriptName}</Text>
 
       <Box marginTop={1}>
         <Text bold>
-          providers / {model.provider.namespace} / {model.provider.name}
+          {messages.common.providers} / {model.provider.namespace} /{' '}
+          {model.provider.name}
         </Text>
       </Box>
 
       <Box marginTop={1}>{children}</Box>
 
       <Box marginTop={1}>
-        <Text dimColor>q menu · ctrl+c exit</Text>
+        <Text dimColor>{messages.providers.detailHint}</Text>
       </Box>
     </Box>
   );

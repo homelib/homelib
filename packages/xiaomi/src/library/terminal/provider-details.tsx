@@ -13,12 +13,15 @@ import type {
 } from '../configuration.js';
 import type {MiotProvider} from '../provider.js';
 
+import {useMiotTerminalI18n} from './@i18n.js';
+
 const DEFAULT_CLOUD_SERVER_INDEX = CLOUD_SERVERS.indexOf(DEFAULT_CLOUD_SERVER);
 
 export function MiotProviderDetails({
   provider,
   onBack,
 }: ProviderDetailsComponentProps<MiotProvider>): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
   const [state, setState] = useState<DetailsState>({type: 'loading'});
   const operationReference = useRef<Operation | undefined>(undefined);
 
@@ -166,7 +169,7 @@ export function MiotProviderDetails({
       const callbackUrl = value.trim();
 
       if (callbackUrl.length === 0) {
-        setState({...state, callbackError: 'callback URL is empty.'});
+        setState({...state, callbackError: messages.details.emptyCallback});
         return;
       }
 
@@ -214,7 +217,7 @@ export function MiotProviderDetails({
         },
       );
     },
-    [isCurrentOperation, state],
+    [isCurrentOperation, messages.details.emptyCallback, state],
   );
 
   usePaste(submitCallbackUrl, {
@@ -460,11 +463,13 @@ type DetailsViewProps = {
 };
 
 function DetailsView({state}: DetailsViewProps): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   if (state.type === 'loading') {
     return (
       <Box flexDirection="column">
-        <Text>loading miot configuration…</Text>
-        <Hint>esc back</Hint>
+        <Text>{messages.details.loading}</Text>
+        <Hint>{messages.bindings.backHint}</Hint>
       </Box>
     );
   } else if (state.type === 'authorization-required') {
@@ -474,19 +479,19 @@ function DetailsView({state}: DetailsViewProps): React.JSX.Element {
   } else if (state.type === 'cancelling-authorization') {
     return (
       <Box flexDirection="column">
-        <Text>cancelling authorization…</Text>
+        <Text>{messages.details.cancellingAuthorization}</Text>
       </Box>
     );
   } else if (state.type === 'load-error') {
     return (
       <ErrorView message={state.message}>
-        enter/r retry · a authorize again · esc back
+        {messages.details.loadErrorHint}
       </ErrorView>
     );
   } else if (state.type === 'authorization-error') {
     return (
       <ErrorView message={state.message}>
-        enter/r retry · esc choose region
+        {messages.details.authorizationErrorHint}
       </ErrorView>
     );
   } else if (state.type === 'logout-confirmation') {
@@ -494,18 +499,20 @@ function DetailsView({state}: DetailsViewProps): React.JSX.Element {
   } else if (state.type === 'logging-out') {
     return (
       <Box flexDirection="column">
-        <Text>logging out…</Text>
+        <Text>{messages.details.loggingOut}</Text>
       </Box>
     );
   } else if (state.type === 'logged-out') {
     return (
       <Box flexDirection="column">
-        <Text>logged out locally. restart the script to continue.</Text>
+        <Text>{messages.details.loggedOut}</Text>
       </Box>
     );
   } else if (state.type === 'logout-error') {
     return (
-      <ErrorView message={state.message}>enter/r retry · esc cancel</ErrorView>
+      <ErrorView message={state.message}>
+        {messages.details.logoutErrorHint}
+      </ErrorView>
     );
   }
 
@@ -519,14 +526,17 @@ type AuthorizationRequiredViewProps = {
 function AuthorizationRequiredView({
   state,
 }: AuthorizationRequiredViewProps): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   return (
     <Box flexDirection="column">
       <Text>
-        setup <Text dimColor>○ authorization required</Text>
+        {messages.details.setup}{' '}
+        <Text dimColor>{messages.details.authorizationRequired}</Text>
       </Text>
 
       <Box flexDirection="column" marginTop={1}>
-        <Text dimColor>cloud region</Text>
+        <Text dimColor>{messages.details.cloudRegion}</Text>
         {CLOUD_SERVERS.map((cloudServer, index) => (
           <Text
             key={cloudServer}
@@ -539,7 +549,7 @@ function AuthorizationRequiredView({
         ))}
       </Box>
 
-      <Hint>↑↓ select · enter authorize · esc back</Hint>
+      <Hint>{messages.details.authorizationRequiredHint}</Hint>
     </Box>
   );
 }
@@ -549,58 +559,61 @@ type AuthorizingViewProps = {
 };
 
 function AuthorizingView({state}: AuthorizingViewProps): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   return (
     <Box flexDirection="column">
       <Text>
-        setup <Text color="yellow">● authorizing</Text> · region{' '}
-        {state.cloudServer}
+        {messages.details.setup}{' '}
+        <Text color="yellow">{messages.details.authorizing}</Text> ·{' '}
+        {messages.details.region} {state.cloudServer}
       </Text>
 
       {state.url === undefined ? (
-        <Text>starting oauth callback…</Text>
+        <Text>{messages.details.startingCallback}</Text>
       ) : (
         <Box flexDirection="column" marginTop={1}>
-          <Text>open this url in a browser:</Text>
+          <Text>{messages.details.openUrl}</Text>
           <Text color="cyan" underline wrap="wrap">
             {state.url}
           </Text>
           {state.callbackStatus === 'submitting' ? (
-            <Text>processing pasted callback…</Text>
+            <Text>{messages.details.processingCallback}</Text>
           ) : state.callbackStatus === 'accepted' ? (
-            <Text>callback received; completing authorization…</Text>
+            <Text>{messages.details.completingAuthorization}</Text>
           ) : (
             <>
-              <Text>waiting for browser callback…</Text>
-              <Text dimColor>
-                if the browser cannot connect, paste the complete callback URL
-                here.
+              <Text>{messages.details.waitingForCallback}</Text>
+              <Text bold color="yellow">
+                {messages.details.pasteCallbackHelp}
               </Text>
             </>
           )}
           {state.callbackError === undefined ? null : (
-            <Text color="red">callback rejected: {state.callbackError}</Text>
+            <Text color="red">
+              {messages.details.callbackRejected(state.callbackError)}
+            </Text>
           )}
         </Box>
       )}
 
       <Hint>
         {state.url !== undefined && state.callbackStatus === undefined
-          ? 'paste callback URL · esc cancel'
-          : 'esc cancel'}
+          ? messages.details.pasteCallbackHint
+          : messages.details.cancelHint}
       </Hint>
     </Box>
   );
 }
 
 function LogoutConfirmationView(): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   return (
     <Box flexDirection="column">
-      <Text>log out of this miot provider?</Text>
-      <Text dimColor>
-        local oauth credentials will be removed. provider identity and the saved
-        home filter will be kept.
-      </Text>
-      <Hint>y confirm · esc cancel</Hint>
+      <Text>{messages.details.logoutQuestion}</Text>
+      <Text dimColor>{messages.details.logoutDescription}</Text>
+      <Hint>{messages.details.logoutHint}</Hint>
     </Box>
   );
 }
@@ -610,6 +623,7 @@ type ReadyViewProps = {
 };
 
 function ReadyView({state}: ReadyViewProps): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
   const selectedCount = state.draftHomeKeys.size;
   const draftChanged = hasDraftChanges(state);
   const saveRequired = needsSave(state);
@@ -618,27 +632,27 @@ function ReadyView({state}: ReadyViewProps): React.JSX.Element {
   return (
     <Box flexDirection="column">
       <Text>
-        setup <Text color="green">● ready</Text> · region{' '}
-        {state.snapshot.account.cloudServer}
+        {messages.details.setup}{' '}
+        <Text color="green">{messages.details.ready}</Text> ·{' '}
+        {messages.details.region} {state.snapshot.account.cloudServer}
       </Text>
 
       {!filteringAvailable ? (
-        <Text color="yellow">
-          home filtering is unavailable because this account has no stable id.
-        </Text>
+        <Text color="yellow">{messages.details.filteringUnavailable}</Text>
       ) : state.snapshot.selectionSource === 'account-mismatch' ? (
-        <Text color="yellow">
-          saved homes belong to another account; all homes are selected.
-        </Text>
+        <Text color="yellow">{messages.details.accountMismatch}</Text>
       ) : null}
 
       <Box flexDirection="column" marginTop={1}>
         <Text>
-          homes {selectedCount} / {state.snapshot.homes.length} selected
+          {messages.details.homesSelected(
+            selectedCount,
+            state.snapshot.homes.length,
+          )}
         </Text>
 
         {state.snapshot.homes.length === 0 ? (
-          <Text dimColor>no homes discovered.</Text>
+          <Text dimColor>{messages.details.noHomes}</Text>
         ) : (
           state.snapshot.homes.map((home, index) => (
             <HomeItemView
@@ -652,29 +666,24 @@ function ReadyView({state}: ReadyViewProps): React.JSX.Element {
       </Box>
 
       {state.saveError === undefined ? null : (
-        <Text color="red">save failed: {state.saveError}</Text>
+        <Text color="red">{messages.details.saveFailed(state.saveError)}</Text>
       )}
       {state.notice === 'saved' ? (
-        <Text color="green">home selection saved.</Text>
+        <Text color="green">{messages.details.saved}</Text>
       ) : state.notice === 'reloaded' ? (
-        <Text color="green">configuration reloaded.</Text>
+        <Text color="green">{messages.details.reloaded}</Text>
       ) : null}
 
       {state.saving ? (
-        <Hint>saving…</Hint>
-      ) : !filteringAvailable ? (
-        <Hint>↑↓ select · r reload · o log out · esc back</Hint>
-      ) : draftChanged ? (
-        <Hint>
-          ↑↓ select · space toggle · enter save · o log out · esc discard/back
-        </Hint>
-      ) : saveRequired ? (
-        <Hint>
-          ↑↓ select · space toggle · enter save · r reload · o log out · esc
-          back
-        </Hint>
+        <Hint>{messages.details.saving}</Hint>
       ) : (
-        <Hint>↑↓ select · space toggle · r reload · o log out · esc back</Hint>
+        <Hint>
+          {messages.details.readyHint(
+            filteringAvailable,
+            draftChanged,
+            saveRequired,
+          )}
+        </Hint>
       )}
     </Box>
   );
@@ -691,10 +700,12 @@ function HomeItemView({
   included,
   selected,
 }: HomeItemViewProps): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   return (
     <Text bold={selected} color={selected ? 'cyan' : undefined}>
       {selected ? '› ' : '  '}[{included ? 'x' : ' '}] {home.name}{' '}
-      <Text dimColor>{getHomeSourceLabel(home.source)}</Text>
+      <Text dimColor>{getHomeSourceLabel(home.source, messages)}</Text>
     </Text>
   );
 }
@@ -705,9 +716,11 @@ type ErrorViewProps = {
 };
 
 function ErrorView({children, message}: ErrorViewProps): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   return (
     <Box flexDirection="column">
-      <Text color="red">error: {message}</Text>
+      <Text color="red">{messages.common.error(message)}</Text>
       <Hint>{children}</Hint>
     </Box>
   );
@@ -852,14 +865,17 @@ function getHomeKey(home: Pick<MiotProviderHomeItem, 'source' | 'id'>): string {
   return JSON.stringify([home.source, home.id]);
 }
 
-function getHomeSourceLabel(source: MiotProviderHomeItem['source']): string {
+function getHomeSourceLabel(
+  source: MiotProviderHomeItem['source'],
+  messages: ReturnType<typeof useMiotTerminalI18n>,
+): string {
   if (source === 'shared-home') {
-    return 'shared home';
+    return messages.details.homeSource.sharedHome;
   } else if (source === 'shared-device') {
-    return 'shared device';
+    return messages.details.homeSource.sharedDevice;
   }
 
-  return 'owned';
+  return messages.details.homeSource.owned;
 }
 
 function wrapIndex(index: number, length: number): number {

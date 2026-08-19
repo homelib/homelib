@@ -2,6 +2,8 @@ import type {EndpointPath, ProviderReference} from '@homelib/core';
 import {Box, Text, useInput} from 'ink';
 import {useState} from 'react';
 
+import {useTerminalI18n} from '../@i18n.js';
+
 export type BindingEndpointItem = {
   readonly path: EndpointPath;
   readonly name: string;
@@ -38,6 +40,7 @@ export function BindingsPage({
   onSelect,
   onSelectStaleBindings,
 }: BindingsPageProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const hasScopes = model.scopes.length > 0;
 
@@ -64,9 +67,11 @@ export function BindingsPage({
   });
 
   return (
-    <Page scriptName={model.scriptName} title="bindings">
+    <Page scriptName={model.scriptName} title={messages.common.bindings}>
       <Box flexDirection="column" marginTop={1}>
-        <Text dimColor>{model.staleBindingCount} stale bindings</Text>
+        <Text dimColor>
+          {messages.bindings.staleCount(model.staleBindingCount)}
+        </Text>
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
@@ -79,11 +84,13 @@ export function BindingsPage({
             />
           ))
         ) : (
-          <Text dimColor>no root scopes declared.</Text>
+          <Text dimColor>{messages.bindings.noRootScopes}</Text>
         )}
       </Box>
 
-      <Hint>{getBindingsPageHint(hasScopes, model.staleBindingCount > 0)}</Hint>
+      <Hint>
+        {messages.bindings.listHint(hasScopes, model.staleBindingCount > 0)}
+      </Hint>
     </Page>
   );
 }
@@ -107,6 +114,7 @@ export function StaleBindingsPage({
   onBack,
   onRemove,
 }: StaleBindingsPageProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   const [state, setState] = useState<StaleBindingsPageState>({
     type: 'bindings',
     cursor: 0,
@@ -161,7 +169,7 @@ export function StaleBindingsPage({
         setState({
           type: 'bindings',
           cursor: source.cursor,
-          notice: 'stale binding removed.',
+          notice: 'removed',
         });
       },
       error => {
@@ -183,7 +191,10 @@ export function StaleBindingsPage({
       : 0;
 
   return (
-    <Page scriptName={model.scriptName} title="bindings › stale">
+    <Page
+      scriptName={model.scriptName}
+      title={`${messages.common.bindings} › ${messages.bindings.staleTitle}`}
+    >
       <StaleBindingsView
         bindings={model.bindings}
         matchingBindingCount={matchingBindingCount}
@@ -202,7 +213,7 @@ type StaleBindingsPageState =
 type StaleBindingsState = {
   readonly type: 'bindings';
   readonly cursor: number;
-  readonly notice?: string;
+  readonly notice?: 'removed';
 };
 
 type ConfirmRemoveStaleBindingState = {
@@ -235,33 +246,35 @@ function StaleBindingsView({
   matchingBindingCount,
   state,
 }: StaleBindingsViewProps): React.JSX.Element {
+  const messages = useTerminalI18n();
+
   if (state.type === 'confirm-remove') {
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text>
-          {matchingBindingCount === 1
-            ? 'remove the stale binding for'
-            : `remove all ${matchingBindingCount} stale bindings for`}{' '}
-          {formatEndpointPath(state.binding.path)}?
+          {messages.bindings.confirmRemoveStale(
+            matchingBindingCount,
+            formatEndpointPath(state.binding.path, messages),
+          )}
         </Text>
         <Text dimColor>
           {state.binding.provider.namespace} · {state.binding.provider.name}
         </Text>
-        <Hint>enter/y confirm · esc cancel · q menu · ctrl+c exit</Hint>
+        <Hint>{messages.hints.confirm}</Hint>
       </Box>
     );
   } else if (state.type === 'removing') {
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text>removing stale binding…</Text>
-        <Hint>q menu · ctrl+c exit</Hint>
+        <Text>{messages.bindings.removingStale}</Text>
+        <Hint>{messages.hints.busy}</Hint>
       </Box>
     );
   } else if (state.type === 'remove-error') {
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text color="red">{state.message}</Text>
-        <Hint>enter/r retry · esc back · q menu · ctrl+c exit</Hint>
+        <Text color="red">{messages.common.error(state.message)}</Text>
+        <Hint>{messages.hints.retry}</Hint>
       </Box>
     );
   }
@@ -271,18 +284,18 @@ function StaleBindingsView({
   return (
     <>
       <Box flexDirection="column" marginTop={1}>
-        <Text dimColor>{bindings.length} stale bindings</Text>
+        <Text dimColor>{messages.bindings.staleCount(bindings.length)}</Text>
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
         {bindings.length === 0 ? (
-          <Text dimColor>no stale bindings.</Text>
+          <Text dimColor>{messages.bindings.noStale}</Text>
         ) : (
           bindings.map((binding, index) => (
             <ListItem
               key={getStaleBindingKey(binding, index)}
               details={`${binding.provider.namespace} · ${binding.provider.name}`}
-              label={formatEndpointPath(binding.path)}
+              label={formatEndpointPath(binding.path, messages)}
               selected={index === cursor}
             />
           ))
@@ -291,15 +304,11 @@ function StaleBindingsView({
 
       {state.notice === undefined ? null : (
         <Box marginTop={1}>
-          <Text color="green">{state.notice}</Text>
+          <Text color="green">{messages.bindings.staleRemoved}</Text>
         </Box>
       )}
 
-      <Hint>
-        {bindings.length === 0
-          ? 'esc back · q menu · ctrl+c exit'
-          : '↑↓ select · enter · esc back · q menu · ctrl+c exit'}
-      </Hint>
+      <Hint>{messages.bindings.staleListHint(bindings.length > 0)}</Hint>
     </>
   );
 }
@@ -320,6 +329,7 @@ export function BindingScopePage({
   onSelectScope,
   onSelectDevice,
 }: BindingScopePageProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const items: readonly BindingScopePageItem[] = [
     ...model.scope.scopes.map(scope => ({type: 'scope' as const, scope})),
@@ -348,7 +358,7 @@ export function BindingScopePage({
   return (
     <Page
       scriptName={model.scriptName}
-      title={`bindings › ${model.scope.path.join(' › ')}`}
+      title={`${messages.common.bindings} › ${model.scope.path.join(' › ')}`}
     >
       <Box flexDirection="column" marginTop={1}>
         {hasItems ? (
@@ -360,15 +370,11 @@ export function BindingScopePage({
             />
           ))
         ) : (
-          <Text dimColor>no logical devices declared.</Text>
+          <Text dimColor>{messages.bindings.noLogicalDevices}</Text>
         )}
       </Box>
 
-      <Hint>
-        {hasItems
-          ? '↑↓ select · enter · esc back · q menu · ctrl+c exit'
-          : 'esc back · q menu · ctrl+c exit'}
-      </Hint>
+      <Hint>{messages.bindings.scopeHint(hasItems)}</Hint>
     </Page>
   );
 }
@@ -397,13 +403,18 @@ export function BindingDevicePage({
   onSelectProvider,
   onUnbind,
 }: BindingDevicePageProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   const [state, setState] = useState<BindingDevicePageState>({
     type: 'providers',
     cursor: 0,
   });
   const hasProviders = model.providers.length > 0;
   const boundEndpoints = getBoundEndpoints(model.device);
-  const title = getDevicePageTitle(model.scopePath, model.device.name);
+  const title = getDevicePageTitle(
+    model.scopePath,
+    model.device.name,
+    messages,
+  );
 
   useInput((input, key) => {
     if (state.type === 'providers') {
@@ -481,7 +492,7 @@ export function BindingDevicePage({
         setState({
           type: 'providers',
           cursor: source.source.cursor,
-          notice: 'binding removed.',
+          notice: 'removed',
         });
       },
       error => {
@@ -521,7 +532,7 @@ type BindingDevicePageState =
 type ProvidersState = {
   readonly type: 'providers';
   readonly cursor: number;
-  readonly notice?: string;
+  readonly notice?: 'removed';
 };
 
 type BoundEndpointsState = {
@@ -562,65 +573,72 @@ function BindingDeviceView({
   providers,
   boundEndpoints,
 }: BindingDeviceViewProps): React.JSX.Element {
+  const messages = useTerminalI18n();
+
   if (state.type === 'bound-endpoints') {
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text>bound endpoints</Text>
+        <Text>{messages.bindings.bindingListTitle}</Text>
 
         <Box flexDirection="column" marginTop={1}>
           {boundEndpoints.map((endpoint, index) => (
             <ListItem
               key={endpoint.name}
-              details={`${endpoint.provider.namespace} · ${endpoint.provider.name}`}
-              label={getDisplayName(endpoint.name, '(default endpoint)')}
+              details={
+                endpoint.name === ''
+                  ? undefined
+                  : `${endpoint.provider.namespace} · ${endpoint.provider.name}`
+              }
+              label={
+                endpoint.name === ''
+                  ? `${endpoint.provider.namespace} · ${endpoint.provider.name}`
+                  : endpoint.name
+              }
               selected={index === state.cursor}
             />
           ))}
         </Box>
 
-        <Hint>↑↓ select · enter · esc back · q menu · ctrl+c exit</Hint>
+        <Hint>{messages.bindings.scopeHint(true)}</Hint>
       </Box>
     );
   } else if (state.type === 'confirm-unbind') {
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text>
-          remove the binding for{' '}
-          {getDisplayName(state.endpoint.name, '(default endpoint)')}?
+          {messages.bindings.confirmRemoveBinding(
+            state.endpoint.name === '' ? undefined : state.endpoint.name,
+          )}
         </Text>
         <Text dimColor>
           {state.endpoint.provider.namespace} · {state.endpoint.provider.name}
         </Text>
-        <Hint>enter/y confirm · esc cancel · q menu · ctrl+c exit</Hint>
+        <Hint>{messages.hints.confirm}</Hint>
       </Box>
     );
   } else if (state.type === 'unbinding') {
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text>removing binding…</Text>
-        <Hint>q menu · ctrl+c exit</Hint>
+        <Text>{messages.bindings.removingBinding}</Text>
+        <Hint>{messages.hints.busy}</Hint>
       </Box>
     );
   } else if (state.type === 'unbind-error') {
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text color="red">{state.message}</Text>
-        <Hint>enter/r retry · esc back · q menu · ctrl+c exit</Hint>
+        <Text color="red">{messages.common.error(state.message)}</Text>
+        <Hint>{messages.hints.retry}</Hint>
       </Box>
     );
   }
 
-  const summary = getDeviceSummary(device);
   const hasProviders = providers.length > 0;
   const hasBoundEndpoints = boundEndpoints.length > 0;
 
   return (
     <>
       <Box flexDirection="column" marginTop={1}>
-        <Text dimColor>
-          {summary.configuredEndpointCount} bound ·{' '}
-          {summary.unconfiguredEndpointCount} unbound
-        </Text>
+        <Text dimColor>{getDeviceStatus(device, messages)}</Text>
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
@@ -633,17 +651,19 @@ function BindingDeviceView({
             />
           ))
         ) : (
-          <Text dimColor>no providers declared.</Text>
+          <Text dimColor>{messages.common.noProviders}</Text>
         )}
       </Box>
 
       {state.notice === undefined ? null : (
         <Box marginTop={1}>
-          <Text color="green">{state.notice}</Text>
+          <Text color="green">{messages.bindings.bindingRemoved}</Text>
         </Box>
       )}
 
-      <Hint>{getBindingDeviceHint(hasProviders, hasBoundEndpoints)}</Hint>
+      <Hint>
+        {messages.bindings.deviceHint(hasProviders, hasBoundEndpoints)}
+      </Hint>
     </>
   );
 }
@@ -665,20 +685,27 @@ export function BindingProviderPage({
   model,
   children,
 }: BindingProviderPageProps): React.JSX.Element {
-  const deviceTitle = getDevicePageTitle(model.scopePath, model.deviceName);
+  const messages = useTerminalI18n();
+  const deviceTitle = getDevicePageTitle(
+    model.scopePath,
+    model.deviceName,
+    messages,
+  );
 
   return (
     <Page scriptName={model.scriptName} title={deviceTitle}>
       <Box flexDirection="column" marginTop={1}>
         <Text dimColor>
-          match with {model.provider.namespace} · {model.provider.name}
+          {messages.bindings.matchWith(
+            `${model.provider.namespace} · ${model.provider.name}`,
+          )}
         </Text>
 
         <Box flexDirection="column" marginTop={1}>
           {children}
         </Box>
 
-        <Hint>q menu · ctrl+c exit</Hint>
+        <Hint>{messages.bindings.providerHint}</Hint>
       </Box>
     </Page>
   );
@@ -686,38 +713,39 @@ export function BindingProviderPage({
 
 export type BindingSummary = {
   readonly deviceCount: number;
-  readonly configuredEndpointCount: number;
-  readonly unconfiguredEndpointCount: number;
+  readonly boundDeviceCount: number;
+  readonly unboundDeviceCount: number;
 };
 
 export function getBindingSummary(
   scopes: readonly BindingScopeItem[],
 ): BindingSummary {
   let deviceCount = 0;
-  let configuredEndpointCount = 0;
-  let unconfiguredEndpointCount = 0;
+  let boundDeviceCount = 0;
+  let unboundDeviceCount = 0;
 
   for (const scope of scopes) {
     deviceCount += scope.devices.length;
 
     for (const device of scope.devices) {
-      const deviceSummary = getDeviceSummary(device);
-
-      configuredEndpointCount += deviceSummary.configuredEndpointCount;
-      unconfiguredEndpointCount += deviceSummary.unconfiguredEndpointCount;
+      if (isDeviceFullyBound(device)) {
+        boundDeviceCount++;
+      } else {
+        unboundDeviceCount++;
+      }
     }
 
     const childSummary = getBindingSummary(scope.scopes);
 
     deviceCount += childSummary.deviceCount;
-    configuredEndpointCount += childSummary.configuredEndpointCount;
-    unconfiguredEndpointCount += childSummary.unconfiguredEndpointCount;
+    boundDeviceCount += childSummary.boundDeviceCount;
+    unboundDeviceCount += childSummary.unboundDeviceCount;
   }
 
   return {
     deviceCount,
-    configuredEndpointCount,
-    unconfiguredEndpointCount,
+    boundDeviceCount,
+    unboundDeviceCount,
   };
 }
 
@@ -763,11 +791,15 @@ type ScopeItemProps = {
 };
 
 function ScopeItem({scope, selected}: ScopeItemProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   const summary = getBindingSummary([scope]);
 
   return (
     <ListItem
-      details={`${summary.deviceCount} devices · ${summary.configuredEndpointCount} bound · ${summary.unconfiguredEndpointCount} unbound`}
+      details={messages.bindings.scopeSummary(
+        summary.deviceCount,
+        summary.unboundDeviceCount,
+      )}
       label={scope.path.join(' › ')}
       selected={selected}
     />
@@ -783,24 +815,27 @@ function BindingScopePageItemView({
   item,
   selected,
 }: BindingScopePageItemViewProps): React.JSX.Element {
+  const messages = useTerminalI18n();
+
   if (item.type === 'scope') {
     const summary = getBindingSummary([item.scope]);
 
     return (
       <ListItem
-        details={`${summary.deviceCount} devices · ${summary.unconfiguredEndpointCount} unbound`}
+        details={messages.bindings.scopeSummary(
+          summary.deviceCount,
+          summary.unboundDeviceCount,
+        )}
         label={`${item.scope.path.at(-1) ?? '(scope)'} /`}
         selected={selected}
       />
     );
   }
 
-  const summary = getDeviceSummary(item.device);
-
   return (
     <ListItem
-      details={`${summary.configuredEndpointCount} bound · ${summary.unconfiguredEndpointCount} unbound`}
-      label={getDisplayName(item.device.name, '(default device)')}
+      details={getDeviceStatus(item.device, messages)}
+      label={getDisplayName(item.device.name, messages.bindings.defaultDevice)}
       selected={selected}
     />
   );
@@ -815,10 +850,11 @@ function BindingProviderItemView({
   provider,
   selected,
 }: BindingProviderItemViewProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   const details =
     provider.boundEndpointCount === 0
       ? undefined
-      : `${provider.boundEndpointCount} bound`;
+      : messages.bindings.providerBound;
 
   return (
     <ListItem
@@ -854,25 +890,6 @@ function ListItem({
   );
 }
 
-function getDeviceSummary(device: BindingDeviceItem): BindingSummary {
-  let configuredEndpointCount = 0;
-  let unconfiguredEndpointCount = 0;
-
-  for (const endpoint of device.endpoints) {
-    if (endpoint.provider !== undefined) {
-      configuredEndpointCount++;
-    } else {
-      unconfiguredEndpointCount++;
-    }
-  }
-
-  return {
-    deviceCount: 1,
-    configuredEndpointCount,
-    unconfiguredEndpointCount,
-  };
-}
-
 function getBoundEndpoints(
   device: BindingDeviceItem,
 ): readonly BoundBindingEndpointItem[] {
@@ -882,40 +899,22 @@ function getBoundEndpoints(
   );
 }
 
-function getBindingDeviceHint(
-  hasProviders: boolean,
-  hasBoundEndpoints: boolean,
+function getDeviceStatus(
+  device: BindingDeviceItem,
+  messages: ReturnType<typeof useTerminalI18n>,
 ): string {
-  const actions: string[] = [];
+  const boundCount = device.endpoints.filter(
+    endpoint => endpoint.provider !== undefined,
+  ).length;
 
-  if (hasProviders) {
-    actions.push('↑↓ select', 'enter');
-  }
-
-  if (hasBoundEndpoints) {
-    actions.push('u unbind');
-  }
-
-  actions.push('esc back', 'q menu', 'ctrl+c exit');
-  return actions.join(' · ');
+  return messages.bindings.deviceStatus(boundCount, device.endpoints.length);
 }
 
-function getBindingsPageHint(
-  hasScopes: boolean,
-  hasStaleBindings: boolean,
-): string {
-  const actions: string[] = [];
-
-  if (hasScopes) {
-    actions.push('↑↓ select', 'enter');
-  }
-
-  if (hasStaleBindings) {
-    actions.push('u stale');
-  }
-
-  actions.push('esc back', 'q menu', 'ctrl+c exit');
-  return actions.join(' · ');
+function isDeviceFullyBound(device: BindingDeviceItem): boolean {
+  return (
+    device.endpoints.length > 0 &&
+    device.endpoints.every(endpoint => endpoint.provider !== undefined)
+  );
 }
 
 function normalizeCursor(cursor: number, itemCount: number): number {
@@ -948,12 +947,20 @@ function getEndpointPathKey(path: EndpointPath): string {
   return JSON.stringify([path.scopePath, path.deviceName, path.endpointName]);
 }
 
-function formatEndpointPath(path: EndpointPath): string {
-  return [
+function formatEndpointPath(
+  path: EndpointPath,
+  messages: ReturnType<typeof useTerminalI18n>,
+): string {
+  const parts = [
     ...path.scopePath,
-    getDisplayName(path.deviceName, '(default device)'),
-    getDisplayName(path.endpointName, '(default endpoint)'),
-  ].join(' › ');
+    getDisplayName(path.deviceName, messages.bindings.defaultDevice),
+  ];
+
+  if (path.endpointName !== '') {
+    parts.push(path.endpointName);
+  }
+
+  return parts.join(' › ');
 }
 
 function getScopeKey(scope: BindingScopeItem): string {
@@ -975,10 +982,11 @@ function getProviderKey(provider: BindingProviderItem): string {
 function getDevicePageTitle(
   scopePath: readonly string[],
   deviceName: string,
+  messages: ReturnType<typeof useTerminalI18n>,
 ): string {
-  return `bindings › ${[
+  return `${messages.common.bindings} › ${[
     ...scopePath,
-    getDisplayName(deviceName, '(default device)'),
+    getDisplayName(deviceName, messages.bindings.defaultDevice),
   ].join(' › ')}`;
 }
 

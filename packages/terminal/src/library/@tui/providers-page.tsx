@@ -1,6 +1,8 @@
 import {Box, Text, useInput} from 'ink';
 import {useState} from 'react';
 
+import {useTerminalI18n} from '../@i18n.js';
+
 export type ProviderListItem = {
   readonly namespace: string;
   readonly name: string;
@@ -22,6 +24,7 @@ export function ProvidersPage({
   onBack,
   onSelect,
 }: ProvidersPageProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   useInput((_input, key) => {
@@ -49,12 +52,12 @@ export function ProvidersPage({
       <Text bold>homelib · {model.scriptName}</Text>
 
       <Box marginTop={1}>
-        <Text bold>providers</Text>
+        <Text bold>{messages.common.providers}</Text>
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
         {model.providers.length === 0 ? (
-          <Text dimColor>no providers declared.</Text>
+          <Text dimColor>{messages.common.noProviders}</Text>
         ) : (
           model.providers.map((provider, index) => (
             <ProviderItem
@@ -67,9 +70,7 @@ export function ProvidersPage({
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>
-          ↑↓ select · enter · esc back · q menu · ctrl+c exit
-        </Text>
+        <Text dimColor>{messages.providers.hint}</Text>
       </Box>
     </Box>
   );

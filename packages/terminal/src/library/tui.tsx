@@ -6,6 +6,8 @@ import type {
 } from '@homelib/core';
 import {Box, Text, useInput} from 'ink';
 
+import {useTerminalI18n} from './@i18n.js';
+
 const PROVIDER_DETAILS_RENDERER_MAP = new Map<
   Function,
   ProviderDetailsRenderer
@@ -148,6 +150,7 @@ type UnavailableProviderDetailsProps = {
 function UnavailableProviderDetails({
   onBack,
 }: UnavailableProviderDetailsProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   useInput((_input, key) => {
     if (key.escape) {
       onBack();
@@ -156,8 +159,8 @@ function UnavailableProviderDetails({
 
   return (
     <Box flexDirection="column">
-      <Text dimColor>configuration unavailable.</Text>
-      <Text dimColor>esc back</Text>
+      <Text dimColor>{messages.common.configurationUnavailable}</Text>
+      <Text dimColor>{messages.hints.unavailable}</Text>
     </Box>
   );
 }
@@ -165,6 +168,7 @@ function UnavailableProviderDetails({
 function UnavailableProviderBinding({
   onBack,
 }: UnavailableProviderDetailsProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   useInput((_input, key) => {
     if (key.escape) {
       onBack();
@@ -173,8 +177,8 @@ function UnavailableProviderBinding({
 
   return (
     <Box flexDirection="column">
-      <Text dimColor>binding unavailable.</Text>
-      <Text dimColor>esc back</Text>
+      <Text dimColor>{messages.common.bindingUnavailable}</Text>
+      <Text dimColor>{messages.hints.unavailable}</Text>
     </Box>
   );
 }

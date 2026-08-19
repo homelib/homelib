@@ -1,10 +1,12 @@
 import {Box, Text, useInput} from 'ink';
 import {useState} from 'react';
 
+import {useTerminalI18n} from '../@i18n.js';
+
 export type StartupPageModel = {
   readonly scriptName: string;
   readonly providerCount: number;
-  readonly endpoints: {
+  readonly devices: {
     readonly boundCount: number;
     readonly unboundCount: number;
   };
@@ -21,19 +23,21 @@ export function StartupPage({
   model,
   onSelect,
 }: StartupPageProps): React.JSX.Element {
+  const messages = useTerminalI18n();
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const items = [
+    {label: messages.startup.run, selection: 'run'},
+    {label: messages.common.providers, selection: 'providers'},
+    {label: messages.common.bindings, selection: 'bindings'},
+  ] as const satisfies readonly StartupPageItem[];
 
   useInput((_input, key) => {
     if (key.upArrow) {
-      setSelectedIndex(index =>
-        index === 0 ? STARTUP_PAGE_ITEMS.length - 1 : index - 1,
-      );
+      setSelectedIndex(index => (index === 0 ? items.length - 1 : index - 1));
     } else if (key.downArrow) {
-      setSelectedIndex(index =>
-        index === STARTUP_PAGE_ITEMS.length - 1 ? 0 : index + 1,
-      );
+      setSelectedIndex(index => (index === items.length - 1 ? 0 : index + 1));
     } else if (key.return) {
-      const item = STARTUP_PAGE_ITEMS.at(selectedIndex);
+      const item = items.at(selectedIndex);
 
       if (item !== undefined) {
         onSelect(item.selection);
@@ -46,10 +50,10 @@ export function StartupPage({
       <Text bold>homelib · {model.scriptName}</Text>
 
       <Box flexDirection="column" marginTop={1}>
-        {STARTUP_PAGE_ITEMS.map((item, index) => (
+        {items.map((item, index) => (
           <StartupMenuItem
             key={item.selection}
-            details={getItemDetails(item.selection, model)}
+            details={getItemDetails(item.selection, model, messages)}
             label={item.label}
             selected={index === selectedIndex}
           />
@@ -57,7 +61,7 @@ export function StartupPage({
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>↑↓ select · enter · ctrl+c exit</Text>
+        <Text dimColor>{messages.startup.hint}</Text>
       </Box>
     </Box>
   );
@@ -91,11 +95,15 @@ function StartupMenuItem({
 function getItemDetails(
   selection: StartupPageSelection,
   model: StartupPageModel,
+  messages: ReturnType<typeof useTerminalI18n>,
 ): string | undefined {
   if (selection === 'providers') {
-    return `${model.providerCount} declared`;
+    return messages.startup.providerCount(model.providerCount);
   } else if (selection === 'bindings') {
-    return `${model.endpoints.boundCount} bound · ${model.endpoints.unboundCount} unbound`;
+    return messages.startup.bindingSummary(
+      model.devices.boundCount,
+      model.devices.unboundCount,
+    );
   }
 
   return undefined;
@@ -105,9 +113,3 @@ type StartupPageItem = {
   readonly label: string;
   readonly selection: StartupPageSelection;
 };
-
-const STARTUP_PAGE_ITEMS = [
-  {label: 'run', selection: 'run'},
-  {label: 'providers', selection: 'providers'},
-  {label: 'bindings', selection: 'bindings'},
-] as const satisfies readonly StartupPageItem[];

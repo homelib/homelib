@@ -13,13 +13,14 @@ import {
   type MiotBindingDeviceProposal,
   type MiotBindingDiscovery,
   type MiotBindingEndpointCandidate,
-  type MiotBindingEndpointProposal,
   type MiotBindingResourceBinding,
   discoverMiotBindingDevices,
   prepareMiotBindingResourceBindings,
   resolveMiotBindingDeviceProposal,
 } from '../binding.js';
 import type {MiotProvider} from '../provider.js';
+
+import {useMiotTerminalI18n} from './@i18n.js';
 
 const PHYSICAL_DEVICE_PAGE_SIZE = 6;
 
@@ -228,16 +229,20 @@ type BindingViewProps = {
 };
 
 function BindingView({state}: BindingViewProps): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   if (state.type === 'loading') {
     return (
       <Box flexDirection="column">
-        <Text>finding matching mi home devices…</Text>
-        <Hint>esc back</Hint>
+        <Text>{messages.bindings.loading}</Text>
+        <Hint>{messages.bindings.backHint}</Hint>
       </Box>
     );
   } else if (state.type === 'load-error') {
     return (
-      <ErrorView message={state.message}>enter/r retry · esc back</ErrorView>
+      <ErrorView message={state.message}>
+        {messages.bindings.loadErrorHint}
+      </ErrorView>
     );
   } else if (state.type === 'devices') {
     return <DevicesView state={state} />;
@@ -250,24 +255,22 @@ function BindingView({state}: BindingViewProps): React.JSX.Element {
 
     return (
       <Box flexDirection="column">
-        <Text>
-          replace {replacementCount} existing{' '}
-          {replacementCount === 1 ? 'binding' : 'bindings'} and match this
-          device?
-        </Text>
-        <Hint>enter/y confirm · esc cancel</Hint>
+        <Text>{messages.bindings.confirmReplacement(replacementCount)}</Text>
+        <Hint>{messages.bindings.confirmHint}</Hint>
       </Box>
     );
   } else if (state.type === 'saving') {
     return (
       <Box flexDirection="column">
-        <Text>saving device match…</Text>
+        <Text>{messages.bindings.saving}</Text>
       </Box>
     );
   }
 
   return (
-    <ErrorView message={state.message}>enter/r retry · esc back</ErrorView>
+    <ErrorView message={state.message}>
+      {messages.bindings.loadErrorHint}
+    </ErrorView>
   );
 }
 
@@ -276,6 +279,7 @@ function DevicesView({
 }: {
   readonly state: DevicesState;
 }): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
   const {discovery} = state;
   const visibleDevices = getVisibleItems(
     discovery.devices,
@@ -291,11 +295,11 @@ function DevicesView({
 
   return (
     <Box flexDirection="column">
-      <Text>choose a device</Text>
+      <Text>{messages.bindings.chooseDevice}</Text>
 
       <Box flexDirection="column" marginTop={1}>
         {discovery.devices.length === 0 ? (
-          <Text dimColor>no matching devices found.</Text>
+          <Text dimColor>{messages.bindings.noDevices}</Text>
         ) : (
           deviceGroups.map((group, groupIndex) => (
             <Box
@@ -304,20 +308,25 @@ function DevicesView({
               marginTop={groupIndex === 0 ? 0 : 1}
             >
               <Text bold dimColor>
-                {group.location ?? 'unknown location'}
+                {group.location ?? messages.bindings.unknownLocation}
               </Text>
-              {group.devices.map(device => (
-                <ListItem
-                  key={device.key}
-                  label={getDeviceLabel(device.device)}
-                  offline={device.device.online === false}
-                  selected={
-                    getCandidateDeviceIndex(discovery, device.key) ===
-                    state.cursor
-                  }
-                  status={getDeviceMatchStatus(device, state.providerBindings)}
-                />
-              ))}
+              <Box flexDirection="column" marginTop={1}>
+                {group.devices.map(device => (
+                  <ListItem
+                    key={device.key}
+                    label={getDeviceLabel(device.device)}
+                    offline={device.device.online === false}
+                    selected={
+                      getCandidateDeviceIndex(discovery, device.key) ===
+                      state.cursor
+                    }
+                    status={getDeviceMatchStatus(
+                      device,
+                      state.providerBindings,
+                    )}
+                  />
+                ))}
+              </Box>
             </Box>
           ))
         )}
@@ -327,36 +336,35 @@ function DevicesView({
         <Box flexDirection="column" marginTop={1}>
           {discovery.devices.length <= PHYSICAL_DEVICE_PAGE_SIZE ? null : (
             <Text dimColor>
-              {visibleDevices.startIndex + 1}–
-              {visibleDevices.startIndex + visibleDevices.items.length} of{' '}
-              {discovery.devices.length}
+              {messages.bindings.range(
+                visibleDevices.startIndex + 1,
+                visibleDevices.startIndex + visibleDevices.items.length,
+                discovery.devices.length,
+              )}
             </Text>
           )}
 
           {discovery.failedDeviceCount === 0 ? null : (
             <Text color="yellow">
-              {discovery.failedDeviceCount} devices could not be checked.
+              {messages.bindings.failedDevices(discovery.failedDeviceCount)}
             </Text>
           )}
 
           {discovery.incompleteDeviceCount === 0 ? null : (
             <Text dimColor>
-              {discovery.incompleteDeviceCount} devices do not expose enough
-              information.
+              {messages.bindings.incompleteDevices(
+                discovery.incompleteDeviceCount,
+              )}
             </Text>
           )}
 
           {state.notice === 'reloaded' ? (
-            <Text color="green">devices reloaded.</Text>
+            <Text color="green">{messages.bindings.reloaded}</Text>
           ) : null}
         </Box>
       ) : null}
 
-      <Hint>
-        {discovery.devices.length === 0
-          ? 'r reload · esc back'
-          : '↑↓ select · enter match device · r reload · esc back'}
-      </Hint>
+      <Hint>{messages.bindings.listHint(discovery.devices.length > 0)}</Hint>
     </Box>
   );
 }
@@ -366,6 +374,8 @@ function DeviceMatchView({
 }: {
   readonly proposal: MiotBindingDeviceProposal;
 }): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   return (
     <Box flexDirection="column">
       <Box>
@@ -379,72 +389,27 @@ function DeviceMatchView({
         <Text dimColor>{getDeviceLocation(proposal.device.device)}</Text>
       )}
 
-      <Box flexDirection="column" marginTop={1}>
-        <Text>device match</Text>
-        {proposal.endpoints.map(endpoint => (
-          <EndpointProposalRow
-            key={getEndpointPathKey(endpoint.endpoint.endpoint.path)}
-            proposal={endpoint}
-          />
-        ))}
-      </Box>
-
       {proposal.status === 'unavailable' ? (
-        <Text color="yellow">
-          this device mapping uses resources already bound elsewhere.
-        </Text>
+        <Text color="yellow">{messages.bindings.mappingUnavailable}</Text>
       ) : null}
 
       <Box marginTop={1}>
         {proposal.status === 'automatic' ? (
           <Text bold color="cyan">
-            › bind device
+            {messages.bindings.bind}
           </Text>
         ) : proposal.status === 'existing' ? (
           <Text bold color="cyan">
-            › done
+            {messages.bindings.done}
           </Text>
         ) : (
-          <Text color="yellow">device match unavailable.</Text>
+          <Text color="yellow">{messages.bindings.unavailable}</Text>
         )}
       </Box>
 
       <Hint>
-        {proposal.status === 'unavailable' ? '' : 'enter confirm · '}esc choose
-        another device
+        {messages.bindings.matchHint(proposal.status !== 'unavailable')}
       </Hint>
-    </Box>
-  );
-}
-
-function EndpointProposalRow({
-  proposal,
-}: {
-  readonly proposal: MiotBindingEndpointProposal;
-}): React.JSX.Element {
-  const color = proposal.status === 'unavailable' ? 'red' : 'green';
-  const badge =
-    proposal.status === 'automatic'
-      ? 'ready'
-      : proposal.status === 'existing'
-        ? 'bound here'
-        : 'used elsewhere';
-
-  return (
-    <Box flexDirection="column">
-      <Text>
-        <Text color={color}>
-          {proposal.status === 'unavailable' ? '!' : '●'}{' '}
-          {getEndpointLabel(proposal.endpoint.endpoint)}
-        </Text>
-        <Text bold color={color}>
-          {' '}
-          [{badge}]
-        </Text>
-      </Text>
-      <Box marginLeft={2}>
-        <Text dimColor>{proposal.endpoint.label}</Text>
-      </Box>
     </Box>
   );
 }
@@ -478,20 +443,24 @@ function DeviceStatusBadges({
   readonly offline: boolean;
   readonly status: MiotBindingDeviceProposal['status'];
 }): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   return (
     <>
       {status === 'existing' ? (
         <Text bold color="green">
           {' '}
-          [bound here]
+          [{messages.bindings.boundHere}]
         </Text>
       ) : status === 'unavailable' ? (
         <Text bold color="red">
           {' '}
-          [used elsewhere]
+          [{messages.bindings.usedElsewhere}]
         </Text>
       ) : null}
-      {offline ? <Text color="yellow"> [offline]</Text> : null}
+      {offline ? (
+        <Text color="yellow"> [{messages.bindings.offline}]</Text>
+      ) : null}
     </>
   );
 }
@@ -503,9 +472,11 @@ function ErrorView({
   readonly message: string;
   readonly children: React.ReactNode;
 }): React.JSX.Element {
+  const messages = useMiotTerminalI18n();
+
   return (
     <Box flexDirection="column">
-      <Text color="red">{message}</Text>
+      <Text color="red">{messages.common.error(message)}</Text>
       <Hint>{children}</Hint>
     </Box>
   );
@@ -661,12 +632,6 @@ function groupDevicesByLocation(
   }
 
   return [...groupMap].map(([location, devices]) => ({location, devices}));
-}
-
-function getEndpointLabel(
-  endpoint: MiotBindingEndpointProposal['endpoint']['endpoint'],
-): string {
-  return endpoint.endpoint.name === '' ? 'main' : endpoint.endpoint.name;
 }
 
 function wrapIndex(index: number, length: number): number {

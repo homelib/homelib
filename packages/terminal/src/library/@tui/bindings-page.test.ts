@@ -4,6 +4,8 @@ import {EndpointPath, ProviderReference} from '@homelib/core';
 import {Text, render} from 'ink';
 import {createElement, useState} from 'react';
 
+import {I18nProvider} from '../i18n.js';
+
 import {
   BindingDevicePage,
   BindingProviderPage,
@@ -71,8 +73,8 @@ test('summarizes the complete scope subtree', () => {
 
   expect(getBindingSummary(scopes)).toEqual({
     deviceCount: 2,
-    configuredEndpointCount: 2,
-    unconfiguredEndpointCount: 1,
+    boundDeviceCount: 1,
+    unboundDeviceCount: 1,
   });
 });
 
@@ -100,6 +102,35 @@ test('opens stale bindings from the bindings root', async () => {
 
     await terminal.input('u');
     expect(selectStaleBindingsCallCount).toBe(1);
+  } finally {
+    await terminal.close();
+  }
+});
+
+test('renders simplified Chinese for a similar Chinese locale', async () => {
+  const terminal = renderTestTerminal(
+    createElement(
+      I18nProvider,
+      {locale: 'zh-TW'},
+      createElement(BindingsPage, {
+        model: {
+          scriptName: 'test',
+          scopes: [],
+          staleBindingCount: 2,
+        },
+        onBack: () => undefined,
+        onSelect: () => undefined,
+        onSelectStaleBindings: () => undefined,
+      }),
+    ),
+  );
+
+  try {
+    await terminal.flush();
+    expect(terminal.frame()).toContain('设备绑定');
+    expect(terminal.frame()).toContain('2 个失效绑定');
+    expect(terminal.frame()).toContain('未声明根空间。');
+    expect(terminal.frame()).toContain('u 查看失效绑定');
   } finally {
     await terminal.close();
   }
@@ -217,7 +248,7 @@ test('unbinds from the core device page without a provider renderer', async () =
     await terminal.flush();
     expect(terminal.frame()).toContain('bindings › home › light');
     await terminal.input('u');
-    expect(terminal.frame()).toContain('bound endpoints');
+    expect(terminal.frame()).toContain('bindings');
     expect(terminal.frame()).toContain('test · provider');
 
     await terminal.input('\r');

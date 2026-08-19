@@ -6,6 +6,12 @@
 
 Just another awesome magic.
 
+The interactive terminal follows the system language when a translation is
+available. Use `--locale=zh-CN` or `HOMELIB_LOCALE=zh-CN` to select Simplified
+Chinese explicitly. Closely related locales fall back by language before the
+default English messages, so Traditional Chinese locales currently use the
+Simplified Chinese translation.
+
 ## License
 
 MIT License.

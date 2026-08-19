@@ -2,7 +2,7 @@ import {basename} from 'node:path';
 
 import {addLogListener, registerBootstrapFrontend} from '@homelib/core';
 
-import {isRunRequested} from './@bootstrap-arguments.js';
+import {getRequestedLocale, isRunRequested} from './@bootstrap-arguments.js';
 import {presentStartup} from './@tui/startup.js';
 import {writeLogEvent} from './log.js';
 
@@ -11,12 +11,21 @@ registerBootstrapFrontend(context => {
     return;
   }
 
-  return presentStartup(context, getScriptName());
+  return presentStartup(
+    context,
+    getScriptName(),
+    getRequestedLocale(
+      process.argv,
+      process.env.HOMELIB_LOCALE,
+      Intl.DateTimeFormat().resolvedOptions().locale,
+    ),
+  );
 });
 
 addLogListener(writeLogEvent);
 
 export * from './log.js';
+export * from './i18n.js';
 export * from './tui.js';
 
 function getScriptName(): string {

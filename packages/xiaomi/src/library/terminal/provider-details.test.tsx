@@ -67,6 +67,10 @@ test('submits pasted callback URLs without triggering root navigation', async ()
   try {
     await openAuthorization(terminal);
 
+    expect(terminal.frame()).toContain(
+      'if the browser cannot connect, paste the complete callback URL here.',
+    );
+
     await terminal.paste(`\n${FIRST_CALLBACK_URL}\n`);
     await terminal.flushUntil(frame =>
       frame.includes('callback rejected: invalid callback URL.'),

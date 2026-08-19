@@ -17,6 +17,7 @@ import {
 import {render, useApp, useInput} from 'ink';
 import {useRef, useState} from 'react';
 
+import {I18nProvider} from '../i18n.js';
 import {ProviderBindingOutlet, ProviderDetailsOutlet} from '../tui.js';
 
 import {
@@ -45,6 +46,7 @@ export type StartupTuiModel = {
 export async function presentStartup(
   context: BootstrapContext,
   scriptName: string,
+  locale: string,
 ): Promise<void> {
   if (!isInteractiveTerminal()) {
     return;
@@ -57,7 +59,12 @@ export async function presentStartup(
     bindingFile: context.initialBindingFile,
     updateBindingFile: context.updateBindingFile,
   };
-  const instance = render(<Startup model={model} />, {alternateScreen: true});
+  const instance = render(
+    <I18nProvider locale={locale}>
+      <Startup model={model} />
+    </I18nProvider>,
+    {alternateScreen: true},
+  );
   let result: unknown;
 
   try {
@@ -174,7 +181,7 @@ export function Startup({model}: StartupProps): React.JSX.Element {
               findStartupBindingEndpoint(model.bindingScopes, binding.path) !==
               undefined
             ) {
-              throw new Error('endpoint binding is no longer stale.');
+              throw new Error('binding is no longer stale.');
             }
 
             return removeEndpointBinding(currentBindingFile, binding.path);
@@ -275,13 +282,13 @@ export function Startup({model}: StartupProps): React.JSX.Element {
             );
 
             if (currentBinding === undefined) {
-              throw new Error('endpoint binding no longer exists.');
+              throw new Error('binding no longer exists.');
             } else if (
               currentBinding.provider.namespace !==
                 endpoint.provider.namespace ||
               currentBinding.provider.name !== endpoint.provider.name
             ) {
-              throw new Error('endpoint binding changed; go back and retry.');
+              throw new Error('binding changed; go back and retry.');
             }
 
             return removeEndpointBinding(currentBindingFile, endpoint.path);
@@ -410,9 +417,9 @@ export function Startup({model}: StartupProps): React.JSX.Element {
       model={{
         scriptName: model.scriptName,
         providerCount: model.providers.length,
-        endpoints: {
-          boundCount: bindingSummary.configuredEndpointCount,
-          unboundCount: bindingSummary.unconfiguredEndpointCount,
+        devices: {
+          boundCount: bindingSummary.boundDeviceCount,
+          unboundCount: bindingSummary.unboundDeviceCount,
         },
       }}
       onSelect={handleSelect}

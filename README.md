@@ -3,6 +3,8 @@
   <img align="right" alt="HomeLib" src="./packages/web/src/library/public/homelib-text-light.svg" width="240">
 </picture>
 
+English | [简体中文](./README.zh-CN.md)
+
 [![MIT License](https://img.shields.io/badge/license-MIT-999999?style=flat-square)](./LICENSE)
 [![Discord](https://img.shields.io/badge/chat-discord-5662f6?style=flat-square)](https://discord.gg/wEVn2qcf8h)
 
@@ -50,6 +52,8 @@ complete example.
 
 The terminal frontend handles setup and device binding during `bootstrap()`.
 Use `--run` to run directly with existing bindings.
+It follows the system language when possible. Override it with
+`--locale=zh-CN` or the `HOMELIB_LOCALE` environment variable.
 
 ## Try it out
 
