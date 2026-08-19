@@ -24,8 +24,7 @@ You can now utilize the power of JavaScript ecosystem and enjoy a functional ver
 Create a new script and run it directly with Node.js:
 
 ```ts
-import {$home, bootstrap} from '@homelib/core';
-import {autorun} from '@homelib/core';
+import {$home, autorun, bootstrap} from '@homelib/core';
 import {$xiaomi} from '@homelib/xiaomi';
 
 $xiaomi('home');

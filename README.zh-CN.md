@@ -24,8 +24,7 @@ HomeLib 让你使用功能完整的 JavaScript/TypeScript 编写家庭自动化�
 创建一个新脚本，然后直接使用 Node.js 运行：
 
 ```ts
-import {$home, bootstrap} from '@homelib/core';
-import {autorun} from '@homelib/core';
+import {$home, autorun, bootstrap} from '@homelib/core';
 import {$xiaomi} from '@homelib/xiaomi';
 
 $xiaomi('家');
