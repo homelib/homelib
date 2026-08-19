@@ -22,18 +22,18 @@ export function setupDehumidifierWaterTankReminder({
   const heartbeat = createHeartbeat(REMINDER_INTERVAL);
 
   autorun(() => {
-    if (
-      !dehumidifier.ready ||
-      !speaker.ready ||
-      // 多组灯（大概是大小灯）任意未开，说明客厅大概没人（单开一般是留灯），不提醒。
-      lights.some(light => !light.on) ||
-      dehumidifier.waterTankFull !== true
-    ) {
+    if (!dehumidifier.ready || !speaker.ready) {
       return;
     }
 
-    heartbeat();
+    // 多组灯（大概是大小灯）任意未开，说明客厅大概没人（单开一般是留灯），不提醒。
+    if (lights.some(light => !light.on)) {
+      return;
+    }
 
-    speaker.speak(REMINDER_TEXT);
+    if (dehumidifier.waterTankFull) {
+      speaker.speak(REMINDER_TEXT);
+      heartbeat();
+    }
   });
 }
