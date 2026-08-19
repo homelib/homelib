@@ -4,8 +4,8 @@ import {
   type RelativeHumiditySource,
   Temperature,
   type TemperatureSource,
+  autorun,
 } from '@homelib/core';
-import {autorun} from '@homelib/core/mobx';
 import {
   StateMatcher,
   getTemperatureByApparentTemperatureAndRelativeHumidity,

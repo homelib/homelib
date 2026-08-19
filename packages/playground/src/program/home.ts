@@ -1,9 +1,9 @@
-import {$home, bootstrap} from '@homelib/core';
-import {autorun} from '@homelib/core/mobx';
+import {$home, autorun, bootstrap} from '@homelib/core';
 import {$xiaomi} from '@homelib/xiaomi';
 import ms from 'ms';
 
 import {setupAutoPetFeeding} from './@auto-pet-feeding.js';
+import {setupBathroomVentilation} from './@bathroom-ventilation.js';
 import {setupTemperatureHumidityControl} from './@temperature-humidity-control.js';
 
 $xiaomi('美岸');
@@ -23,6 +23,7 @@ const 美岸 = $home('美岸', home =>
         .$dehumidifier('除湿机')
         .$temperatureHumiditySensor('温湿度传感器'),
     )
+    .$scope('卫生间', room => room.$switch('灯').$bathHeater('浴霸'))
     .$scope('卫生间走廊', corridor =>
       corridor.$light('灯组').$motionAmbientLightLevelSensor('运动传感器'),
     ),
@@ -65,6 +66,7 @@ setupTemperatureHumidityControl('主卧', {
 });
 
 setupAutoPetFeeding(美岸.客厅.宠物喂食器);
+setupBathroomVentilation(美岸.卫生间.灯, 美岸.卫生间.浴霸);
 
 autorun(() => {
   if (!美岸.卫生间走廊.运动传感器.ready) {

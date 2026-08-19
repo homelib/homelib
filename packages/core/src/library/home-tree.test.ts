@@ -1,5 +1,10 @@
 import {Device} from './device.js';
-import type {AirConditioner, Dehumidifier} from './devices/index.js';
+import type {
+  AirConditioner,
+  BathHeater,
+  Dehumidifier,
+  Switch,
+} from './devices/index.js';
 import {$home, Home} from './home.js';
 import {getRootScopes, register} from './registry.js';
 import type {
@@ -153,7 +158,8 @@ function assertTreeDeclarationTypes(): void {
       .$motionAmbientLightLevelSensor('人体环境光传感器')
       .$scope('客厅', room =>
         room.$airConditioner('空调').$dehumidifier('除湿机'),
-      ),
+      )
+      .$scope('卫生间', room => room.$switch('灯').$bathHeater('浴霸')),
   );
 
   const motionDetected: boolean | undefined =
@@ -163,6 +169,10 @@ function assertTreeDeclarationTypes(): void {
 
   modeledHome.客厅.空调.turnOn();
   modeledHome.客厅.除湿机.turnOn();
+  const switch_: Switch = modeledHome.卫生间.灯;
+  switch_.turnOn();
+  const bathHeater: BathHeater = modeledHome.卫生间.浴霸;
+  bathHeater.turnLightOn().setMode('quick-heat').stop();
 
   void motionDetected;
   void ambientLightLevel;

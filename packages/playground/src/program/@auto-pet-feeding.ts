@@ -1,5 +1,4 @@
-import type {PetFeeder} from '@homelib/core';
-import {autorun} from '@homelib/core/mobx';
+import {type PetFeeder, autorun} from '@homelib/core';
 import {createKeepAlive, debounce} from '@homelib/utils';
 import ms from 'ms';
 

@@ -2,24 +2,28 @@ import './device-namespace.js';
 
 import {
   AirConditioner,
+  BathHeater,
   Dehumidifier,
   Fan,
   Light,
   MotionAmbientLightLevelSensor,
   MotionSensor,
   PetFeeder,
+  Switch,
   TemperatureHumiditySensor,
 } from './devices/index.js';
 import {getDeviceConstructor} from './registry.js';
 
 test.each([
   ['airConditioner', AirConditioner],
+  ['bathHeater', BathHeater],
   ['dehumidifier', Dehumidifier],
   ['fan', Fan],
   ['light', Light],
   ['motionAmbientLightLevelSensor', MotionAmbientLightLevelSensor],
   ['motionSensor', MotionSensor],
   ['petFeeder', PetFeeder],
+  ['switch', Switch],
   ['temperatureHumiditySensor', TemperatureHumiditySensor],
 ])('registers the %s device constructor', (name, Constructor) => {
   expect(getDeviceConstructor(name)).toBe(Constructor);

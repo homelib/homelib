@@ -25,7 +25,7 @@ HomeLib 让你使用功能完整的 JavaScript/TypeScript 编写家庭自动化�
 
 ```ts
 import {$home, bootstrap} from '@homelib/core';
-import {autorun} from '@homelib/core/mobx';
+import {autorun} from '@homelib/core';
 import {$xiaomi} from '@homelib/xiaomi';
 
 $xiaomi('home');

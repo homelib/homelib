@@ -1,11 +1,13 @@
 import {
   AirConditioner,
+  BathHeater,
   Dehumidifier,
   Fan,
   Light,
   MotionAmbientLightLevelSensor,
   MotionSensor,
   PetFeeder,
+  Switch,
   TemperatureHumiditySensor,
   register,
 } from '@homelib/core';
@@ -17,6 +19,7 @@ import {
 import {registerMiotDevice} from './device.js';
 import {
   MiotAirConditionerEndpointConnection,
+  MiotBathHeaterEndpointConnection,
   MiotDehumidifierEndpointConnection,
   MiotFanEndpointConnection,
   MiotLightEndpointConnection,
@@ -24,6 +27,7 @@ import {
   MiotMotionSensorEndpointConnection,
   MiotPetFeederEndpointConnection,
   MiotPlaceholderDevice,
+  MiotSwitchEndpointConnection,
   MiotTemperatureHumiditySensorEndpointConnection,
 } from './devices/index.js';
 import {MIOT_NAMESPACE, MiotProvider} from './provider.js';
@@ -33,6 +37,11 @@ register(MIOT_NAMESPACE, {
   placeholder: MiotPlaceholderDevice,
 });
 registerMiotDevice(AirConditioner, MiotAirConditionerEndpointConnection);
+registerMiotDevice(
+  BathHeater,
+  MiotBathHeaterEndpointConnection,
+  MiotLightEndpointConnection,
+);
 registerMiotDevice(Dehumidifier, MiotDehumidifierEndpointConnection);
 registerMiotDevice(Fan, MiotFanEndpointConnection);
 registerMiotDevice(Light, MiotLightEndpointConnection);
@@ -42,6 +51,7 @@ registerMiotDevice(
 );
 registerMiotDevice(MotionSensor, MiotMotionSensorEndpointConnection);
 registerMiotDevice(PetFeeder, MiotPetFeederEndpointConnection);
+registerMiotDevice(Switch, MiotSwitchEndpointConnection);
 registerMiotDevice(
   TemperatureHumiditySensor,
   MiotTemperatureHumiditySensorEndpointConnection,
