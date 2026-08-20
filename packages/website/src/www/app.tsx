@@ -1,8 +1,14 @@
 import * as Lucide from 'lucide-react';
 import type {ReactElement} from 'react';
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import styled, {createGlobalStyle} from 'styled-components';
 import codeHtml from 'virtual:home-code';
+
+import {
+  WEBSITE_MESSAGES,
+  type WebsiteLocale,
+  resolveWebsiteLocale,
+} from './i18n.js';
 
 const GlobalStyle = createGlobalStyle`
   :root {
@@ -75,6 +81,23 @@ const NavLinks = styled.nav`
 const NavLink = styled.a`
   color: var(--color-text-secondary);
   font-weight: 500;
+
+  &:hover {
+    color: var(--color-text-primary);
+  }
+`;
+
+const LanguageToggle = styled.button`
+  padding: 0;
+
+  font: inherit;
+  font-weight: 500;
+
+  color: var(--color-text-secondary);
+
+  background: none;
+  border: none;
+  cursor: pointer;
 
   &:hover {
     color: var(--color-text-primary);
@@ -236,28 +259,42 @@ const Footer = styled.footer`
   color: var(--color-text-secondary);
 `;
 
-const features = [
-  {
-    icon: Lucide.Code2,
-    title: 'Code-first home tree',
-    description:
-      'Declare your home, scopes and devices as a fully type-safe tree in TypeScript.',
-  },
-  {
-    icon: Lucide.Zap,
-    title: 'Reactive by design',
-    description:
-      'MobX-powered device states, computed values and reactions make automations feel natural.',
-  },
-  {
-    icon: Lucide.Plug,
-    title: 'Provider ecosystem',
-    description:
-      'Start with MIoT and extend to more protocols through a clean provider interface.',
-  },
-];
+const FEATURE_ICONS = [Lucide.Code2, Lucide.Zap, Lucide.Plug];
+
+const LOCALE_STORAGE_KEY = 'homelib-website:locale';
 
 export function App(): ReactElement {
+  const [locale, setLocale] = useState<WebsiteLocale>(() => {
+    try {
+      const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+
+      if (stored) {
+        return resolveWebsiteLocale(stored);
+      }
+    } catch {
+      // Ignore inaccessible storage.
+    }
+
+    return resolveWebsiteLocale(window.navigator.language);
+  });
+
+  const messages = WEBSITE_MESSAGES[locale];
+
+  useEffect(() => {
+    document.title = messages.docTitle;
+    document.documentElement.lang = locale === 'zh-CN' ? 'zh-CN' : 'en';
+
+    try {
+      window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    } catch {
+      // Ignore inaccessible storage.
+    }
+  }, [locale, messages]);
+
+  const switchLocale = (): void => {
+    setLocale(locale === 'en' ? 'zh-CN' : 'en');
+  };
+
   return (
     <>
       <GlobalStyle />
@@ -265,32 +302,33 @@ export function App(): ReactElement {
         <NavBar>
           <img src="homelib-text-light.svg" alt="HomeLib" height={32} />
           <NavLinks>
-            <NavLink href="#features">Features</NavLink>
-            <NavLink href="https://github.com/homelib/homelib">GitHub</NavLink>
+            <NavLink href="#features">{messages.nav.features}</NavLink>
+            <NavLink href="https://github.com/homelib/homelib">
+              {messages.nav.github}
+            </NavLink>
+            <LanguageToggle type="button" onClick={switchLocale}>
+              {locale === 'en' ? '中文' : 'EN'}
+            </LanguageToggle>
           </NavLinks>
         </NavBar>
         <Main>
           <Hero>
-            <HeroTitle>Home automation, defined in code.</HeroTitle>
-            <HeroSubtitle>
-              HomeLib is a TypeScript-first framework for building dependable
-              home automation. Declare your home as a type-safe tree, bind real
-              providers, and let reactive state drive your automations.
-            </HeroSubtitle>
+            <HeroTitle>{messages.hero.title}</HeroTitle>
+            <HeroSubtitle>{messages.hero.subtitle}</HeroSubtitle>
             <Buttons>
               <PrimaryButton href="https://github.com/homelib/homelib#readme">
-                Get Started
+                {messages.hero.getStarted}
                 <Lucide.ArrowRight size={16} />
               </PrimaryButton>
               <SecondaryButton href="https://github.com/homelib/homelib">
                 <Lucide.GitBranch size={16} />
-                View on GitHub
+                {messages.hero.viewOnGitHub}
               </SecondaryButton>
             </Buttons>
           </Hero>
           <Features id="features">
-            {features.map(feature => {
-              const Icon = feature.icon;
+            {messages.features.map((feature, index) => {
+              const Icon = FEATURE_ICONS[index];
 
               return (
                 <FeatureCard key={feature.title}>
@@ -302,15 +340,12 @@ export function App(): ReactElement {
             })}
           </Features>
           <CodeSection>
-            <CodeTitle>Example</CodeTitle>
-            <CodeDescription>
-              A minimal HomeLib automation that turns on a light when motion is
-              detected.
-            </CodeDescription>
+            <CodeTitle>{messages.example.title}</CodeTitle>
+            <CodeDescription>{messages.example.description}</CodeDescription>
             <CodeBlock dangerouslySetInnerHTML={{__html: codeHtml}} />
           </CodeSection>
         </Main>
-        <Footer>MIT Licensed · Built by vilicvane</Footer>
+        <Footer>{messages.footer}</Footer>
       </Page>
     </>
   );
