@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "3": "npm install && npm dedupe && npm install",
-    "build": "rimraf --glob packages/*/bld && tsc --build",
+    "build": "rimraf --glob packages/*/{.bld,bld} && tsc --build",
     "lint": "eslint --no-error-on-unmatched-pattern --report-unused-disable-directives .",
     "lint-prettier": "prettier --check .",
     "bare-test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
@@ -17,6 +17,7 @@
     "terminal": "npm run --workspace @homelib/terminal",
     "utils": "npm run --workspace @homelib/utils",
     "web": "npm run --workspace @homelib/web",
+    "website": "npm run --workspace @homelib/website",
     "xiaomi": "npm run --workspace @homelib/xiaomi"
   },
   "workspaces": [
@@ -25,6 +26,7 @@
     "packages/terminal",
     "packages/utils",
     "packages/web",
+    "packages/website",
     "packages/xiaomi"
   ],
   "devDependencies": {
