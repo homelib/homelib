@@ -159,16 +159,6 @@ export class MiotDehumidifierEndpointConnection
     return name === 'fault';
   }
 
-  protected override handleStateInvalidated(): void {
-    this.waterTankFullValue = undefined;
-  }
-
-  protected override handleSnapshotPropertyInvalidated(name: string): void {
-    if (name === 'fault') {
-      this.waterTankFullValue = undefined;
-    }
-  }
-
   override prepareCommand(
     command: DehumidifierEndpointCommand,
   ): CommandExecution {
@@ -206,7 +196,7 @@ export class MiotDehumidifierEndpointConnection
         'target-humidity': codec.encode(command.relativeHumidity),
       });
       assertExecutable = () => {
-        if (this.waterTankFull === true) {
+        if (this.getCommandEffectState('fault') === 1) {
           throw new CommandError(
             'Cannot set MIoT dehumidifier target humidity while its water tank is full or unavailable.',
           );

@@ -707,6 +707,7 @@ test('invalidates a snapshot property without losing readiness', () => {
 
   expect(connection.ready).toBe(true);
   expect(connection.stateRevision).toBe(revision + 1);
+  expect(connection.observedTemperature).toBe(24.5);
   expect(connection.getCommandEffectState('temperature')).toBeUndefined();
   expect(connection.getObservationRevision(['temperature'])).toBe(revision + 1);
   expect(connection.invalidatedSnapshotProperties).toEqual(['temperature']);
@@ -747,7 +748,7 @@ test('commits partial snapshot state and invalidation in one observable revision
 
   expect(values).toEqual([
     [true, 24.5],
-    [false, undefined],
+    [false, 24.5],
   ]);
   expect(connection.ready).toBe(true);
   expect(connection.stateRevision).toBe(revision + 1);
@@ -793,6 +794,7 @@ test('soft-invalidates invalid snapshot values while committing valid siblings',
   );
   expect(connection.ready).toBe(true);
   expect(connection.stateRevision).toBe(revision + 1);
+  expect(connection.observedTemperature).toBe(24.5);
   expect(connection.getCommandEffectState('on')).toBe(false);
   expect(connection.getCommandEffectState('temperature')).toBeUndefined();
   expect(connection.getObservationRevision(['on'])).toBe(revision + 1);
@@ -1997,6 +1999,21 @@ test('commits the initial light state and ready flag atomically', () => {
     [true, true, 0.4, 4_000],
   ]);
 
+  connection.handleSnapshotInvalidation([
+    {
+      did: TEST_DIMMABLE_METADATA.device.did,
+      siid: TEST_DIMMABLE_PRIMARY_RESOURCE.service.iid,
+      piid: 2,
+    },
+  ]);
+
+  expect(connection.brightness).toBe(0.4);
+  expect(connection.getCommandEffectState('brightness')).toBeUndefined();
+  expect(values).toEqual([
+    [false, false, undefined, undefined],
+    [true, true, 0.4, 4_000],
+  ]);
+
   connection.handleStateUpdate({
     did: TEST_DIMMABLE_METADATA.device.did,
     online: false,
@@ -2092,7 +2109,9 @@ test('tracks observation revisions independently for each property alias', () =>
     properties: [],
   });
   expect(connection.stateRevision).toBe(5);
-  expect(connection.getObservationRevision(['on', 'brightness'])).toBe(4);
+  expect(connection.getObservationRevision(['on', 'brightness'])).toBe(5);
+  expect(connection.getCommandEffectState('on')).toBeUndefined();
+  expect(connection.getCommandEffectState('brightness')).toBeUndefined();
 });
 
 test('accepts an initial light state missing other snapshot values', () => {

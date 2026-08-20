@@ -143,11 +143,19 @@ export function getMiotEndpointConnectionResourceKeys(
     .map(resource => getMiotResourceKey(metadata.device.did, resource));
 }
 
+type MiotPropertyStateEntry = {
+  readonly value: unknown;
+  readonly available: boolean;
+};
+
 export abstract class MiotEndpointConnection<
   in TCommand extends Command,
   TSchema extends MiotPropertySchema = {},
 > implements EndpointConnection<TCommand> {
-  @observable.shallow private accessor stateMap = new Map<string, unknown>();
+  @observable.shallow private accessor stateMap = new Map<
+    string,
+    MiotPropertyStateEntry
+  >();
 
   @observable private accessor readyValue = false;
 
@@ -272,9 +280,10 @@ export abstract class MiotEndpointConnection<
     return revision;
   }
 
-  /** @internal Returns the latest raw MIoT state for a resolved alias. */
+  /** @internal Returns the currently available raw MIoT observation. */
   getCommandEffectState(name: string): unknown {
-    return this.stateMap.get(name);
+    const state = this.stateMap.get(name);
+    return state?.available === true ? state.value : undefined;
   }
 
   constructor(
@@ -298,7 +307,7 @@ export abstract class MiotEndpointConnection<
         throw new TypeError('Missing MIoT endpoint property notification.');
       }
 
-      this.stateMap.set(state.name, state.value);
+      this.stateMap.set(state.name, {value: state.value, available: true});
       this.handlePropertyStateChange(state.name, state.value);
       this.stateRevisionValue++;
       this.observationRevisionMap.set(state.name, this.stateRevisionValue);
@@ -321,7 +330,7 @@ export abstract class MiotEndpointConnection<
     this.handleNotification({type: 'event', data: update});
   }
 
-  /** Invalidates selected snapshot values without taking the endpoint offline. */
+  /** Marks selected snapshot observations unavailable without going offline. */
   @action
   handleSnapshotInvalidation(properties: readonly MiotProperty[]): void {
     const invalidations = this.prepareSnapshotInvalidations(properties);
@@ -333,7 +342,7 @@ export abstract class MiotEndpointConnection<
     const revision = this.stateRevisionValue + 1;
 
     for (const {name} of invalidations) {
-      this.stateMap.delete(name);
+      this.markPropertyStateUnavailable(name);
       this.observationRevisionMap.set(name, revision);
       this.handleSnapshotPropertyInvalidated(name);
     }
@@ -348,9 +357,16 @@ export abstract class MiotEndpointConnection<
     }
 
     if (!update.online) {
+      const revision = this.stateRevisionValue + 1;
+
+      for (const name of this.stateMap.keys()) {
+        this.markPropertyStateUnavailable(name);
+        this.observationRevisionMap.set(name, revision);
+      }
+
       this.readyValue = false;
       this.handleStateInvalidated();
-      this.stateRevisionValue++;
+      this.stateRevisionValue = revision;
       return [];
     }
 
@@ -372,12 +388,12 @@ export abstract class MiotEndpointConnection<
     const revision = this.stateRevisionValue + 1;
 
     for (const {name} of invalidations) {
-      this.stateMap.delete(name);
+      this.markPropertyStateUnavailable(name);
       this.handleSnapshotPropertyInvalidated(name);
     }
 
     for (const {name, value} of prepared.states) {
-      this.stateMap.set(name, value);
+      this.stateMap.set(name, {value, available: true});
     }
 
     this.readyValue = true;
@@ -488,7 +504,7 @@ export abstract class MiotEndpointConnection<
       return undefined;
     }
 
-    const value = this.getCommandEffectState(name);
+    const value = this.getLastKnownPropertyState(name);
 
     if (value === undefined) {
       return initial;
@@ -529,7 +545,7 @@ export abstract class MiotEndpointConnection<
       return undefined;
     }
 
-    const value = this.getCommandEffectState(name);
+    const value = this.getLastKnownPropertyState(name);
 
     if (value === undefined) {
       return initial;
@@ -563,7 +579,7 @@ export abstract class MiotEndpointConnection<
       >;
     }
 
-    const value = this.getCommandEffectState(name);
+    const value = this.getLastKnownPropertyState(name);
 
     if (value === undefined) {
       return initial as MiotEndpointConnectionPropertyState<
@@ -605,9 +621,10 @@ export abstract class MiotEndpointConnection<
    *
    * The physical property, raw state, and complete device URN are connection
    * concerns; concrete devices only provide the domain mapping. The returned
-   * codec always reads the alias it was bound to and is cached for the
-   * connection lifetime. A codec may still be unavailable when an optional
-   * property is absent or its mapping does not support this physical device.
+   * codec always reads the last known value of the alias it was bound to and
+   * is cached for the connection lifetime. A codec may still be unavailable
+   * when an optional property is absent or its mapping does not support this
+   * physical device.
    */
   protected getPropertyValueCodec<
     const TName extends Extract<
@@ -669,12 +686,24 @@ export abstract class MiotEndpointConnection<
     }
 
     const codec = {
-      read: () => resolved.decode(this.getCommandEffectState(name)),
+      read: () => resolved.decode(this.getLastKnownPropertyState(name)),
       encode: (value: TDomain) => resolved.encode(value),
     };
 
     codecMap.set(name, codec);
     return codec;
+  }
+
+  private getLastKnownPropertyState(name: string): unknown {
+    return this.stateMap.get(name)?.value;
+  }
+
+  private markPropertyStateUnavailable(name: string): void {
+    const state = this.stateMap.get(name);
+
+    if (state?.available === true) {
+      this.stateMap.set(name, {...state, available: false});
+    }
   }
 
   private createProperties(): MiotEndpointConnectionProperties {

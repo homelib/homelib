@@ -975,15 +975,16 @@ describe('MIoT dehumidifier capabilities', () => {
     ]);
   });
 
-  test('forgets the last known water tank state when device state is invalidated', () => {
+  test('retains the last known water tank state without trusting it after offline', async () => {
     const metadata = findMetadata(
       MiotDehumidifierEndpointConnection,
       createDehumidifierSpec(),
     );
+    const transport = new TestTransport();
     const connection = new MiotDehumidifierEndpointConnection(
       new MiotProvider('provider'),
       metadata,
-      [new TestTransport()],
+      [transport],
     );
 
     updateProperty(connection, metadata, 'fault', 1);
@@ -994,10 +995,24 @@ describe('MIoT dehumidifier capabilities', () => {
       online: false,
       properties: [],
     });
-    expect(connection.waterTankFull).toBeUndefined();
+    expect(connection.waterTankFull).toBe(true);
+    expect(connection.getCommandEffectState('fault')).toBeUndefined();
+
+    connection.handleStateUpdate({
+      did: metadata.device.did,
+      online: true,
+      properties: [],
+    });
+    await executeCommand(
+      connection,
+      new SetDehumidifierTargetRelativeHumidityCommand(0.5),
+    );
+    expect(transport.requests).toEqual([
+      createExpectedRequest(metadata, 'target-humidity', 50),
+    ]);
   });
 
-  test('forgets derived water tank state for every snapshot invalidation path', () => {
+  test('retains derived water tank state for every snapshot invalidation path', () => {
     const metadata = findMetadata(
       MiotDehumidifierEndpointConnection,
       createDehumidifierSpec(),
@@ -1019,7 +1034,8 @@ describe('MIoT dehumidifier capabilities', () => {
 
     updateProperty(connection, metadata, 'fault', 1);
     connection.handleSnapshotInvalidation([fault]);
-    expect(connection.waterTankFull).toBeUndefined();
+    expect(connection.waterTankFull).toBe(true);
+    expect(connection.getCommandEffectState('fault')).toBeUndefined();
 
     updateProperty(connection, metadata, 'fault', 1);
     expect(
@@ -1030,7 +1046,8 @@ describe('MIoT dehumidifier capabilities', () => {
         invalidatedProperties: [fault],
       }),
     ).toEqual([]);
-    expect(connection.waterTankFull).toBeUndefined();
+    expect(connection.waterTankFull).toBe(true);
+    expect(connection.getCommandEffectState('fault')).toBeUndefined();
 
     updateProperty(connection, metadata, 'fault', 1);
     const errors = connection.handleStateUpdate({
@@ -1041,7 +1058,8 @@ describe('MIoT dehumidifier capabilities', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toBeInstanceOf(TypeError);
     expect(connection.ready).toBe(true);
-    expect(connection.waterTankFull).toBeUndefined();
+    expect(connection.waterTankFull).toBe(true);
+    expect(connection.getCommandEffectState('fault')).toBeUndefined();
   });
 
   test('preserves a satisfied target humidity noop while the water tank is full', () => {

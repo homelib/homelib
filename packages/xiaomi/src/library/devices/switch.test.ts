@@ -1,4 +1,5 @@
 import {SetSwitchOnCommand, SwitchEndpoint} from '@homelib/core';
+import {reaction} from 'mobx';
 
 import {
   createMiotEndpointConnectionMetadata,
@@ -84,6 +85,13 @@ test('projects state and writes the relay on property', async () => {
     throw new Error('Missing test switch state property.');
   }
 
+  const observedOnValues: boolean[] = [];
+  const disposeReaction = reaction(
+    () => connection.on,
+    value => observedOnValues.push(value),
+    {fireImmediately: true},
+  );
+
   expect(connection.notificationTargets).toEqual([
     {type: 'property-change', data: property},
   ]);
@@ -96,6 +104,11 @@ test('projects state and writes the relay on property', async () => {
   });
   expect(connection.on).toBe(true);
 
+  connection.handleSnapshotInvalidation([property]);
+  expect(connection.on).toBe(true);
+  expect(connection.getCommandEffectState('on')).toBeUndefined();
+  expect(observedOnValues).toEqual([false, true]);
+
   const execution = connection.prepareCommand(new SetSwitchOnCommand(false));
   expect(execution.toLogString?.()).toBe('set on=false');
   await execution.execute();
@@ -106,6 +119,7 @@ test('projects state and writes the relay on property', async () => {
       false,
     ),
   ]);
+  disposeReaction();
 });
 
 function createConnection(
