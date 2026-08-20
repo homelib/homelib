@@ -1,0 +1,20 @@
+import {$home, autorun, bootstrap} from '@homelib/core';
+import {$xiaomi} from '@homelib/xiaomi';
+
+$xiaomi('家');
+
+const 家 = $home('家', home =>
+  home.$scope('客厅', room =>
+    room
+      .$light('灯')
+      .$motionSensor('运动传感器'),
+  ),
+);
+
+await bootstrap();
+
+autorun(() => {
+  if (家.客厅.运动传感器.motionDetected) {
+    家.客厅.灯.turnOn();
+  }
+});

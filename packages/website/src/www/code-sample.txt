@@ -5,7 +5,9 @@ $xiaomi('home');
 
 const home = $home('home', home =>
   home.$scope('livingRoom', room =>
-    room.$light('light').$motionSensor('motionSensor'),
+    room
+      .$light('light')
+      .$motionSensor('motionSensor'),
   ),
 );
 

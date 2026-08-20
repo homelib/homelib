@@ -10,7 +10,10 @@ import {defineConfig} from 'vite';
 
 const root = dirname(fileURLToPath(import.meta.url));
 
-const codeSamplePath = join(root, 'code-sample.txt');
+const codeSamples = {
+  en: {file: 'code-sample.txt'},
+  'zh-CN': {file: 'code-sample.zh-CN.txt'},
+};
 
 const homeCodePlugin = {
   name: 'home-code',
@@ -24,10 +27,16 @@ const homeCodePlugin = {
       return;
     }
 
-    const code = readFileSync(codeSamplePath, 'utf8');
-    const html = await codeToHtml(code, {lang: 'ts', theme: 'github-light'});
+    const htmlByLocale = {};
+    for (const [locale, sample] of Object.entries(codeSamples)) {
+      const code = readFileSync(join(root, sample.file), 'utf8');
+      htmlByLocale[locale] = await codeToHtml(code, {
+        lang: 'ts',
+        theme: 'github-light',
+      });
+    }
 
-    return `export default ${JSON.stringify(html)};`;
+    return `export default ${JSON.stringify(htmlByLocale)};`;
   },
 };
 

@@ -2,7 +2,7 @@ import * as Lucide from 'lucide-react';
 import type {ReactElement} from 'react';
 import React, {useEffect, useState} from 'react';
 import styled, {createGlobalStyle} from 'styled-components';
-import codeHtml from 'virtual:home-code';
+import codeHtmlByLocale from 'virtual:home-code';
 
 import {
   WEBSITE_MESSAGES,
@@ -342,7 +342,9 @@ export function App(): ReactElement {
           <CodeSection>
             <CodeTitle>{messages.example.title}</CodeTitle>
             <CodeDescription>{messages.example.description}</CodeDescription>
-            <CodeBlock dangerouslySetInnerHTML={{__html: codeHtml}} />
+            <CodeBlock
+              dangerouslySetInnerHTML={{__html: codeHtmlByLocale[locale]}}
+            />
           </CodeSection>
         </Main>
         <Footer>{messages.footer}</Footer>
