@@ -1,4 +1,4 @@
-export {autorun, computed, reaction} from 'mobx';
+export {autorun, computed, reaction, observable} from 'mobx';
 
 export * from './atomics/index.js';
 export * from './command.js';

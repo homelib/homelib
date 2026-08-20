@@ -3,7 +3,6 @@ import {
   type Light,
   type MotionDetectionSource,
 } from '@homelib/core';
-import {observable} from '@homelib/core/mobx';
 import {now, whenever} from '@homelib/utils';
 import ms from 'ms';
 
@@ -13,46 +12,31 @@ export function setupMotionActivatedLighting(
   sensor: MotionDetectionSource & AmbientLightLevelSource,
   light: Light,
 ): void {
-  const lightOffAtObservable = observable.box<Date | undefined>();
+  const ready = whenever(() => sensor.ready && light.ready);
 
-  whenever(
-    () =>
-      sensor.ready &&
-      sensor.motionDetected === true &&
-      sensor.ambientLightLevel === 'low' &&
-      light.ready,
-    () => {
+  let turnOffAt: number | undefined = undefined;
+
+  ready
+    .and(
+      () =>
+        sensor.motionDetected === true && sensor.ambientLightLevel === 'low',
+    )
+    .then(() => {
       light.setBrightness(0).setColorTemperature(0).turnOn();
 
-      lightOffAtObservable.set(new Date(Date.now() + LIGHT_ON_DURATION));
-    },
-  );
+      turnOffAt = Date.now() + LIGHT_ON_DURATION;
+    });
 
-  whenever(
-    () => {
-      if (!sensor.ready || !light.ready) {
-        return false;
-      }
-
-      const lightOffAt = lightOffAtObservable.get();
-
-      return lightOffAt !== undefined && lightOffAt.getTime() <= now();
-    },
-    () => {
+  ready
+    .and(() => now() > (turnOffAt ?? Infinity))
+    .then(() => {
       light.turnOff();
-    },
-  );
+    });
 
-  whenever(
-    () => {
-      if (!sensor.ready || !light.ready) {
-        return false;
-      }
-
-      return !light.on;
-    },
-    () => {
-      lightOffAtObservable.set(undefined);
-    },
-  );
+  ready
+    // 手动关灯也可触发
+    .and(() => !light.on)
+    .then(() => {
+      turnOffAt = undefined;
+    });
 }
