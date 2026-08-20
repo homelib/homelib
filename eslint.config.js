@@ -6,6 +6,7 @@ export default defineConfig([
     'packages/core/bld/',
     'packages/terminal/bld/',
     'packages/web/bld/',
+    'packages/website/.bld/',
     'packages/utils/bld/',
     'packages/xiaomi/bld/',
     'packages/playground/bld/',

@@ -1,0 +1,18 @@
+import {$home, autorun, bootstrap} from '@homelib/core';
+import {$xiaomi} from '@homelib/xiaomi';
+
+$xiaomi('home');
+
+const home = $home('home', home =>
+  home.$scope('livingRoom', room =>
+    room.$light('light').$motionSensor('motionSensor'),
+  ),
+);
+
+await bootstrap();
+
+autorun(() => {
+  if (home.livingRoom.motionSensor.motionDetected) {
+    home.livingRoom.light.turnOn();
+  }
+});
