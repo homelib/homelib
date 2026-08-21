@@ -1,16 +1,10 @@
-import {
-  type IReactionDisposer,
-  comparer,
-  autorun as mobxAutorun,
-  reaction,
-} from 'mobx';
+import {$mobx, type IReactionDisposer, autorun, comparer, reaction} from 'mobx';
 
 type ReactiveCondition = () => boolean;
 
-type ConditionalReactionValue<T> =
-  {readonly active: false} | {readonly active: true; readonly value: T};
+type WheneverDisposer = () => void;
 
-const INACTIVE_REACTION_VALUE = {active: false} as const;
+type WheneverCallback = () => void | WheneverDisposer;
 
 export class Whenever {
   private constructor(
@@ -26,47 +20,29 @@ export class Whenever {
     return new Whenever([...this.conditions, condition]);
   }
 
-  /** Runs and tracks `callback` while every condition is true. */
+  /** Alias for activating one MobX autorun while every condition is true. */
   autorun(callback: () => void): IReactionDisposer {
-    return mobxAutorun(() => {
-      if (this.conditions.every(condition => condition())) {
-        callback();
-      }
-    });
+    return this.then(() => autorun(callback));
   }
 
-  /** Reacts to `expression` while every condition is true. */
+  /** Alias for activating one immediate MobX reaction while conditions are true. */
   react<T>(
     expression: () => T,
     callback: (value: T, previousValue: T | undefined) => void,
   ): IReactionDisposer {
-    return reaction<ConditionalReactionValue<T>, true>(
-      () =>
-        this.conditions.every(condition => condition())
-          ? {active: true, value: expression()}
-          : INACTIVE_REACTION_VALUE,
-      (state, previousState) => {
-        if (state.active) {
-          callback(
-            state.value,
-            previousState?.active === true ? previousState.value : undefined,
-          );
-        }
-      },
-      {
+    return this.then(() =>
+      reaction(expression, callback, {
         fireImmediately: true,
-        equals: (state, previousState) => {
-          if (!state.active || !previousState.active) {
-            return state.active === previousState.active;
-          }
-
-          return comparer.default(state.value, previousState.value);
-        },
-      },
+        equals: comparer.default,
+      }),
     );
   }
 
-  then(callback: () => void): IReactionDisposer {
+  /**
+   * Activates `callback` whenever every condition becomes true. Its returned
+   * disposer runs when any condition becomes false.
+   */
+  then(callback: WheneverCallback): IReactionDisposer {
     if (arguments.length !== 1) {
       throw new TypeError('Whenever cannot be used as a promise.');
     }
@@ -78,15 +54,18 @@ export class Whenever {
 /** Creates a condition chain without starting a reaction. */
 export function whenever(condition: ReactiveCondition): Whenever;
 
-/** Calls `callback` whenever `condition` becomes true. */
+/**
+ * Calls `callback` whenever `condition` becomes true and disposes its returned
+ * activation when the condition becomes false.
+ */
 export function whenever(
   condition: ReactiveCondition,
-  callback: () => void,
+  callback: WheneverCallback,
 ): IReactionDisposer;
 
 export function whenever(
   condition: ReactiveCondition,
-  callback?: () => void,
+  callback?: WheneverCallback,
 ): Whenever | IReactionDisposer {
   if (callback === undefined) {
     return Whenever.create(condition);
@@ -97,15 +76,37 @@ export function whenever(
 
 function createWheneverReaction(
   conditions: readonly ReactiveCondition[],
-  callback: () => void,
+  callback: WheneverCallback,
 ): IReactionDisposer {
-  return reaction(
+  let activeDisposer: WheneverDisposer | undefined;
+  let disposed = false;
+
+  const deactivate = (): void => {
+    const disposer = activeDisposer;
+    activeDisposer = undefined;
+    disposer?.();
+  };
+  const reactionDisposer = reaction(
     () => conditions.every(condition => condition()),
     value => {
       if (value) {
-        callback();
+        activeDisposer = callback() ?? undefined;
+      } else {
+        deactivate();
       }
     },
     {fireImmediately: true},
   );
+
+  const dispose = (): void => {
+    if (disposed) {
+      return;
+    }
+
+    disposed = true;
+    reactionDisposer();
+    deactivate();
+  };
+
+  return Object.assign(dispose, {[$mobx]: reactionDisposer[$mobx]});
 }

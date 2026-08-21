@@ -22,6 +22,17 @@ test('keeps endpoint log text stable when colors are rendered', () => {
       commandDescription: 'set brightness=0.4',
     });
     writeLogEvent({
+      type: 'endpoint-event',
+      timestamp: TEST_TIMESTAMP,
+      target: {
+        scopePath: ['home', 'room'],
+        deviceName: 'sensor',
+        endpointName: '',
+      },
+      connectionDescription: 'protocol sensor',
+      eventDescription: 'motionDetected',
+    });
+    writeLogEvent({
       type: 'endpoint-state',
       timestamp: TEST_TIMESTAMP,
       target: {
@@ -36,6 +47,7 @@ test('keeps endpoint log text stable when colors are rendered', () => {
 
     expect(messages.map(stripVTControlCharacters)).toEqual([
       '[homelib] 2026-01-02 03:04:05.006 home › room · device light · endpoint main execute set brightness=0.4',
+      '[homelib] 2026-01-02 03:04:05.006 home › room · device sensor · protocol sensor event motionDetected',
       '[homelib] 2026-01-02 03:04:05.006 home › room · device light · endpoint main state ready=true on=false brightness=0.4',
     ]);
   } finally {

@@ -4,6 +4,7 @@ import {
   addLogListener,
   logEndpointCommand,
   logEndpointError,
+  logEndpointEvent,
   logEndpointState,
   setEndpointLogTarget,
 } from './log.js';
@@ -24,6 +25,7 @@ test('emits structured endpoint log events', () => {
     });
 
     logEndpointCommand(endpoint, {}, new TestCommand(), 'execute');
+    logEndpointEvent(endpoint, {}, 'motionDetected');
     logEndpointState(
       endpoint,
       {},
@@ -43,6 +45,17 @@ test('emits structured endpoint log events', () => {
         },
         connectionDescription: undefined,
         commandDescription: 'set brightness=0.4',
+      },
+      {
+        type: 'endpoint-event',
+        timestamp,
+        target: {
+          scopePath: ['home', 'room'],
+          deviceName: 'light',
+          endpointName: 'main',
+        },
+        connectionDescription: undefined,
+        eventDescription: 'motionDetected',
       },
       {
         type: 'endpoint-state',

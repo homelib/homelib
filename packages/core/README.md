@@ -17,6 +17,23 @@ provider is disconnected or a binding has not been configured yet.
 The built-in device namespace includes lights, fans, air conditioners,
 dehumidifiers, temperature/humidity sensors, motion sensors, and pet feeders.
 
+## State and events
+
+Device state is observable through MobX and represents the latest known value.
+Device events represent individual occurrences instead. An event is exposed as
+a callable subscription that returns an idempotent disposer:
+
+```ts
+const dispose = motionSensor.onMotionDetected(() => {
+  light.turnOn();
+});
+```
+
+The subscription remains attached to the logical endpoint when its provider
+connection is replaced. A device capability may expose both forms when they
+carry different meaning; for example, `MotionDetectionSource` provides the
+current `motionDetected` state and the `onMotionDetected` event.
+
 ## Conventions
 
 - Percentage-like values use a normalized scale from `0` to `1`.

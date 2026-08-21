@@ -33,6 +33,7 @@ import {
   MiotEndpointConnectionTransport,
   MiotEndpointConnectionTransportError,
   MiotEndpointConnectionTransportUnavailableError,
+  type MiotEndpointEventArgument,
   type MiotEndpointStateUpdate,
   createMiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionProperty,
@@ -41,7 +42,6 @@ import {
   normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import {
-  type MiotEventArgument,
   type MiotExecutionRequest,
   type MiotExecutionResult,
   type MiotProperty,
@@ -1057,8 +1057,8 @@ test('validates and dispatches tagged event notifications once', () => {
     {
       name: 'changed',
       arguments: [
-        {piid: 1, value: true},
-        {piid: 2, value: 42},
+        {property: TEST_PRIMARY_RESOURCE.properties.on, value: true},
+        {property: TEST_EVENT_ARGUMENT_PROPERTY, value: 42},
       ],
     },
   ]);
@@ -1082,8 +1082,8 @@ test('zips positional event arguments in spec order', () => {
     {
       name: 'changed',
       arguments: [
-        {piid: 1, value: false},
-        {piid: 2, value: 42},
+        {property: TEST_PRIMARY_RESOURCE.properties.on, value: false},
+        {property: TEST_EVENT_ARGUMENT_PROPERTY, value: 42},
       ],
     },
   ]);
@@ -2725,15 +2725,15 @@ class TestSelectedSnapshotEndpointConnection extends TestMultiResourceEndpointCo
 class TestEventEndpointConnection extends MiotEndpointConnection<never> {
   readonly receivedEvents: Array<{
     readonly name: string;
-    readonly arguments: readonly MiotEventArgument[];
+    readonly arguments: readonly MiotEndpointEventArgument[];
   }> = [];
 
   protected override handleEvent(
     name: string,
     _event: MiotSpecEvent,
-    arguments_: readonly MiotEventArgument[],
+    args: readonly MiotEndpointEventArgument[],
   ): void {
-    this.receivedEvents.push({name, arguments: arguments_});
+    this.receivedEvents.push({name, arguments: args});
   }
 
   override prepareCommand(_command: never): CommandExecution {

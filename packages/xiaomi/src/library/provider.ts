@@ -646,6 +646,8 @@ export class MiotProvider extends Provider<MiotEndpointConnectionMetadata> {
           connection.metadata.device.did,
           {
             snapshotProperties: connection.snapshotProperties,
+            cloudPreferredSnapshotProperties:
+              connection.cloudPreferredSnapshotProperties,
             refreshSnapshotOnEvents: connection.snapshotRefreshEvents,
             notifications: connection.notificationTargets,
             replaySnapshotPropertyNotifications:

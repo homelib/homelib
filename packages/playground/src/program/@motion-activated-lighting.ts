@@ -16,16 +16,14 @@ export function setupMotionActivatedLighting(
 
   let turnOffAt: number | undefined = undefined;
 
-  ready
-    .and(
-      () =>
-        sensor.motionDetected === true && sensor.ambientLightLevel === 'low',
-    )
-    .then(() => {
-      light.setBrightness(0).setColorTemperature(0).turnOn();
-
-      turnOffAt = Date.now() + LIGHT_ON_DURATION;
-    });
+  ready.then(() =>
+    sensor.onMotionDetected(() => {
+      if (sensor.ambientLightLevel === 'low') {
+        light.setBrightness(0).setColorTemperature(0).turnOn();
+        turnOffAt = Date.now() + LIGHT_ON_DURATION;
+      }
+    }),
+  );
 
   ready
     .and(() => now() > (turnOffAt ?? Infinity))

@@ -828,6 +828,9 @@ describe('MIoT dehumidifier capabilities', () => {
       siid: 2,
       piid: 2,
     });
+    expect(connection.cloudPreferredSnapshotProperties).toEqual([
+      {did: metadata.device.did, siid: 2, piid: 2},
+    ]);
     expect(connection.notificationTargets).toContainEqual({
       type: 'property-change',
       data: {did: metadata.device.did, siid: 2, piid: 2},

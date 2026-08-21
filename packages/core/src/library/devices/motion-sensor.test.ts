@@ -2,7 +2,9 @@ import {action, observable} from 'mobx';
 
 import {DeviceEntry} from '../device.js';
 import type {CommandExecution} from '../endpoint.js';
+import {DeviceEventEmitter} from '../event.js';
 import {
+  type EndpointEventLogEvent,
   type EndpointStateLogEvent,
   addLogListener,
   setEndpointLogTarget,
@@ -27,10 +29,15 @@ test('exposes motion detection from one endpoint', () => {
   }
 
   const connection = new TestMotionSensorEndpointConnection();
+  const motionEvents: void[] = [];
+  sensor.onMotionDetected(() => motionEvents.push(undefined));
   const logEvents: EndpointStateLogEvent[] = [];
+  const eventLogEvents: EndpointEventLogEvent[] = [];
   const removeLogListener = addLogListener(event => {
     if (event.type === 'endpoint-state') {
       logEvents.push(event);
+    } else if (event.type === 'endpoint-event') {
+      eventLogEvents.push(event);
     }
   });
 
@@ -45,6 +52,13 @@ test('exposes motion detection from one endpoint', () => {
 
     expect(sensor.ready).toBe(true);
     expect(sensor.motionDetected).toBe(true);
+    connection.motionDetectedEvent.emit();
+    connection.motionDetectedEvent.emit();
+    expect(motionEvents).toEqual([undefined, undefined]);
+    expect(eventLogEvents.map(event => event.eventDescription)).toEqual([
+      'motionDetected',
+      'motionDetected',
+    ]);
     expect(logEvents.map(event => event.state)).toEqual([
       {ready: false},
       {ready: true, motionDetected: true},
@@ -54,7 +68,33 @@ test('exposes motion detection from one endpoint', () => {
   }
 });
 
+test('keeps event subscriptions across connection replacement', () => {
+  const entry = new DeviceEntry('sensor');
+  const sensor = entry.createInstance(MotionSensor);
+  const endpoint = entry.getEndpoint();
+  const firstConnection = new TestMotionSensorEndpointConnection();
+  const secondConnection = new TestMotionSensorEndpointConnection();
+  const occurrences: void[] = [];
+
+  if (!(endpoint instanceof MotionSensorEndpoint)) {
+    throw new Error('Expected a motion sensor endpoint.');
+  }
+
+  sensor.onMotionDetected(() => occurrences.push(undefined));
+  endpoint.bindConnection(firstConnection);
+  firstConnection.motionDetectedEvent.emit();
+  endpoint.bindConnection(secondConnection);
+  firstConnection.motionDetectedEvent.emit();
+  secondConnection.motionDetectedEvent.emit();
+
+  expect(occurrences).toEqual([undefined, undefined]);
+});
+
 class TestMotionSensorEndpointConnection implements MotionSensorEndpointConnection {
+  readonly motionDetectedEvent = new DeviceEventEmitter<void>();
+
+  readonly onMotionDetected = this.motionDetectedEvent.subscribe;
+
   @observable accessor ready = false;
 
   @observable accessor stateRevision = 0;

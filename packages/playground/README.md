@@ -12,9 +12,13 @@ The current program demonstrates:
   capabilities;
 - automatic pet feeding;
 - bathroom ventilation based on how long the light was on;
-- motion-activated corridor lighting using categorical ambient light level;
-  and
+- event-driven corridor lighting using the ambient light level observed for
+  each motion detection;
 - recurring smart-speaker reminders while the dehumidifier water tank is full.
+
+See
+[`@motion-activated-lighting.ts`](./src/program/@motion-activated-lighting.ts)
+for a device-event subscription whose lifetime follows device readiness.
 
 Build and run the playground from the repository root:
 

@@ -148,6 +148,42 @@ test('serializes property reads across concurrent callers', async () => {
   await client.disconnect();
 });
 
+test('prioritizes event property reads ahead of queued snapshots', async () => {
+  const mqttClient = new TestMqttClient();
+  const client = createClient(mqttClient);
+  await client.connect();
+  const activeProperty = {did: 'device-1', siid: 2, piid: 1};
+  const queuedProperty = {did: 'device-2', siid: 2, piid: 1};
+  const eventProperty = {did: 'device-3', siid: 2, piid: 1};
+
+  const activeRead = client.getProperties([activeProperty]);
+  const queuedRead = client.getProperties([queuedProperty]);
+  const eventRead = client.getProperties([eventProperty], undefined, 'event');
+
+  await waitFor(() => mqttClient.publishCalls.length === 1);
+  expect(readPublishedRequest(mqttClient, 0).body).toEqual(activeProperty);
+  mqttClient.reply(0, {value: true});
+
+  await waitFor(() => mqttClient.publishCalls.length === 2);
+  expect(readPublishedRequest(mqttClient, 1).body).toEqual(eventProperty);
+  mqttClient.reply(1, {value: 2});
+
+  await waitFor(() => mqttClient.publishCalls.length === 3);
+  expect(readPublishedRequest(mqttClient, 2).body).toEqual(queuedProperty);
+  mqttClient.reply(2, {value: false});
+
+  await expect(activeRead).resolves.toEqual([
+    {...activeProperty, code: 0, value: true},
+  ]);
+  await expect(eventRead).resolves.toEqual([
+    {...eventProperty, code: 0, value: 2},
+  ]);
+  await expect(queuedRead).resolves.toEqual([
+    {...queuedProperty, code: 0, value: false},
+  ]);
+  await client.disconnect();
+});
+
 test('executes a set-property request through proxy/rpcReq', async () => {
   const mqttClient = new TestMqttClient();
   const client = createClient(mqttClient);

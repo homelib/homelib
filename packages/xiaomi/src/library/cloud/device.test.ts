@@ -1054,6 +1054,31 @@ test('rejects a snapshot property for another device', async () => {
   expect(source.subscribeCount).toBe(0);
 });
 
+test('rejects a cloud-preferred property outside the snapshot', async () => {
+  const source = createMessageSource();
+  const channel = new CloudDeviceChannel(
+    DID,
+    source,
+    async () => [],
+    async () => true,
+    () => undefined,
+  );
+
+  await expect(
+    channel.subscribe(
+      {
+        snapshotProperties: [FIRST_PROPERTY],
+        cloudPreferredSnapshotProperties: [SECOND_PROPERTY],
+      },
+      {},
+    ),
+  ).rejects.toThrow(
+    'Cloud device device-1 can only prefer cloud state for snapshot properties.',
+  );
+
+  expect(source.subscribeCount).toBe(0);
+});
+
 test('initializes from an incomplete state and recovers on manual refresh', async () => {
   const source = createMessageSource();
   let results: readonly CloudPropertySnapshot[] = [
@@ -2987,12 +3012,14 @@ test('refreshes a snapshot before delivering a selected event', async () => {
   const order: string[] = [];
   const errors: unknown[] = [];
   let readCount = 0;
+  const readPriorities: string[] = [];
   let onlineReadCount = 0;
   const channel = new CloudDeviceChannel(
     DID,
     source,
-    async () => {
+    async (_properties, _cloudPreferredProperties, priority) => {
       readCount++;
+      readPriorities.push(priority);
 
       if (readCount === 1) {
         return [{...FIRST_PROPERTY, value: false, code: 0}];
@@ -3039,6 +3066,7 @@ test('refreshes a snapshot before delivering a selected event', async () => {
   await waitFor(() => readCount === 2);
   expect(order).toEqual(['state:false']);
   expect(onlineReadCount).toBe(1);
+  expect(readPriorities).toEqual(['normal', 'event']);
 
   refreshedSnapshot.resolve([{...FIRST_PROPERTY, value: true, code: 0}]);
   await waitFor(() => order.length === 3);

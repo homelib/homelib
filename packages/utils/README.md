@@ -4,7 +4,27 @@
 
 # @homelib/utils
 
-Just another awesome magic.
+Reactive helpers and other utilities shared by HomeLib programs.
+
+## `whenever`
+
+`whenever` activates work while one or more MobX conditions are true. The
+activation callback may return any disposer; it runs when a condition becomes
+false or when the outer reaction is disposed.
+
+```ts
+const ready = whenever(() => sensor.ready && light.ready);
+
+const dispose = ready.then(() =>
+  sensor.onMotionDetected(() => {
+    light.turnOn();
+  }),
+);
+```
+
+`.autorun()` and `.react()` use the same activation lifetime for a MobX
+autorun or immediate reaction. All three methods return a disposer for the
+whole condition chain.
 
 ## License
 

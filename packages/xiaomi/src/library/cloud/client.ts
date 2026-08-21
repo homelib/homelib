@@ -7,6 +7,7 @@ import {
   type CloudDeviceMessageSource,
   type CloudDeviceSubscription,
   type CloudDeviceSubscriptionRequest,
+  type CloudPropertyReadPriority,
   type CloudPropertySnapshot,
 } from './device.js';
 import {
@@ -75,7 +76,12 @@ export class CloudClient {
       const newChannel = new CloudDeviceChannel(
         did,
         this.messageClient,
-        requestedProperties => this.readProperties(requestedProperties),
+        (requestedProperties, cloudPreferredProperties, priority) =>
+          this.readProperties(
+            requestedProperties,
+            cloudPreferredProperties,
+            priority,
+          ),
         () => this.readOnline(did),
         () => {
           if (this.deviceChannelMap.get(did) === newChannel) {
@@ -92,74 +98,45 @@ export class CloudClient {
 
   private async readProperties(
     properties: readonly MiotProperty[],
+    cloudPreferredProperties: readonly MiotProperty[],
+    priority: CloudPropertyReadPriority,
   ): Promise<readonly CloudPropertySnapshot[]> {
-    let cloudSnapshot: readonly CloudPropertySnapshot[];
+    const {localStateReader} = this;
 
-    try {
-      cloudSnapshot = await this.backendClient.getProperties(properties);
-    } catch (error) {
-      if (this.localStateReader !== undefined) {
-        try {
-          const localSnapshot = selectExpectedPropertyResults(
-            properties,
-            await this.localStateReader.getProperties(properties),
-          );
-          return localSnapshot;
-        } catch {
-          // Preserve the original cloud transport failure.
-        }
-      }
-
-      throw error;
+    if (localStateReader === undefined) {
+      return this.backendClient.getProperties(properties);
     }
 
-    if (this.localStateReader === undefined) {
-      return cloudSnapshot;
-    }
-
-    const cloudResultMap = collectSuccessfulPropertyResults(
-      properties,
-      cloudSnapshot,
+    const cloudPreferredKeySet = new Set(
+      cloudPreferredProperties.map(getPropertyKey),
     );
-    const missingPropertyMap = new Map<string, MiotProperty>();
-
-    for (const property of properties) {
-      const key = getPropertyKey(property);
-
-      if (!cloudResultMap.has(key)) {
-        missingPropertyMap.set(key, property);
-      }
-    }
-
-    if (missingPropertyMap.size === 0) {
-      return cloudSnapshot;
-    }
-
-    let localSnapshot: readonly CloudPropertySnapshot[];
-
-    try {
-      localSnapshot = await this.localStateReader.getProperties([
-        ...missingPropertyMap.values(),
-      ]);
-    } catch {
-      return cloudSnapshot;
-    }
-
-    const localResultMap = collectSuccessfulPropertyResults(
-      [...missingPropertyMap.values()],
-      localSnapshot,
+    const localPreferredProperties = properties.filter(
+      property => !cloudPreferredKeySet.has(getPropertyKey(property)),
     );
-
-    if (localResultMap.size === 0) {
-      return cloudSnapshot;
-    }
-
-    return [
-      ...cloudSnapshot.filter(
-        result => !localResultMap.has(getPropertyKey(result)),
+    const snapshots = await Promise.all([
+      readPropertiesWithFallback(
+        localPreferredProperties,
+        requestedProperties => {
+          return priority === 'event'
+            ? localStateReader.getProperties(requestedProperties, priority)
+            : localStateReader.getProperties(requestedProperties);
+        },
+        requestedProperties =>
+          this.backendClient.getProperties(requestedProperties),
       ),
-      ...localResultMap.values(),
-    ];
+      readPropertiesWithFallback(
+        cloudPreferredProperties,
+        requestedProperties =>
+          this.backendClient.getProperties(requestedProperties),
+        requestedProperties => {
+          return priority === 'event'
+            ? localStateReader.getProperties(requestedProperties, priority)
+            : localStateReader.getProperties(requestedProperties);
+        },
+      ),
+    ]);
+
+    return snapshots.flat();
   }
 
   private async readOnline(did: string): Promise<boolean> {
@@ -203,6 +180,7 @@ export type CloudDeviceMessageClient = CloudDeviceMessageSource & {
 export type CloudDeviceStateReader = {
   getProperties(
     properties: readonly MiotProperty[],
+    priority?: CloudPropertyReadPriority,
   ): Promise<readonly CloudPropertySnapshot[]>;
   getDeviceOnline(did: string): Promise<boolean>;
 };
@@ -239,6 +217,67 @@ function collectSuccessfulPropertyResults(
   }
 
   return resultMap;
+}
+
+async function readPropertiesWithFallback(
+  properties: readonly MiotProperty[],
+  primaryReader: CloudDeviceStateReader['getProperties'],
+  fallbackReader: CloudDeviceStateReader['getProperties'],
+): Promise<readonly CloudPropertySnapshot[]> {
+  if (properties.length === 0) {
+    return [];
+  }
+
+  let primarySnapshot: readonly CloudPropertySnapshot[];
+
+  try {
+    primarySnapshot = await primaryReader(properties);
+  } catch (error) {
+    try {
+      return selectExpectedPropertyResults(
+        properties,
+        await fallbackReader(properties),
+      );
+    } catch {
+      throw error;
+    }
+  }
+
+  const primaryResultMap = collectSuccessfulPropertyResults(
+    properties,
+    primarySnapshot,
+  );
+  const missingProperties = properties.filter(
+    property => !primaryResultMap.has(getPropertyKey(property)),
+  );
+
+  if (missingProperties.length === 0) {
+    return primarySnapshot;
+  }
+
+  let fallbackSnapshot: readonly CloudPropertySnapshot[];
+
+  try {
+    fallbackSnapshot = await fallbackReader(missingProperties);
+  } catch {
+    return primarySnapshot;
+  }
+
+  const fallbackResultMap = collectSuccessfulPropertyResults(
+    missingProperties,
+    fallbackSnapshot,
+  );
+
+  if (fallbackResultMap.size === 0) {
+    return primarySnapshot;
+  }
+
+  return [
+    ...primarySnapshot.filter(
+      result => !fallbackResultMap.has(getPropertyKey(result)),
+    ),
+    ...fallbackResultMap.values(),
+  ];
 }
 
 function selectExpectedPropertyResults(

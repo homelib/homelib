@@ -11,12 +11,16 @@ import {
   type EndpointConnection,
   type EndpointLogState,
 } from '../endpoint.js';
+import type {DeviceEvent} from '../event.js';
 
 export class MotionAmbientLightLevelSensor
   extends Device
   implements MotionDetectionSource, AmbientLightLevelSource
 {
   protected readonly endpoint: MotionAmbientLightLevelSensorEndpoint;
+
+  /** Subscribes to future motion detections. */
+  readonly onMotionDetected: DeviceEvent;
 
   /** Whether motion is currently detected. */
   @computed
@@ -38,6 +42,7 @@ export class MotionAmbientLightLevelSensor
     this.endpoint = this.getOrCreateEndpoint(
       MotionAmbientLightLevelSensorEndpoint,
     );
+    this.onMotionDetected = this.endpoint.onMotionDetected;
   }
 }
 
@@ -45,6 +50,12 @@ export class MotionAmbientLightLevelSensorEndpoint<
   TConnection extends MotionAmbientLightLevelSensorEndpointConnection =
     MotionAmbientLightLevelSensorEndpointConnection,
 > extends Endpoint<never, TConnection> {
+  /** Subscribes to future motion detections. */
+  readonly onMotionDetected = this.bindEvent(
+    'motionDetected',
+    connection => connection.onMotionDetected,
+  );
+
   /** Whether motion is currently detected. */
   @computed
   get motionDetected(): boolean | undefined {
@@ -79,6 +90,7 @@ export class MotionAmbientLightLevelSensorEndpoint<
 
 export type MotionAmbientLightLevelSensorEndpointConnection =
   EndpointConnection<never> & {
+    readonly onMotionDetected: DeviceEvent;
     /** Whether motion is currently detected. */
     readonly motionDetected: boolean | undefined;
     /**

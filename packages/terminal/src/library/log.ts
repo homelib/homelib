@@ -35,6 +35,13 @@ export function writeLogEvent(event: LogEvent): void {
     return;
   }
 
+  if (event.type === 'endpoint-event') {
+    console.info(
+      `${prefix} ${formatLogText(['bold', 'magenta'], 'event')} ${formatLogText('magenta', event.eventDescription)}`,
+    );
+    return;
+  }
+
   const changes = getLogStateChanges(event.state, event.previousState);
 
   if (changes.length > 0) {

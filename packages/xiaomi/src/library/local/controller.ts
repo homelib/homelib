@@ -147,6 +147,7 @@ export class LocalController extends MiotEndpointConnectionTransport {
 
   async getProperties(
     properties: readonly MiotProperty[],
+    priority: 'normal' | 'event' = 'normal',
   ): Promise<readonly LocalPropertyResult[]> {
     const routes = properties.map(property => ({
       property,
@@ -166,7 +167,9 @@ export class LocalController extends MiotEndpointConnectionTransport {
         throw new Error('Local MQTT property route disappeared.');
       }
 
-      results.push(...(await client.getProperties([property])));
+      results.push(
+        ...(await client.getProperties([property], undefined, priority)),
+      );
     }
 
     return results;

@@ -311,6 +311,10 @@ test('clears the motion ambient sample for inline and explicit invalidation', ()
       properties: [{...property, value: 1}],
     });
   };
+  const eventAmbientLightLevels: Array<'low' | 'high' | undefined> = [];
+  connection.onMotionDetected(() => {
+    eventAmbientLightLevels.push(connection.ambientLightLevel);
+  });
 
   updateSnapshot();
   connection.handleNotification({
@@ -319,6 +323,7 @@ test('clears the motion ambient sample for inline and explicit invalidation', ()
   });
   expect(connection.motionDetected).toBe(true);
   expect(connection.ambientLightLevel).toBe('low');
+  expect(eventAmbientLightLevels).toEqual(['low']);
 
   const revision = connection.stateRevision;
 
@@ -521,6 +526,10 @@ test('matches and becomes ready without the no-motion-duration property', () => 
   });
 
   const {connection, motionDetected} = createConnection(spec);
+  const occurrences: void[] = [];
+  connection.onMotionDetected(() => {
+    occurrences.push(undefined);
+  });
 
   expect(connection.snapshotProperties).toEqual([]);
   expect(connection.notificationTargets).toEqual([
@@ -545,8 +554,13 @@ test('matches and becomes ready without the no-motion-duration property', () => 
     type: 'event',
     data: createEventUpdate(connection, motionDetected),
   });
+  connection.handleNotification({
+    type: 'event',
+    data: createEventUpdate(connection, motionDetected),
+  });
 
   expect(connection.motionDetected).toBe(true);
+  expect(occurrences).toEqual([undefined, undefined]);
 
   connection.dispose();
 });

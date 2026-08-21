@@ -27,7 +27,6 @@ test('calls back immediately when the condition is initially true', () => {
   const dispose = whenever(() => true, callback);
 
   expect(callback).toHaveBeenCalledTimes(1);
-
   dispose();
 });
 
@@ -43,7 +42,6 @@ test('does not call back again while the condition remains true', () => {
 
   action(() => dependency.set(1))();
   expect(callback).toHaveBeenCalledTimes(1);
-
   dispose();
 });
 
@@ -84,8 +82,47 @@ test('does not evaluate a condition until then starts the reaction', () => {
   const dispose = pending.then(callback);
   expect(condition).toHaveBeenCalledTimes(1);
   expect(callback).toHaveBeenCalledTimes(1);
+  dispose();
+});
+
+test('disposes each then activation when its conditions stop matching', () => {
+  const active = observable.box(false);
+  const activations: number[] = [];
+  const disposals: number[] = [];
+  let nextActivation = 0;
+  const dispose = whenever(() => active.get()).then(() => {
+    const activation = ++nextActivation;
+    activations.push(activation);
+
+    return () => {
+      disposals.push(activation);
+    };
+  });
+
+  action(() => active.set(true))();
+  action(() => active.set(false))();
+  action(() => active.set(true))();
+
+  expect(activations).toEqual([1, 2]);
+  expect(disposals).toEqual([1]);
 
   dispose();
+  expect(disposals).toEqual([1, 2]);
+});
+
+test('supports activation disposal through the callback overload', () => {
+  const active = observable.box(true);
+  const deactivate = import.meta.jest.fn();
+  const dispose = whenever(
+    () => active.get(),
+    () => deactivate,
+  );
+
+  expect(deactivate).not.toHaveBeenCalled();
+  action(() => active.set(false))();
+  expect(deactivate).toHaveBeenCalledTimes(1);
+  dispose();
+  expect(deactivate).toHaveBeenCalledTimes(1);
 });
 
 test('autoruns and tracks its callback only while conditions are true', () => {

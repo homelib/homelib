@@ -415,6 +415,7 @@ test('wires snapshot state, refresh events, and invalidation through the cloud s
   const connection: ProviderSubscriptionConnection = {
     metadata: {device: {did: 'device'}},
     snapshotProperties: [property, secondProperty],
+    cloudPreferredSnapshotProperties: [secondProperty],
     snapshotRefreshEvents: [event],
     notificationTargets: [notification],
     replaySnapshotPropertyNotifications: [],
@@ -451,6 +452,7 @@ test('wires snapshot state, refresh events, and invalidation through the cloud s
     'device',
     {
       snapshotProperties: [property, secondProperty],
+      cloudPreferredSnapshotProperties: [secondProperty],
       refreshSnapshotOnEvents: [event],
       notifications: [notification],
       replaySnapshotPropertyNotifications: [],
@@ -683,6 +685,7 @@ type TestCloud = {
 type ProviderSubscriptionConnection = {
   readonly metadata: {readonly device: {readonly did: string}};
   readonly snapshotProperties: readonly MiotProperty[];
+  readonly cloudPreferredSnapshotProperties: readonly MiotProperty[];
   readonly snapshotRefreshEvents: readonly MiotEvent[];
   readonly notificationTargets: readonly object[];
   readonly replaySnapshotPropertyNotifications: readonly MiotProperty[];

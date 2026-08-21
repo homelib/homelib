@@ -81,6 +81,12 @@ export class CloudDeviceChannel {
       this.did,
       request.snapshotProperties,
     );
+    const cloudPreferredSnapshotPropertyKeySet = new Set(
+      createPropertyMap(
+        this.did,
+        request.cloudPreferredSnapshotProperties ?? [],
+      ).keys(),
+    );
     const replaySnapshotPropertyNotificationKeySet = new Set(
       createPropertyMap(
         this.did,
@@ -96,6 +102,14 @@ export class CloudDeviceChannel {
       if (!snapshotPropertyMap.has(key) || !propertyChangeMap.has(key)) {
         throw new TypeError(
           `Cloud device ${this.did} can only replay subscribed snapshot property notifications.`,
+        );
+      }
+    }
+
+    for (const key of cloudPreferredSnapshotPropertyKeySet) {
+      if (!snapshotPropertyMap.has(key)) {
+        throw new TypeError(
+          `Cloud device ${this.did} can only prefer cloud state for snapshot properties.`,
         );
       }
     }
@@ -119,6 +133,7 @@ export class CloudDeviceChannel {
 
     const listenerEntry: CloudDeviceListenerEntry = {
       snapshotPropertyMap,
+      cloudPreferredSnapshotPropertyKeySet,
       propertyChangeMap,
       eventKeySet,
       replaySnapshotPropertyNotificationKeySet,
@@ -414,6 +429,7 @@ export class CloudDeviceChannel {
       token,
       sequence,
       options.onlineOverride,
+      options.propertyReadPriority ?? 'normal',
     ).then(resolvePromise, error => {
       const failure = normalizeRefreshFailure(error, entries);
 
@@ -487,8 +503,16 @@ export class CloudDeviceChannel {
     refreshToken: object,
     refreshSequence: number,
     onlineOverride: boolean | undefined,
+    propertyReadPriority: CloudPropertyReadPriority,
   ): Promise<void> {
     const propertyMap = createEntryPropertyMap(entries);
+    const cloudPreferredPropertyKeySet = new Set(
+      entries.flatMap(entry => [...entry.cloudPreferredSnapshotPropertyKeySet]),
+    );
+    const cloudPreferredProperties = [...propertyMap].flatMap(
+      ([key, property]) =>
+        cloudPreferredPropertyKeySet.has(key) ? [property] : [],
+    );
     const propertyBaselineMap = this.captureRevisions(propertyMap);
     const replaySnapshotPropertyNotificationKeySet = new Set(
       entries.flatMap(entry => [
@@ -506,7 +530,11 @@ export class CloudDeviceChannel {
       onlineOverride === false || propertyMap.size === 0
         ? Promise.resolve([])
         : Promise.resolve().then(() =>
-            this.readProperties([...propertyMap.values()]),
+            this.readProperties(
+              [...propertyMap.values()],
+              cloudPreferredProperties,
+              propertyReadPriority,
+            ),
           ),
     );
     let requestedOnline: boolean;
@@ -1040,6 +1068,7 @@ export class CloudDeviceChannel {
       if (refreshEntries.length > 0) {
         void this.refreshEntries(refreshEntries, {
           onlineOverride: true,
+          propertyReadPriority: 'event',
           reportFailuresToListeners: true,
         }).catch(() => undefined);
       }
@@ -1157,6 +1186,8 @@ export type CloudDeviceSubscriptionRequest = {
    * failures do not prevent the subscription from initializing or refreshing.
    */
   readonly snapshotProperties: readonly MiotProperty[];
+  /** Snapshot properties that prefer cloud state before local fallback. */
+  readonly cloudPreferredSnapshotProperties?: readonly MiotProperty[];
   /**
    * Incremental device notifications to receive after each snapshot. Realtime
    * notifications received while a refresh is in flight are buffered per
@@ -1232,7 +1263,11 @@ export type CloudPropertySnapshot = MiotProperty & {
 
 export type CloudPropertyReader = (
   properties: readonly MiotProperty[],
+  cloudPreferredProperties: readonly MiotProperty[],
+  priority: CloudPropertyReadPriority,
 ) => Promise<readonly CloudPropertySnapshot[]>;
+
+export type CloudPropertyReadPriority = 'normal' | 'event';
 
 export type CloudOnlineReader = () => Promise<boolean>;
 
@@ -1246,6 +1281,7 @@ export type CloudDeviceMessageSource = {
 
 type CloudDeviceListenerEntry = {
   readonly snapshotPropertyMap: ReadonlyMap<string, MiotProperty>;
+  readonly cloudPreferredSnapshotPropertyKeySet: ReadonlySet<string>;
   readonly propertyChangeMap: ReadonlyMap<string, MiotProperty>;
   readonly eventKeySet: ReadonlySet<string>;
   readonly replaySnapshotPropertyNotificationKeySet: ReadonlySet<string>;
@@ -1265,6 +1301,7 @@ type CloudDeviceStateRefreshRequest = {
 
 type CloudDeviceRefreshOptions = {
   readonly onlineOverride?: boolean | undefined;
+  readonly propertyReadPriority?: CloudPropertyReadPriority;
   readonly reportFailuresToListeners?: boolean;
 };
 

@@ -6,7 +6,6 @@ import {
 import {computed, observable} from 'mobx';
 
 import type {
-  MiotEventArgument,
   MiotEventSchema,
   MiotPropertySchema,
   MiotSpecEvent,
@@ -85,12 +84,7 @@ export class MiotMotionAmbientLightLevelSensorEndpointConnection
     }
   }
 
-  protected override handleEvent(
-    name: string,
-    event: MiotSpecEvent,
-    arguments_: readonly MiotEventArgument[],
-  ): void {
-    super.handleEvent(name, event, arguments_);
+  protected override handleMotionDetected(): void {
     this.ambientLightLevelRefreshedForMotion = true;
   }
 

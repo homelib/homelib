@@ -159,6 +159,10 @@ export class MiotDehumidifierEndpointConnection
     return name === 'fault';
   }
 
+  protected override shouldPreferCloudSnapshotProperty(name: string): boolean {
+    return name === 'fault';
+  }
+
   override prepareCommand(
     command: DehumidifierEndpointCommand,
   ): CommandExecution {

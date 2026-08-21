@@ -11,7 +11,10 @@ export type EndpointLogTarget = {
 };
 
 export type LogEvent =
-  EndpointCommandLogEvent | EndpointStateLogEvent | ErrorLogEvent;
+  | EndpointCommandLogEvent
+  | EndpointEventLogEvent
+  | EndpointStateLogEvent
+  | ErrorLogEvent;
 
 export type EndpointCommandLogEvent = {
   readonly type: 'endpoint-command';
@@ -32,6 +35,15 @@ export type EndpointStateLogEvent = {
   readonly connectionDescription: string | undefined;
   readonly state: EndpointLogState;
   readonly previousState: EndpointLogState | undefined;
+};
+
+export type EndpointEventLogEvent = {
+  readonly type: 'endpoint-event';
+  /** Unix timestamp in milliseconds. */
+  readonly timestamp: number;
+  readonly target: EndpointLogTarget;
+  readonly connectionDescription: string | undefined;
+  readonly eventDescription: string;
 };
 
 export type ErrorLogEvent = {
@@ -118,6 +130,30 @@ export function logEndpointState(
   }
 }
 
+export function logEndpointEvent(
+  endpoint: object,
+  connection: Loggable,
+  eventDescription: string,
+): void {
+  try {
+    const target = endpointLogTargetMap.get(endpoint);
+
+    if (target !== undefined) {
+      emitLogEvent({
+        type: 'endpoint-event',
+        target,
+        connectionDescription: safeLogString(
+          connection,
+          connection.constructor.name,
+        ),
+        eventDescription,
+      });
+    }
+  } catch {
+    // Logging must never affect event delivery.
+  }
+}
+
 export function logEndpointError(error: unknown): void {
   emitLogEvent({type: 'error', error});
 }
@@ -159,5 +195,6 @@ export type Loggable = {
 
 type LogEventWithoutTimestamp =
   | Omit<EndpointCommandLogEvent, 'timestamp'>
+  | Omit<EndpointEventLogEvent, 'timestamp'>
   | Omit<EndpointStateLogEvent, 'timestamp'>
   | Omit<ErrorLogEvent, 'timestamp'>;

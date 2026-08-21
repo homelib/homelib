@@ -7,6 +7,7 @@ export * from './device/index.js';
 export * from './device-namespace.js';
 export * from './devices/index.js';
 export * from './endpoint.js';
+export * from './event.js';
 export * from './home.js';
 export * from './log.js';
 export * from './provider.js';

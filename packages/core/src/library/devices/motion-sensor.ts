@@ -7,9 +7,13 @@ import {
   type EndpointConnection,
   type EndpointLogState,
 } from '../endpoint.js';
+import type {DeviceEvent} from '../event.js';
 
 export class MotionSensor extends Device implements MotionDetectionSource {
   protected readonly endpoint: MotionSensorEndpoint;
+
+  /** Subscribes to future motion detections. */
+  readonly onMotionDetected: DeviceEvent;
 
   /** Whether motion is currently detected. */
   @computed
@@ -20,6 +24,7 @@ export class MotionSensor extends Device implements MotionDetectionSource {
   constructor(entry: DeviceEntry) {
     super(entry);
     this.endpoint = this.getOrCreateEndpoint(MotionSensorEndpoint);
+    this.onMotionDetected = this.endpoint.onMotionDetected;
   }
 }
 
@@ -27,6 +32,12 @@ export class MotionSensorEndpoint<
   TConnection extends MotionSensorEndpointConnection =
     MotionSensorEndpointConnection,
 > extends Endpoint<never, TConnection> {
+  /** Subscribes to future motion detections. */
+  readonly onMotionDetected = this.bindEvent(
+    'motionDetected',
+    connection => connection.onMotionDetected,
+  );
+
   /** Whether motion is currently detected. */
   @computed
   get motionDetected(): boolean | undefined {
@@ -46,6 +57,7 @@ export class MotionSensorEndpoint<
 }
 
 export type MotionSensorEndpointConnection = EndpointConnection<never> & {
+  readonly onMotionDetected: DeviceEvent;
   /** Whether motion is currently detected. */
   readonly motionDetected: boolean | undefined;
 };

@@ -29,6 +29,8 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 
 - 在 `packages/core/src/library/devices` 中保持 Device、Endpoint、EndpointConnection 和 Command 与具体协议无关。
 - 让 Device 聚合 Endpoint，Endpoint 暴露状态与命令，EndpointConnection 声明 provider 连接契约，Command 校验领域输入。
+- 区分持续状态与离散事件：持续状态用 MobX observable/computed 表达最新已知值；会重复发生且每次都需要被观察的 occurrence 用 `DeviceEvent`。对应 Source 同时声明状态与事件，让依赖该能力的自动化无需依赖具体 Device class。
+- provider 通过 `DeviceEventEmitter` 发布事件，Endpoint 用 `bindEvent(name, connection => connection.event)` 暴露稳定事件；不要把 provider connection 上的事件对象直接透传到 Device，以免 rebind 后订阅失效。
 - 补充 namespace/index 导出和对应单元测试。
 
 ### 4. 实现 provider 适配
@@ -36,6 +38,8 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 - 在目标 provider package 中实现 core EndpointConnection，并沿用该 provider 现有的连接、schema、导出和注册结构。
 - 对 Xiaomi MIoT，继承 `MiotEndpointConnection`，定义 `static readonly Endpoint`，并让 properties、actions、events 使用 `as const satisfies ...Schema`。
 - 明确 required/optional 能力；资源缺失、重复或歧义时 fail closed。
+- MIoT event schema 只声明定位事件所需的信息；argument schema 仅在事件 payload 确实携带且领域事件需要该数据时声明，不要为无参数事件虚构参数。
+- 若领域事件依赖事件后的关联状态，在 provider 内完成事件后的读取和状态提交，再发布 `DeviceEvent`；读取失败时用 `undefined` 表达未知，不要沿用事件前的旧值冒充本次观测。优先使用能满足时序的本地链路，只有实机证据表明某个属性来源不可靠时才增加属性级来源策略。
 - 实现状态映射和命令请求，补充对应导出与注册入口。
 
 ### 5. MIoT 物理域与设备 codec
@@ -59,5 +63,6 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 ### 7. 测试与验证
 
 - 测试 core 状态、日志，以及设备支持命令时的命令和输入校验。
+- 事件测试要覆盖订阅与幂等 dispose、connection rebind、事件日志，以及关联状态在 callback 前已经更新；事件读取失败时还要验证旧值不会泄漏到本次 callback。
 - 测试 provider 成功匹配、缺失/重复/歧义时拒绝、状态更新、错误路径，以及设备支持命令时的命令请求；MIoT codec 还要覆盖 canonical round-trip、合法但未映射的 raw、型号分支和物理 domain 拒绝路径。
 - 先运行受影响测试，再运行项目 build、lint 和格式检查。

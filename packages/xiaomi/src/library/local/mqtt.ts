@@ -72,7 +72,11 @@ export class LocalMqttClient extends MiotEndpointConnectionTransport {
   private readonly connectionStateListenerSet =
     new Set<LocalMqttConnectionStateListener>();
 
-  private propertyReadOperation: Promise<void> = Promise.resolve();
+  private readonly propertyReadQueue: LocalPropertyReadRequest[] = [];
+
+  private readonly eventPropertyReadQueue: LocalPropertyReadRequest[] = [];
+
+  private propertyReadActive = false;
 
   constructor(private readonly options: LocalMqttClientOptions) {
     super();
@@ -185,15 +189,46 @@ export class LocalMqttClient extends MiotEndpointConnectionTransport {
   async getProperties(
     properties: readonly MiotProperty[],
     timeoutMilliseconds = REQUEST_TIMEOUT_MILLISECONDS,
+    priority: LocalPropertyReadPriority = 'normal',
   ): Promise<readonly LocalPropertyResult[]> {
-    const operation = this.propertyReadOperation.then(() =>
-      this.readProperties(properties, timeoutMilliseconds),
-    );
-    this.propertyReadOperation = operation.then(
-      () => undefined,
-      () => undefined,
-    );
-    return operation;
+    const queue =
+      priority === 'event'
+        ? this.eventPropertyReadQueue
+        : priority === 'normal'
+          ? this.propertyReadQueue
+          : undefined;
+
+    if (queue === undefined) {
+      throw new TypeError(
+        `Unsupported local property read priority: ${priority}.`,
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      queue.push({properties, timeoutMilliseconds, resolve, reject});
+      this.startNextPropertyRead();
+    });
+  }
+
+  private startNextPropertyRead(): void {
+    if (this.propertyReadActive) {
+      return;
+    }
+
+    const request =
+      this.eventPropertyReadQueue.shift() ?? this.propertyReadQueue.shift();
+
+    if (request === undefined) {
+      return;
+    }
+
+    this.propertyReadActive = true;
+    void this.readProperties(request.properties, request.timeoutMilliseconds)
+      .then(request.resolve, request.reject)
+      .then(() => {
+        this.propertyReadActive = false;
+        this.startNextPropertyRead();
+      });
   }
 
   private async readProperties(
@@ -1160,6 +1195,15 @@ export type LocalDeviceInfo = {
 export type LocalPropertyResult = MiotProperty & {
   readonly code: number;
   readonly value?: unknown;
+};
+
+type LocalPropertyReadPriority = 'normal' | 'event';
+
+type LocalPropertyReadRequest = {
+  readonly properties: readonly MiotProperty[];
+  readonly timeoutMilliseconds: number;
+  readonly resolve: (results: readonly LocalPropertyResult[]) => void;
+  readonly reject: (error: unknown) => void;
 };
 
 export type LocalPropertyUpdate = MiotProperty & {

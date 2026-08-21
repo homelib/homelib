@@ -1,10 +1,12 @@
 import {action, comparer, computed, observable, reaction} from 'mobx';
 
 import {type Command, CommandError, StatefulCommand} from './command.js';
+import {type DeviceEvent, DeviceEventEmitter} from './event.js';
 import {
   hasEndpointLogTarget,
   logEndpointCommand,
   logEndpointError,
+  logEndpointEvent,
   logEndpointState,
 } from './log.js';
 import {ExponentialBackoff} from './utils/index.js';
@@ -32,6 +34,8 @@ export abstract class Endpoint<
 
   private connectionStateGeneration = 0;
 
+  private readonly eventBindings: EndpointEventBinding<TConnection>[] = [];
+
   constructor(readonly name = '') {}
 
   @computed
@@ -47,11 +51,36 @@ export abstract class Endpoint<
     return {ready: this.ready};
   }
 
+  /** Binds a stable event to this endpoint's current connection. */
+  protected bindEvent<T>(
+    name: string,
+    getEvent: (connection: TConnection) => DeviceEvent<T>,
+  ): DeviceEvent<T> {
+    const target = new DeviceEventEmitter<T>();
+    const binding: EndpointEventBinding<TConnection> = {
+      connect: connection =>
+        getEvent(connection)((...args) => {
+          logEndpointEvent(this, connection, name);
+          target.emit(...args);
+        }),
+      dispose: undefined,
+    };
+
+    if (this.connection_ !== undefined) {
+      binding.dispose = binding.connect(this.connection_);
+    }
+
+    this.eventBindings.push(binding);
+    return target.subscribe;
+  }
+
   @action
   bindConnection(connection: TConnection | undefined): void {
     if (this.connection_ === connection) {
       return;
     }
+
+    this.rebindEvents(connection);
 
     this.connectionReactionDisposer?.();
     this.logStateReactionDisposer?.();
@@ -98,6 +127,41 @@ export abstract class Endpoint<
           {equals: comparer.structural, fireImmediately: true},
         )
       : undefined;
+  }
+
+  private rebindEvents(connection: TConnection | undefined): void {
+    const nextDisposerMap = new Map<
+      EndpointEventBinding<TConnection>,
+      () => void
+    >();
+
+    try {
+      if (connection !== undefined) {
+        for (const binding of this.eventBindings) {
+          nextDisposerMap.set(binding, binding.connect(connection));
+        }
+      }
+    } catch (error) {
+      for (const dispose of nextDisposerMap.values()) {
+        try {
+          dispose();
+        } catch (disposeError) {
+          logEndpointError(disposeError);
+        }
+      }
+
+      throw error;
+    }
+
+    for (const binding of this.eventBindings) {
+      try {
+        binding.dispose?.();
+      } catch (error) {
+        logEndpointError(error);
+      }
+
+      binding.dispose = nextDisposerMap.get(binding);
+    }
   }
 
   @action
@@ -463,6 +527,11 @@ export abstract class Endpoint<
 }
 
 export type EndpointConnectionMetadata = {};
+
+type EndpointEventBinding<TConnection> = {
+  readonly connect: (connection: TConnection) => () => void;
+  dispose: (() => void) | undefined;
+};
 
 export type EndpointLogState = Readonly<
   Record<string, string | number | boolean | undefined>

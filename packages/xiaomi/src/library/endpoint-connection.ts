@@ -191,6 +191,16 @@ export abstract class MiotEndpointConnection<
     });
   }
 
+  /** Snapshot properties that prefer cloud state over an available local route. */
+  get cloudPreferredSnapshotProperties(): readonly MiotProperty[] {
+    return this.getProperties((name, property) => {
+      return (
+        this.isSnapshotProperty(name, property) &&
+        this.shouldPreferCloudSnapshotProperty(name, property)
+      );
+    });
+  }
+
   /** Snapshot properties whose buffered notifications must replay afterward. */
   get replaySnapshotPropertyNotifications(): readonly MiotProperty[] {
     return this.getProperties((name, property) => {
@@ -417,7 +427,7 @@ export abstract class MiotEndpointConnection<
   protected handleEvent(
     name: string,
     _event: MiotSpecEvent,
-    _arguments: readonly MiotEventArgument[],
+    _args: readonly MiotEndpointEventArgument[],
   ): void {
     throw new TypeError(`Unhandled MIoT endpoint event: ${name}.`);
   }
@@ -432,6 +442,14 @@ export abstract class MiotEndpointConnection<
 
   /** Selects snapshot properties whose buffered notifications carry deltas. */
   protected shouldReplaySnapshotPropertyNotifications(
+    _name: string,
+    _property: MiotResolvedSpecProperty,
+  ): boolean {
+    return false;
+  }
+
+  /** Selects exceptional snapshot properties to read from cloud before local fallback. */
+  protected shouldPreferCloudSnapshotProperty(
     _name: string,
     _property: MiotResolvedSpecProperty,
   ): boolean {
@@ -1022,7 +1040,7 @@ export abstract class MiotEndpointConnection<
   private prepareEventNotification(update: MiotEventUpdate): {
     readonly name: string;
     readonly event: MiotSpecEvent;
-    readonly arguments: readonly MiotEventArgument[];
+    readonly arguments: readonly MiotEndpointEventArgument[];
   } {
     if (update.did !== this.metadata.device.did) {
       throw new TypeError('Unexpected MIoT endpoint event notification.');
@@ -1056,9 +1074,9 @@ export abstract class MiotEndpointConnection<
       throw new TypeError('Unexpected MIoT endpoint event notification.');
     }
 
-    const arguments_ = resolveMiotEventArguments(resource, event, update);
+    const args = resolveMiotEventArguments(resource, event, update);
 
-    return {name: eventName, event, arguments: arguments_};
+    return {name: eventName, event, arguments: args};
   }
 }
 
@@ -1275,6 +1293,12 @@ export type MiotEndpointStateUpdate = {
   readonly invalidatedProperties?: readonly MiotProperty[];
 };
 
+/** One validated event argument paired with its resolved property metadata. */
+export type MiotEndpointEventArgument = {
+  readonly property: MiotSpecProperty;
+  readonly value: MiotPropertyValue;
+};
+
 export type MiotEventUpdate = MiotEvent & {
   readonly arguments: MiotEventArguments;
 };
@@ -1283,7 +1307,7 @@ function resolveMiotEventArguments(
   resource: MiotEndpointConnectionResolvedResource,
   event: MiotSpecEvent,
   update: MiotEventUpdate,
-): readonly MiotEventArgument[] {
+): readonly MiotEndpointEventArgument[] {
   const expectedPiidSet = new Set(event.arguments);
 
   if (
@@ -1337,7 +1361,10 @@ function resolveMiotEventArguments(
       value: argument.value,
     });
 
-    return {piid, value: argument.value};
+    return {
+      property,
+      value: argument.value as MiotPropertyValue,
+    };
   });
 }
 
