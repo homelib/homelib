@@ -1,5 +1,6 @@
 import {action, observable} from 'mobx';
 
+import {MotionDetectedEvent} from '../device/index.js';
 import {DeviceEntry} from '../device.js';
 import type {CommandExecution} from '../endpoint.js';
 import {DeviceEventEmitter} from '../event.js';
@@ -52,8 +53,8 @@ test('exposes motion detection from one endpoint', () => {
 
     expect(sensor.ready).toBe(true);
     expect(sensor.motionDetected).toBe(true);
-    connection.motionDetectedEvent.emit();
-    connection.motionDetectedEvent.emit();
+    connection.motionDetectedEvent.emit(new MotionDetectedEvent());
+    connection.motionDetectedEvent.emit(new MotionDetectedEvent());
     expect(motionEvents).toEqual([undefined, undefined]);
     expect(eventLogEvents.map(event => event.eventDescription)).toEqual([
       'motionDetected',
@@ -82,16 +83,16 @@ test('keeps event subscriptions across connection replacement', () => {
 
   sensor.onMotionDetected(() => occurrences.push(undefined));
   endpoint.bindConnection(firstConnection);
-  firstConnection.motionDetectedEvent.emit();
+  firstConnection.motionDetectedEvent.emit(new MotionDetectedEvent());
   endpoint.bindConnection(secondConnection);
-  firstConnection.motionDetectedEvent.emit();
-  secondConnection.motionDetectedEvent.emit();
+  firstConnection.motionDetectedEvent.emit(new MotionDetectedEvent());
+  secondConnection.motionDetectedEvent.emit(new MotionDetectedEvent());
 
   expect(occurrences).toEqual([undefined, undefined]);
 });
 
 class TestMotionSensorEndpointConnection implements MotionSensorEndpointConnection {
-  readonly motionDetectedEvent = new DeviceEventEmitter<void>();
+  readonly motionDetectedEvent = new DeviceEventEmitter<MotionDetectedEvent>();
 
   readonly onMotionDetected = this.motionDetectedEvent.subscribe;
 

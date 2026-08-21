@@ -3,6 +3,7 @@ import {computed} from 'mobx';
 import type {
   AmbientLightLevel,
   AmbientLightLevelSource,
+  MotionDetectedEvent,
   MotionDetectionSource,
 } from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
@@ -11,7 +12,7 @@ import {
   type EndpointConnection,
   type EndpointLogState,
 } from '../endpoint.js';
-import type {DeviceEvent} from '../event.js';
+import type {DeviceEventSource} from '../event.js';
 
 export class MotionAmbientLightLevelSensor
   extends Device
@@ -20,7 +21,7 @@ export class MotionAmbientLightLevelSensor
   protected readonly endpoint: MotionAmbientLightLevelSensorEndpoint;
 
   /** Subscribes to future motion detections. */
-  readonly onMotionDetected: DeviceEvent;
+  readonly onMotionDetected: DeviceEventSource<MotionDetectedEvent>;
 
   /** Whether motion is currently detected. */
   @computed
@@ -52,7 +53,6 @@ export class MotionAmbientLightLevelSensorEndpoint<
 > extends Endpoint<never, TConnection> {
   /** Subscribes to future motion detections. */
   readonly onMotionDetected = this.bindEvent(
-    'motionDetected',
     connection => connection.onMotionDetected,
   );
 
@@ -90,7 +90,7 @@ export class MotionAmbientLightLevelSensorEndpoint<
 
 export type MotionAmbientLightLevelSensorEndpointConnection =
   EndpointConnection<never> & {
-    readonly onMotionDetected: DeviceEvent;
+    readonly onMotionDetected: DeviceEventSource<MotionDetectedEvent>;
     /** Whether motion is currently detected. */
     readonly motionDetected: boolean | undefined;
     /**

@@ -1,7 +1,11 @@
 import {action, comparer, computed, observable, reaction} from 'mobx';
 
 import {type Command, CommandError, StatefulCommand} from './command.js';
-import {type DeviceEvent, DeviceEventEmitter} from './event.js';
+import {
+  type DeviceEvent,
+  DeviceEventEmitter,
+  type DeviceEventSource,
+} from './event.js';
 import {
   hasEndpointLogTarget,
   logEndpointCommand,
@@ -52,16 +56,15 @@ export abstract class Endpoint<
   }
 
   /** Binds a stable event to this endpoint's current connection. */
-  protected bindEvent<T>(
-    name: string,
-    getEvent: (connection: TConnection) => DeviceEvent<T>,
-  ): DeviceEvent<T> {
-    const target = new DeviceEventEmitter<T>();
+  protected bindEvent<TEvent extends DeviceEvent<string>>(
+    getEventSource: (connection: TConnection) => DeviceEventSource<TEvent>,
+  ): DeviceEventSource<TEvent> {
+    const target = new DeviceEventEmitter<TEvent>();
     const binding: EndpointEventBinding<TConnection> = {
       connect: connection =>
-        getEvent(connection)((...args) => {
-          logEndpointEvent(this, connection, name);
-          target.emit(...args);
+        getEventSource(connection)(event => {
+          logEndpointEvent(this, connection, event);
+          target.emit(event);
         }),
       dispose: undefined,
     };

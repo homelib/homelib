@@ -11,6 +11,7 @@ import {
 import {
   type LegacyMiotEndpointConnectionMetadata,
   type MiotEndpointConnection,
+  type MiotEndpointConnectionEventSchema,
   MiotEndpointConnectionIdentityMetadata,
   type MiotEndpointConnectionMetadata,
   type MiotEndpointConnectionResolvedMetadata,
@@ -24,6 +25,7 @@ import {
   type MiotActionSchema,
   type MiotEventSchema,
   type MiotEventSchemaMatch,
+  type MiotEventSchemaNames,
   type MiotPropertySchema,
   type MiotPropertySchemaResource,
   type MiotResolvedSpecProperty,
@@ -79,8 +81,35 @@ type ValidMiotEndpointConnectionConstructor<
   TConnection extends MiotEndpointConnectionConstructor<
     InstanceType<TConnection['Endpoint']>
   >
-    ? TConnection
+    ? HasMatchingMiotEventSchema<TConnection> extends true
+      ? TConnection
+      : never
     : never;
+
+type HasMatchingMiotEventSchema<
+  TConnection extends MiotEndpointConnectionConstructor,
+> = TConnection extends {
+  readonly events: infer TStaticEventSchema extends MiotEventSchema;
+}
+  ? [MiotEndpointConnectionEventSchema<InstanceType<TConnection>>] extends [
+      TStaticEventSchema,
+    ]
+    ? [TStaticEventSchema] extends [
+        MiotEndpointConnectionEventSchema<InstanceType<TConnection>>,
+      ]
+      ? true
+      : false
+    : false
+  : IsBroadMiotEventSchema<
+      MiotEndpointConnectionEventSchema<InstanceType<TConnection>>
+    >;
+
+type IsBroadMiotEventSchema<TSchema extends MiotEventSchema> =
+  MiotEventSchema extends TSchema
+    ? string extends MiotEventSchemaNames<TSchema>
+      ? true
+      : false
+    : false;
 
 type ValidMiotEndpointConnectionConstructors<
   TConnections extends readonly MiotEndpointConnectionConstructor[],

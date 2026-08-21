@@ -1,21 +1,28 @@
 import {logEndpointError} from './log.js';
 
-/** Subscribes to future occurrences and returns an idempotent disposer. */
-export type DeviceEvent<T = void> = (
-  listener: DeviceEventListener<T>,
-) => () => void;
+/** One semantic device event occurrence. */
+export abstract class DeviceEvent<out TType extends string> {
+  declare protected readonly deviceEventBrand: TType;
 
-export type DeviceEventListener<T = void> = (
-  ...args: DeviceEventArguments<T>
+  toLogString(): string {
+    return this.constructor.name;
+  }
+}
+
+export type DeviceEventListener<in TEvent extends DeviceEvent<string>> = (
+  event: TEvent,
 ) => void;
 
-type DeviceEventArguments<T> = [T] extends [void] ? [] : [event: T];
+/** Subscribes to future occurrences and returns an idempotent disposer. */
+export type DeviceEventSource<out TEvent extends DeviceEvent<string>> = (
+  listener: DeviceEventListener<TEvent>,
+) => () => void;
 
 /** A device event source that providers can publish to. */
-export class DeviceEventEmitter<T = void> {
-  private readonly listenerSet = new Set<DeviceEventListener<T>>();
+export class DeviceEventEmitter<in out TEvent extends DeviceEvent<string>> {
+  private readonly listenerSet = new Set<DeviceEventListener<TEvent>>();
 
-  readonly subscribe: DeviceEvent<T> = listener => {
+  readonly subscribe: DeviceEventSource<TEvent> = listener => {
     this.listenerSet.add(listener);
 
     return () => {
@@ -24,13 +31,28 @@ export class DeviceEventEmitter<T = void> {
   };
 
   /** Emits one occurrence synchronously to every current listener. */
-  emit(...args: DeviceEventArguments<T>): void {
+  emit(event: TEvent): void {
     for (const listener of [...this.listenerSet]) {
       try {
-        listener(...args);
+        const result: unknown = listener(event);
+
+        if (isPromiseLike(result)) {
+          void Promise.resolve(result).catch(logEndpointError);
+        }
       } catch (error) {
         logEndpointError(error);
       }
     }
   }
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  if (
+    (typeof value !== 'object' || value === null) &&
+    typeof value !== 'function'
+  ) {
+    return false;
+  }
+
+  return typeof (value as {readonly then?: unknown}).then === 'function';
 }

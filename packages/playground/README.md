@@ -11,6 +11,7 @@ The current program demonstrates:
 - reactive temperature/humidity control using device-scoped sensor
   capabilities;
 - automatic pet feeding;
+- read-only door-lock state and event binding;
 - bathroom ventilation based on how long the light was on;
 - event-driven corridor lighting using the ambient light level observed for
   each motion detection;

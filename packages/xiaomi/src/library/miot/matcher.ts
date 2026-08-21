@@ -87,10 +87,26 @@ export type MiotEventSchema = Readonly<
   Record<MiotUrnPattern, Readonly<Record<MiotUrnPattern, string>>>
 >;
 
-export type MiotEventSchemaMatch = {
+type MiotEventSchemaMapping<TSchema extends MiotEventSchema> = {
+  readonly [TService in keyof TSchema]: TSchema[TService] extends Readonly<
+    Record<MiotUrnPattern, string>
+  >
+    ? TSchema[TService][keyof TSchema[TService]]
+    : never;
+}[keyof TSchema];
+
+/** Logical aliases declared by an event schema. */
+export type MiotEventSchemaNames<TSchema extends MiotEventSchema> = Extract<
+  MiotEventSchemaMapping<TSchema>,
+  string
+>;
+
+export type MiotEventSchemaMatch<
+  TSchema extends MiotEventSchema = MiotEventSchema,
+> = {
   readonly service: MiotSpecService;
   readonly event: MiotSpecEvent;
-  readonly name: string;
+  readonly name: MiotEventSchemaNames<TSchema>;
 };
 
 export type MiotSpecMatchContext = {
@@ -327,9 +343,9 @@ export function resolveMiotActionSchema(
   return matches;
 }
 
-export function matchesMiotEventSchema(
+export function matchesMiotEventSchema<const TSchema extends MiotEventSchema>(
   spec: MiotSpecMatchContext,
-  schema: MiotEventSchema,
+  schema: TSchema,
 ): boolean {
   return resolveMiotEventSchema(spec, schema) !== undefined;
 }
@@ -340,12 +356,12 @@ export function matchesMiotEventSchema(
  * pattern must match exactly one service, and each mapped event must match
  * exactly one declared event.
  */
-export function resolveMiotEventSchema(
+export function resolveMiotEventSchema<const TSchema extends MiotEventSchema>(
   spec: MiotSpecMatchContext,
-  schema: MiotEventSchema,
-): readonly MiotEventSchemaMatch[] | undefined {
+  schema: TSchema,
+): readonly MiotEventSchemaMatch<TSchema>[] | undefined {
   assertMiotEventSchema(schema);
-  const matches: MiotEventSchemaMatch[] = [];
+  const matches: MiotEventSchemaMatch<TSchema>[] = [];
   const serviceIidSet = new Set<number>();
 
   for (const [serviceType, eventSchema] of Object.entries(schema)) {
@@ -374,7 +390,11 @@ export function resolveMiotEventSchema(
         return undefined;
       }
 
-      matches.push({service, event, name});
+      matches.push({
+        service,
+        event,
+        name: name as MiotEventSchemaNames<TSchema>,
+      });
     }
   }
 

@@ -14,6 +14,8 @@ import {
   type MiotEvent,
   type MiotEventArgument,
   type MiotEventArguments,
+  type MiotEventSchema,
+  type MiotEventSchemaNames,
   type MiotExecutionRequest,
   type MiotExecutionResult,
   type MiotProperty,
@@ -42,6 +44,8 @@ const MIOT_NUMERIC_FORMAT_RANGES: Readonly<
   uint16: [0, 65_535],
   uint32: [0, 4_294_967_295],
 };
+
+declare const MIOT_ENDPOINT_CONNECTION_EVENT_SCHEMA: unique symbol;
 
 /** A canonical primitive accepted by the MIoT property protocol. */
 export type MiotPropertyValue = boolean | number | string;
@@ -151,7 +155,10 @@ type MiotPropertyStateEntry = {
 export abstract class MiotEndpointConnection<
   in TCommand extends Command,
   TSchema extends MiotPropertySchema = {},
+  TEventSchema extends MiotEventSchema = MiotEventSchema,
 > implements EndpointConnection<TCommand> {
+  declare readonly [MIOT_ENDPOINT_CONNECTION_EVENT_SCHEMA]: TEventSchema;
+
   @observable.shallow private accessor stateMap = new Map<
     string,
     MiotPropertyStateEntry
@@ -425,7 +432,7 @@ export abstract class MiotEndpointConnection<
   }
 
   protected handleEvent(
-    name: string,
+    name: MiotEventSchemaNames<TEventSchema>,
     _event: MiotSpecEvent,
     _args: readonly MiotEndpointEventArgument[],
   ): void {
@@ -639,10 +646,10 @@ export abstract class MiotEndpointConnection<
    *
    * The physical property, raw state, and complete device URN are connection
    * concerns; concrete devices only provide the domain mapping. The returned
-   * codec always reads the last known value of the alias it was bound to and
-   * is cached for the connection lifetime. A codec may still be unavailable
-   * when an optional property is absent or its mapping does not support this
-   * physical device.
+   * codec is cached for the connection lifetime. `read` decodes the last known
+   * value, while `readAvailable` only decodes a currently available
+   * observation. A codec may still be unavailable when an optional property
+   * is absent or its mapping does not support this physical device.
    */
   protected getPropertyValueCodec<
     const TName extends Extract<
@@ -667,6 +674,7 @@ export abstract class MiotEndpointConnection<
   ):
     | {
         readonly read: () => TDomain | undefined;
+        readonly readAvailable: () => TDomain | undefined;
         readonly encode: (value: TDomain) => TEncoded;
       }
     | undefined {
@@ -676,6 +684,7 @@ export abstract class MiotEndpointConnection<
       return codecMap.get(name) as
         | {
             readonly read: () => TDomain | undefined;
+            readonly readAvailable: () => TDomain | undefined;
             readonly encode: (value: TDomain) => TEncoded;
           }
         | undefined;
@@ -705,6 +714,10 @@ export abstract class MiotEndpointConnection<
 
     const codec = {
       read: () => resolved.decode(this.getLastKnownPropertyState(name)),
+      readAvailable: () => {
+        const raw = this.getCommandEffectState(name);
+        return raw === undefined ? undefined : resolved.decode(raw);
+      },
       encode: (value: TDomain) => resolved.encode(value),
     };
 
@@ -1038,7 +1051,7 @@ export abstract class MiotEndpointConnection<
   }
 
   private prepareEventNotification(update: MiotEventUpdate): {
-    readonly name: string;
+    readonly name: MiotEventSchemaNames<TEventSchema>;
     readonly event: MiotSpecEvent;
     readonly arguments: readonly MiotEndpointEventArgument[];
   } {
@@ -1076,9 +1089,22 @@ export abstract class MiotEndpointConnection<
 
     const args = resolveMiotEventArguments(resource, event, update);
 
-    return {name: eventName, event, arguments: args};
+    return {
+      name: eventName as MiotEventSchemaNames<TEventSchema>,
+      event,
+      arguments: args,
+    };
   }
 }
+
+/** Extracts the event schema carried by a MIoT endpoint connection type. */
+export type MiotEndpointConnectionEventSchema<TConnection> =
+  TConnection extends {
+    readonly [MIOT_ENDPOINT_CONNECTION_EVENT_SCHEMA]: infer TEventSchema extends
+      MiotEventSchema;
+  }
+    ? TEventSchema
+    : never;
 
 export abstract class MiotEndpointConnectionTransport {
   abstract executeRequest(
@@ -1293,10 +1319,10 @@ export type MiotEndpointStateUpdate = {
   readonly invalidatedProperties?: readonly MiotProperty[];
 };
 
-/** One validated event argument paired with its resolved property metadata. */
+/** One raw event argument paired with its resolved property metadata. */
 export type MiotEndpointEventArgument = {
   readonly property: MiotSpecProperty;
-  readonly value: MiotPropertyValue;
+  readonly value: unknown;
 };
 
 export type MiotEventUpdate = MiotEvent & {
@@ -1354,16 +1380,9 @@ function resolveMiotEventArguments(
       );
     }
 
-    assertMiotPropertyValue(property, argument.value, property.type, {
-      did: update.did,
-      siid: update.siid,
-      piid,
-      value: argument.value,
-    });
-
     return {
       property,
-      value: argument.value as MiotPropertyValue,
+      value: argument.value,
     };
   });
 }

@@ -4,6 +4,7 @@ import {$xiaomi} from '@homelib/xiaomi';
 import {setupAutoPetFeeding} from './@auto-pet-feeding.js';
 import {setupBathroomVentilation} from './@bathroom-ventilation.js';
 import {setupDehumidifierWaterTankReminder} from './@dehumidifier-water-tank-reminder.js';
+import {setupDoorLock} from './@door-lock.js';
 import {setupMotionActivatedLighting} from './@motion-activated-lighting.js';
 import {setupTemperatureHumidityControl} from './@temperature-humidity-control.js';
 
@@ -11,6 +12,7 @@ $xiaomi('美岸');
 
 const 美岸 = $home('美岸', home =>
   home
+    .$doorLock('门锁')
     .$scope('客厅', room =>
       room
         .$airConditioner('空调')
@@ -81,3 +83,5 @@ setupDehumidifierWaterTankReminder({
 });
 
 setupMotionActivatedLighting(美岸.卫生间走廊.运动传感器, 美岸.卫生间走廊.灯组);
+
+setupDoorLock(美岸.门锁, 美岸.客厅.小爱音箱);

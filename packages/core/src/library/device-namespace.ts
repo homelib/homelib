@@ -2,6 +2,7 @@ import {
   AirConditioner,
   BathHeater,
   Dehumidifier,
+  DoorLock,
   Fan,
   Light,
   MotionAmbientLightLevelSensor,
@@ -17,6 +18,7 @@ register({
   airConditioner: AirConditioner,
   bathHeater: BathHeater,
   dehumidifier: Dehumidifier,
+  doorLock: DoorLock,
   fan: Fan,
   light: Light,
   motionAmbientLightLevelSensor: MotionAmbientLightLevelSensor,
@@ -34,6 +36,7 @@ declare global {
       airConditioner: AirConditioner;
       bathHeater: BathHeater;
       dehumidifier: Dehumidifier;
+      doorLock: DoorLock;
       fan: Fan;
       light: Light;
       motionAmbientLightLevelSensor: MotionAmbientLightLevelSensor;

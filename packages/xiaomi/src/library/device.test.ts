@@ -23,6 +23,7 @@ import {
   getMiotEndpointConnectionResourceKeys,
 } from './endpoint-connection.js';
 import type {
+  MiotEventSchema,
   MiotPropertySchema,
   MiotSpecInstance,
   MiotSpecProperty,
@@ -72,6 +73,24 @@ const TEST_PROPERTIES = {
   ...LIGHT_PROPERTIES,
   ...ENVIRONMENT_PROPERTIES,
 } as const satisfies MiotPropertySchema;
+
+const TEST_EVENTS = {
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:event:changed:00005FFF': 'changed',
+  },
+} as const satisfies MiotEventSchema;
+
+const _ALTERNATE_EVENTS = {
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:event:reset:00005FFE': 'reset',
+  },
+} as const satisfies MiotEventSchema;
+
+const _ALTERNATE_SAME_ALIAS_EVENTS = {
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:event:reset:00005FFE': 'changed',
+  },
+} as const satisfies MiotEventSchema;
 
 test('resolves one required service and one optional service', () => {
   const Connection = createConnection();
@@ -448,6 +467,57 @@ test('rejects duplicate devices but allows device-specific connections', () => {
   ).toBeUndefined();
 });
 
+test('requires the static and connection event schemas to match', () => {
+  class EventDevice extends Device {}
+  class MatchingConnection extends TestEventEndpointConnection<
+    typeof TEST_EVENTS
+  > {
+    static readonly Endpoint = LightEndpoint;
+    static readonly properties = LIGHT_PROPERTIES;
+    static readonly events = TEST_EVENTS;
+  }
+  class MismatchedConnection extends TestEventEndpointConnection<
+    typeof _ALTERNATE_EVENTS
+  > {
+    static readonly Endpoint = LightEndpoint;
+    static readonly properties = LIGHT_PROPERTIES;
+    static readonly events = TEST_EVENTS;
+  }
+  class ErasedConnection extends TestLightEndpointConnection {
+    static readonly Endpoint = LightEndpoint;
+    static readonly properties = LIGHT_PROPERTIES;
+    static readonly events = TEST_EVENTS;
+  }
+  class SameAliasMismatchedConnection extends TestEventEndpointConnection<
+    typeof _ALTERNATE_SAME_ALIAS_EVENTS
+  > {
+    static readonly Endpoint = LightEndpoint;
+    static readonly properties = LIGHT_PROPERTIES;
+    static readonly events = TEST_EVENTS;
+  }
+  class MissingStaticEventsConnection extends TestEventEndpointConnection<
+    typeof TEST_EVENTS
+  > {
+    static readonly Endpoint = LightEndpoint;
+    static readonly properties = LIGHT_PROPERTIES;
+  }
+
+  const registry = new MiotDeviceRegistry();
+  registry.register(EventDevice, MatchingConnection);
+  expect(
+    registry.getEndpointConnection([EventDevice], new LightEndpoint()),
+  ).toBe(MatchingConnection);
+
+  // @ts-expect-error -- Static aliases differ from the instance event schema.
+  new MiotDeviceRegistry().register(EventDevice, MismatchedConnection);
+  // @ts-expect-error -- A static event schema must not use the erased default.
+  new MiotDeviceRegistry().register(EventDevice, ErasedConnection);
+  // @ts-expect-error -- Matching aliases do not make different schemas equal.
+  new MiotDeviceRegistry().register(EventDevice, SameAliasMismatchedConnection);
+  // @ts-expect-error -- A narrow instance event schema requires static events.
+  new MiotDeviceRegistry().register(EventDevice, MissingStaticEventsConnection);
+});
+
 test('matches every registered endpoint once without sharing services', () => {
   class MultiEndpointDevice extends Device {}
   class EnvironmentEndpoint extends LightEndpoint {}
@@ -617,6 +687,31 @@ function createLegacyMetadata(
 
 class TestLightEndpointConnection
   extends MiotEndpointConnection<LightEndpointCommand>
+  implements LightEndpointConnection
+{
+  get on(): boolean {
+    return false;
+  }
+
+  get brightness(): number | undefined {
+    return undefined;
+  }
+
+  get colorTemperature(): number | undefined {
+    return undefined;
+  }
+
+  override prepareCommand(_command: LightEndpointCommand): CommandExecution {
+    return {execute: () => Promise.resolve()};
+  }
+}
+
+abstract class TestEventEndpointConnection<TEventSchema extends MiotEventSchema>
+  extends MiotEndpointConnection<
+    LightEndpointCommand,
+    typeof LIGHT_PROPERTIES,
+    TEventSchema
+  >
   implements LightEndpointConnection
 {
   get on(): boolean {

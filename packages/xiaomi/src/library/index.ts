@@ -2,6 +2,7 @@ import {
   AirConditioner,
   BathHeater,
   Dehumidifier,
+  DoorLock,
   Fan,
   Light,
   MotionAmbientLightLevelSensor,
@@ -22,6 +23,7 @@ import {
   MiotAirConditionerEndpointConnection,
   MiotBathHeaterEndpointConnection,
   MiotDehumidifierEndpointConnection,
+  MiotDoorLockEndpointConnection,
   MiotFanEndpointConnection,
   MiotLightEndpointConnection,
   MiotMotionAmbientLightLevelSensorEndpointConnection,
@@ -45,6 +47,7 @@ registerMiotDevice(
   MiotLightEndpointConnection,
 );
 registerMiotDevice(Dehumidifier, MiotDehumidifierEndpointConnection);
+registerMiotDevice(DoorLock, MiotDoorLockEndpointConnection);
 registerMiotDevice(Fan, MiotFanEndpointConnection);
 registerMiotDevice(Light, MiotLightEndpointConnection);
 registerMiotDevice(

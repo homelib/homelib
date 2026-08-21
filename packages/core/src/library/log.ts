@@ -1,5 +1,6 @@
 import type {Command} from './command.js';
 import type {EndpointLogState} from './endpoint.js';
+import type {DeviceEvent} from './event.js';
 
 const endpointLogTargetMap = new WeakMap<object, EndpointLogTarget>();
 const logListenerSet = new Set<LogListener>();
@@ -133,7 +134,7 @@ export function logEndpointState(
 export function logEndpointEvent(
   endpoint: object,
   connection: Loggable,
-  eventDescription: string,
+  event: DeviceEvent<string>,
 ): void {
   try {
     const target = endpointLogTargetMap.get(endpoint);
@@ -146,7 +147,9 @@ export function logEndpointEvent(
           connection,
           connection.constructor.name,
         ),
-        eventDescription,
+        eventDescription:
+          safeLogString(event, event.constructor.name) ??
+          event.constructor.name,
       });
     }
   } catch {

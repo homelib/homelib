@@ -36,10 +36,12 @@ test('switches cloud to local and back without accepting late old-source message
   oldCloudHandler(createPropertyMessage('device-1', 2));
   localSource.emitProperty('device-1', 3);
   localSource.emitEvent('device-1', 4);
+  localSource.emitIdentifiedEvent('device-1', 5);
   expect(messages).toEqual([
     createPropertyMessage('device-1', 1),
     createPropertyMessage('device-1', 3),
     createEventMessage('device-1', 4),
+    createIdentifiedEventMessage('device-1', 5),
   ]);
 
   cloudUnsubscribe.resolve();
@@ -55,12 +57,42 @@ test('switches cloud to local and back without accepting late old-source message
     createPropertyMessage('device-1', 1),
     createPropertyMessage('device-1', 3),
     createEventMessage('device-1', 4),
+    createIdentifiedEventMessage('device-1', 5),
     createPropertyMessage('device-1', 5),
   ]);
 
   localDispose.resolve();
   await waitFor(() => states.length === 5);
   expect(states).toEqual([true, false, true, false, true]);
+  await client.disconnect();
+});
+
+test('preserves object, array, and mixed local event values as positional', async () => {
+  const cloud = new TestCloudMessageClient();
+  const local = new TestLocalMessageRouter();
+  const localSource = new TestLocalPropertySource();
+  local.setRoute('device-1', localSource);
+  const client = new RoutedDeviceMessageClient(cloud, local);
+  const messages: CloudMqttDeviceMessage[] = [];
+
+  await client.connect();
+  await client.subscribeDevice('device-1', message => {
+    messages.push(message);
+  });
+
+  const objectValues = [{vendor: 42}];
+  const arrayValues = [[1, 2]];
+  const mixedValues = [{piid: 2, value: 1}, 'vendor-raw'];
+  localSource.emitEventArguments('device-1', objectValues);
+  localSource.emitEventArguments('device-1', arrayValues);
+  localSource.emitEventArguments('device-1', mixedValues);
+
+  expect(messages).toEqual([
+    createPositionalEventMessage('device-1', objectValues),
+    createPositionalEventMessage('device-1', arrayValues),
+    createPositionalEventMessage('device-1', mixedValues),
+  ]);
+
   await client.disconnect();
 });
 
@@ -510,11 +542,24 @@ class TestLocalPropertySource implements LocalDeviceMessageSource {
   }
 
   emitEvent(did: string, value: number): void {
+    this.emitEventArguments(did, [value]);
+  }
+
+  emitEventArguments(did: string, eventArguments: readonly unknown[]): void {
     this.eventListener?.({
       did,
       siid: 3,
       eiid: 1,
-      arguments: [value],
+      arguments: eventArguments,
+    });
+  }
+
+  emitIdentifiedEvent(did: string, value: number): void {
+    this.eventListener?.({
+      did,
+      siid: 3,
+      eiid: 1,
+      arguments: [{piid: 2, value}],
     });
   }
 }
@@ -530,13 +575,38 @@ function createEventMessage(
   did: string,
   value: number,
 ): CloudMqttDeviceMessage {
+  return createPositionalEventMessage(did, [value]);
+}
+
+function createPositionalEventMessage(
+  did: string,
+  values: readonly unknown[],
+): CloudMqttDeviceMessage {
   return {
     type: 'event',
     data: {
       did,
       siid: 3,
       eiid: 1,
-      arguments: {type: 'positional', data: [value]},
+      arguments: {type: 'positional', data: values},
+    },
+  };
+}
+
+function createIdentifiedEventMessage(
+  did: string,
+  value: number,
+): CloudMqttDeviceMessage {
+  return {
+    type: 'event',
+    data: {
+      did,
+      siid: 3,
+      eiid: 1,
+      arguments: {
+        type: 'identified',
+        data: [{piid: 2, value}],
+      },
     },
   };
 }

@@ -9,7 +9,8 @@ import {MiotMotionSensorEndpointConnectionBase} from './@motion-sensor.js';
 
 export class MiotMotionSensorEndpointConnection
   extends MiotMotionSensorEndpointConnectionBase<
-    typeof MiotMotionSensorEndpointConnection.properties
+    typeof MiotMotionSensorEndpointConnection.properties,
+    typeof MiotMotionSensorEndpointConnection.events
   >
   implements MotionSensorEndpointConnection
 {

@@ -1,4 +1,5 @@
 import {
+  type MiotEventSchema,
   type MiotPropertySchema,
   type MiotPropertySchemaResource,
   isValidMiotSpecValueList,
@@ -6,9 +7,11 @@ import {
   isValidMiotUrnPattern,
   matchesMiotActionSchema,
   matchesMiotUrnPattern,
+  resolveMiotEventSchema,
   resolveMiotPropertySchema,
 } from './matcher.js';
 import type {
+  MiotSpecEvent,
   MiotSpecProperty,
   MiotSpecService,
   MiotSpecValueList,
@@ -398,6 +401,38 @@ test('rejects an invalid action schema', () => {
       'urn:miot-spec-v2:service:light:00007802': {'': {in: []}},
     }),
   ).toThrow(TypeError);
+});
+
+test('resolves event names as the schema alias literal union', () => {
+  const changedEvent = {
+    iid: 1,
+    type: 'urn:miot-spec-v2:event:changed:00005FFF:test:1',
+    description: 'Changed',
+    arguments: [],
+  } satisfies MiotSpecEvent;
+  const resetEvent = {
+    iid: 2,
+    type: 'urn:miot-spec-v2:event:reset:00005FFE:test:1',
+    description: 'Reset',
+    arguments: [],
+  } satisfies MiotSpecEvent;
+  const schema = {
+    'urn:miot-spec-v2:service:light:00007802': {
+      'urn:miot-spec-v2:event:changed:00005FFF': 'changed',
+      'urn:miot-spec-v2:event:reset:00005FFE': 'reset',
+    },
+  } as const satisfies MiotEventSchema;
+  const matches = resolveMiotEventSchema(
+    {
+      type: TEST_DEVICE_TYPE,
+      services: [createLightService({events: [changedEvent, resetEvent]})],
+    },
+    schema,
+  );
+  const names: readonly ('changed' | 'reset')[] =
+    matches?.map(match => match.name) ?? [];
+
+  expect(names).toEqual(['changed', 'reset']);
 });
 
 test('omits an ambiguous optional property without rejecting the service', () => {

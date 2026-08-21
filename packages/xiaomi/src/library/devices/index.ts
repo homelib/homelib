@@ -2,6 +2,7 @@ export * from './air-conditioner.js';
 export * from './bath-heater.js';
 export * from './command-effect.js';
 export * from './dehumidifier.js';
+export * from './door-lock.js';
 export * from './fan.js';
 export * from './light.js';
 export * from './motion-ambient-light-level-sensor.js';

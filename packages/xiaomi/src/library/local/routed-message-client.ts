@@ -4,7 +4,11 @@ import type {
   CloudMqttDeviceMessage,
   CloudMqttDeviceMessageHandler,
 } from '../cloud/index.js';
-import type {MiotProperty} from '../miot/index.js';
+import type {
+  MiotEventArgument,
+  MiotEventArguments,
+  MiotProperty,
+} from '../miot/index.js';
 
 export class RoutedDeviceMessageClient implements CloudDeviceMessageClient {
   private readonly subscriptionMap = new Map<string, RoutedSubscription>();
@@ -172,10 +176,7 @@ export class RoutedDeviceMessageClient implements CloudDeviceMessageClient {
                   type: 'event',
                   data: {
                     ...update,
-                    arguments: {
-                      type: 'positional',
-                      data: update.arguments,
-                    },
+                    arguments: resolveLocalEventArguments(update.arguments),
                   },
                 });
               }),
@@ -397,6 +398,31 @@ type ActiveSourceSubscription = {
 };
 
 type PendingMessageState = 'buffering' | 'flushing' | 'active' | 'discarded';
+
+function resolveLocalEventArguments(
+  values: readonly unknown[],
+): MiotEventArguments {
+  if (values.length > 0 && values.every(isMiotEventArgument)) {
+    return {type: 'identified', data: values};
+  }
+
+  return {type: 'positional', data: values};
+}
+
+function isMiotEventArgument(value: unknown): value is MiotEventArgument {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const argument = value as {readonly piid?: unknown};
+
+  return (
+    typeof argument.piid === 'number' &&
+    Number.isInteger(argument.piid) &&
+    argument.piid > 0 &&
+    Object.hasOwn(value, 'value')
+  );
+}
 
 async function disposeSubscriptions(
   subscriptions: readonly {dispose(): Promise<void>}[],

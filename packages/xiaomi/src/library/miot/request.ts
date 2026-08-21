@@ -65,8 +65,8 @@ export type MiotEventArgument = {
 /**
  * Values carried by a MIoT event occurrence.
  *
- * Xiaomi Cloud identifies each value by property IID, while the local gateway
- * sends values positionally in the order declared by the event spec. Preserve
+ * Xiaomi Cloud identifies each value by property IID. Local gateways may send
+ * the same identified pairs or positional values in event-spec order. Preserve
  * that distinction until the owning endpoint can resolve the event metadata.
  */
 export type MiotEventArguments =

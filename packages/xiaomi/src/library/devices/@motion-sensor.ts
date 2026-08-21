@@ -1,4 +1,8 @@
-import {type CommandExecution, DeviceEventEmitter} from '@homelib/core';
+import {
+  type CommandExecution,
+  DeviceEventEmitter,
+  MotionDetectedEvent,
+} from '@homelib/core';
 import {action, computed, observable} from 'mobx';
 
 import {
@@ -6,6 +10,8 @@ import {
   type MiotEndpointEventArgument,
 } from '../endpoint-connection.js';
 import type {
+  MiotEventSchema,
+  MiotEventSchemaNames,
   MiotPropertySchema,
   MiotResolvedSpecProperty,
   MiotSpecEvent,
@@ -21,9 +27,11 @@ import type {
 const MOTION_CLEAR_TIMEOUT = 5 * 60_000;
 
 export abstract class MiotMotionSensorEndpointConnectionBase<
-  TSchema extends MiotPropertySchema,
-> extends MiotEndpointConnection<never, TSchema> {
-  private readonly motionDetectedEvent = new DeviceEventEmitter();
+  TPropertySchema extends MiotPropertySchema,
+  TEventSchema extends MiotEventSchema,
+> extends MiotEndpointConnection<never, TPropertySchema, TEventSchema> {
+  private readonly motionDetectedEvent =
+    new DeviceEventEmitter<MotionDetectedEvent>();
 
   readonly onMotionDetected = this.motionDetectedEvent.subscribe;
 
@@ -45,7 +53,7 @@ export abstract class MiotMotionSensorEndpointConnectionBase<
   }
 
   protected override handleEvent(
-    name: string,
+    name: MiotEventSchemaNames<TEventSchema>,
     _event: MiotSpecEvent,
     _args: readonly MiotEndpointEventArgument[],
   ): void {
@@ -56,7 +64,7 @@ export abstract class MiotMotionSensorEndpointConnectionBase<
     this.setMotionDetected(true);
     this.scheduleMotionClear();
     this.handleMotionDetected();
-    this.motionDetectedEvent.emit();
+    this.motionDetectedEvent.emit(new MotionDetectedEvent());
   }
 
   /** Applies device-specific state before the occurrence becomes observable. */

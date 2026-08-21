@@ -1,6 +1,6 @@
 import {action, observable} from 'mobx';
 
-import type {AmbientLightLevel} from '../device/index.js';
+import type {AmbientLightLevel, MotionDetectedEvent} from '../device/index.js';
 import {DeviceEntry} from '../device.js';
 import type {CommandExecution} from '../endpoint.js';
 import {DeviceEventEmitter} from '../event.js';
@@ -89,7 +89,7 @@ test('exposes ambient light level only while motion is detected', () => {
 });
 
 class TestMotionAmbientLightLevelSensorEndpointConnection implements MotionAmbientLightLevelSensorEndpointConnection {
-  readonly motionDetectedEvent = new DeviceEventEmitter<void>();
+  readonly motionDetectedEvent = new DeviceEventEmitter<MotionDetectedEvent>();
 
   readonly onMotionDetected = this.motionDetectedEvent.subscribe;
 

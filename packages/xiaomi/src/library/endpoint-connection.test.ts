@@ -42,6 +42,8 @@ import {
   normalizeMiotEndpointConnectionMetadata,
 } from './endpoint-connection.js';
 import {
+  type MiotEventSchema,
+  type MiotEventSchemaNames,
   type MiotExecutionRequest,
   type MiotExecutionResult,
   type MiotProperty,
@@ -246,6 +248,11 @@ const TEST_EVENT = {
   description: 'Changed',
   arguments: [1, 2],
 } satisfies MiotSpecEvent;
+const _TEST_EVENT_SCHEMA = {
+  'urn:miot-spec-v2:service:light:00007802': {
+    'urn:miot-spec-v2:event:changed:00005FFF': 'changed',
+  },
+} as const satisfies MiotEventSchema;
 const TEST_EVENT_METADATA = createTestResolvedMetadata({
   ...TEST_METADATA,
   resources: [
@@ -482,6 +489,7 @@ test('resolves device-owned codecs from connection metadata once', () => {
   expect(connection.codecResolutionCount).toBe(1);
   expect(connection.missingSpeedCodecAvailable).toBe(false);
   expect(connection.unsupportedModeCodecAvailable).toBe(false);
+  expect(connection.availableModeCodecRaw).toBeUndefined();
 
   connection.handlePropertyUpdate({
     did: TEST_METADATA.device.did,
@@ -491,7 +499,15 @@ test('resolves device-owned codecs from connection metadata once', () => {
   });
 
   expect(connection.modeCodecRaw).toBe(2);
+  expect(connection.availableModeCodecRaw).toBe(2);
   expect(connection.codecResolutionCount).toBe(1);
+
+  connection.handleSnapshotInvalidation([
+    {did: TEST_METADATA.device.did, siid: 4, piid: 3},
+  ]);
+
+  expect(connection.modeCodecRaw).toBe(2);
+  expect(connection.availableModeCodecRaw).toBeUndefined();
 });
 
 test('validates range, value-list, and temperature metadata in helpers', () => {
@@ -1089,7 +1105,40 @@ test('zips positional event arguments in spec order', () => {
   ]);
 });
 
-test('rejects event arguments with wrong PIIDs or property values atomically', () => {
+test('preserves raw event values for device-specific decoding', () => {
+  const connection = createEventConnection();
+
+  connection.handleNotification({
+    type: 'event',
+    data: {
+      did: TEST_METADATA.device.did,
+      siid: 2,
+      eiid: 1,
+      arguments: {
+        type: 'identified',
+        data: [
+          {piid: 1, value: true},
+          {piid: 2, value: {vendor: 42}},
+        ],
+      },
+    },
+  });
+
+  expect(connection.receivedEvents).toEqual([
+    {
+      name: 'changed',
+      arguments: [
+        {property: TEST_PRIMARY_RESOURCE.properties.on, value: true},
+        {
+          property: TEST_EVENT_ARGUMENT_PROPERTY,
+          value: {vendor: 42},
+        },
+      ],
+    },
+  ]);
+});
+
+test('rejects structurally invalid event arguments atomically', () => {
   const connection = createEventConnection();
 
   expect(() =>
@@ -1118,10 +1167,7 @@ test('rejects event arguments with wrong PIIDs or property values atomically', (
         eiid: 1,
         arguments: {
           type: 'identified',
-          data: [
-            {piid: 1, value: true},
-            {piid: 1, value: false},
-          ],
+          data: [{piid: 1, value: true}, {piid: 2} as never],
         },
       },
     }),
@@ -1137,12 +1183,12 @@ test('rejects event arguments with wrong PIIDs or property values atomically', (
           type: 'identified',
           data: [
             {piid: 1, value: true},
-            {piid: 2, value: 101},
+            {piid: 1, value: false},
           ],
         },
       },
     }),
-  ).toThrow('Invalid MIoT ranged property state.');
+  ).toThrow('Invalid MIoT endpoint event notification arguments.');
   expect(() =>
     connection.handleNotification({
       type: 'event',
@@ -2532,6 +2578,13 @@ class TestPropertyHelperEndpointConnection extends MiotEndpointConnection<
       ?.raw;
   }
 
+  get availableModeCodecRaw(): unknown {
+    return this.getPropertyValueCodec(
+      'mode',
+      this.modeCodecDefinition,
+    )?.readAvailable()?.raw;
+  }
+
   get missingSpeedCodecAvailable(): boolean {
     return (
       this.getPropertyValueCodec(
@@ -2722,14 +2775,18 @@ class TestSelectedSnapshotEndpointConnection extends TestMultiResourceEndpointCo
   }
 }
 
-class TestEventEndpointConnection extends MiotEndpointConnection<never> {
+class TestEventEndpointConnection extends MiotEndpointConnection<
+  never,
+  MiotPropertySchema,
+  typeof _TEST_EVENT_SCHEMA
+> {
   readonly receivedEvents: Array<{
     readonly name: string;
     readonly arguments: readonly MiotEndpointEventArgument[];
   }> = [];
 
   protected override handleEvent(
-    name: string,
+    name: MiotEventSchemaNames<typeof _TEST_EVENT_SCHEMA>,
     _event: MiotSpecEvent,
     args: readonly MiotEndpointEventArgument[],
   ): void {

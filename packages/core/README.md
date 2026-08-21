@@ -15,13 +15,15 @@ execute prepared commands. This keeps automation code available even while a
 provider is disconnected or a binding has not been configured yet.
 
 The built-in device namespace includes lights, fans, air conditioners,
-dehumidifiers, temperature/humidity sensors, motion sensors, and pet feeders.
+dehumidifiers, door locks, temperature/humidity sensors, motion sensors, and
+pet feeders.
 
 ## State and events
 
 Device state is observable through MobX and represents the latest known value.
-Device events represent individual occurrences instead. An event is exposed as
-a callable subscription that returns an idempotent disposer:
+A `DeviceEvent` represents one individual occurrence instead. Devices expose
+events through a callable `DeviceEventSource` that returns an idempotent
+disposer:
 
 ```ts
 const dispose = motionSensor.onMotionDetected(() => {
@@ -33,6 +35,10 @@ The subscription remains attached to the logical endpoint when its provider
 connection is replaced. A device capability may expose both forms when they
 carry different meaning; for example, `MotionDetectionSource` provides the
 current `motionDetected` state and the `onMotionDetected` event.
+
+`DoorLock` similarly keeps lock state and physical door state independent. It
+also exposes typed operation and alert events, because two identical unlocks
+are separate occurrences even when the resulting state is unchanged.
 
 ## Conventions
 

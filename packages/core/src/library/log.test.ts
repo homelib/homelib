@@ -1,4 +1,5 @@
 import {Command} from './command.js';
+import {DeviceEvent} from './event.js';
 import {
   type LogEvent,
   addLogListener,
@@ -25,7 +26,7 @@ test('emits structured endpoint log events', () => {
     });
 
     logEndpointCommand(endpoint, {}, new TestCommand(), 'execute');
-    logEndpointEvent(endpoint, {}, 'motionDetected');
+    logEndpointEvent(endpoint, {}, new TestEvent());
     logEndpointState(
       endpoint,
       {},
@@ -159,6 +160,30 @@ test('falls back to the command description when execution logging fails', () =>
   }
 });
 
+test('falls back to the event class when event logging fails', () => {
+  const endpoint = {};
+  const events: LogEvent[] = [];
+  const removeListener = addLogListener(event => events.push(event));
+
+  try {
+    setEndpointLogTarget(endpoint, {
+      scopePath: ['home'],
+      deviceName: 'device',
+      endpointName: '',
+    });
+
+    logEndpointEvent(endpoint, {}, new ThrowingTestEvent());
+
+    expect(
+      events
+        .filter(event => event.type === 'endpoint-event')
+        .map(event => event.eventDescription),
+    ).toEqual(['ThrowingTestEvent']);
+  } finally {
+    removeListener();
+  }
+});
+
 test('keeps the connection class description when connection logging fails', () => {
   const endpoint = {};
   const events: LogEvent[] = [];
@@ -212,6 +237,18 @@ class TestCommand extends Command {
 class ThrowingTestCommand extends Command {
   override toLogString(): string {
     throw new Error('Command description failed.');
+  }
+}
+
+class TestEvent extends DeviceEvent<'test'> {
+  override toLogString(): string {
+    return 'motionDetected';
+  }
+}
+
+class ThrowingTestEvent extends DeviceEvent<'throwingTest'> {
+  override toLogString(): string {
+    throw new Error('Event description failed.');
   }
 }
 

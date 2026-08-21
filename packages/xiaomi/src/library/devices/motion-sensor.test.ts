@@ -1,5 +1,6 @@
 import {
   MotionAmbientLightLevelSensorEndpoint,
+  MotionDetectedEvent,
   MotionSensorEndpoint,
 } from '@homelib/core';
 
@@ -296,7 +297,7 @@ test('never requests notification replay for a physical read-only property', () 
   connection.dispose();
 });
 
-test('clears the motion ambient sample for inline and explicit invalidation', () => {
+test('samples only available ambient light for each motion event', () => {
   const {connection, ambientLightLevel, motionDetected} =
     createMotionAmbientLightLevelConnection();
   const property = {
@@ -341,6 +342,17 @@ test('clears the motion ambient sample for inline and explicit invalidation', ()
   expect(connection.ambientLightLevel).toBeUndefined();
   expect(connection.stateRevision).toBe(revision + 1);
 
+  // An event-triggered refresh failure invalidates the new observation before
+  // delivering the event. The previous successful sample must not leak into
+  // this occurrence.
+  connection.handleNotification({
+    type: 'event',
+    data: createEventUpdate(connection, motionDetected),
+  });
+  expect(connection.motionDetected).toBe(true);
+  expect(connection.ambientLightLevel).toBeUndefined();
+  expect(eventAmbientLightLevels).toEqual(['low', undefined]);
+
   updateSnapshot();
   expect(connection.ambientLightLevel).toBeUndefined();
 
@@ -349,6 +361,7 @@ test('clears the motion ambient sample for inline and explicit invalidation', ()
     data: createEventUpdate(connection, motionDetected),
   });
   expect(connection.ambientLightLevel).toBe('low');
+  expect(eventAmbientLightLevels).toEqual(['low', undefined, 'low']);
 
   connection.handleSnapshotInvalidation([property]);
   expect(connection.motionDetected).toBe(true);
@@ -526,10 +539,8 @@ test('matches and becomes ready without the no-motion-duration property', () => 
   });
 
   const {connection, motionDetected} = createConnection(spec);
-  const occurrences: void[] = [];
-  connection.onMotionDetected(() => {
-    occurrences.push(undefined);
-  });
+  const occurrences: MotionDetectedEvent[] = [];
+  connection.onMotionDetected(event => occurrences.push(event));
 
   expect(connection.snapshotProperties).toEqual([]);
   expect(connection.notificationTargets).toEqual([
@@ -560,7 +571,11 @@ test('matches and becomes ready without the no-motion-duration property', () => 
   });
 
   expect(connection.motionDetected).toBe(true);
-  expect(occurrences).toEqual([undefined, undefined]);
+  expect(occurrences).toEqual([
+    expect.any(MotionDetectedEvent),
+    expect.any(MotionDetectedEvent),
+  ]);
+  expect(occurrences[0]).not.toBe(occurrences[1]);
 
   connection.dispose();
 });

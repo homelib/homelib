@@ -1,19 +1,22 @@
 import {computed} from 'mobx';
 
-import type {MotionDetectionSource} from '../device/index.js';
+import type {
+  MotionDetectedEvent,
+  MotionDetectionSource,
+} from '../device/index.js';
 import {Device, type DeviceEntry} from '../device.js';
 import {
   Endpoint,
   type EndpointConnection,
   type EndpointLogState,
 } from '../endpoint.js';
-import type {DeviceEvent} from '../event.js';
+import type {DeviceEventSource} from '../event.js';
 
 export class MotionSensor extends Device implements MotionDetectionSource {
   protected readonly endpoint: MotionSensorEndpoint;
 
   /** Subscribes to future motion detections. */
-  readonly onMotionDetected: DeviceEvent;
+  readonly onMotionDetected: DeviceEventSource<MotionDetectedEvent>;
 
   /** Whether motion is currently detected. */
   @computed
@@ -34,7 +37,6 @@ export class MotionSensorEndpoint<
 > extends Endpoint<never, TConnection> {
   /** Subscribes to future motion detections. */
   readonly onMotionDetected = this.bindEvent(
-    'motionDetected',
     connection => connection.onMotionDetected,
   );
 
@@ -57,7 +59,7 @@ export class MotionSensorEndpoint<
 }
 
 export type MotionSensorEndpointConnection = EndpointConnection<never> & {
-  readonly onMotionDetected: DeviceEvent;
+  readonly onMotionDetected: DeviceEventSource<MotionDetectedEvent>;
   /** Whether motion is currently detected. */
   readonly motionDetected: boolean | undefined;
 };

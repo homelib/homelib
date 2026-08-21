@@ -24,7 +24,8 @@ const AMBIENT_LIGHT_LEVEL_CODEC = createMiotNamedValueCodec<AmbientLightLevel>({
 /** Xiaomi Motion Sensor 2 (lumi.motion.bmgl01), including ambient light level. */
 export class MiotMotionAmbientLightLevelSensorEndpointConnection
   extends MiotMotionSensorEndpointConnectionBase<
-    typeof MiotMotionAmbientLightLevelSensorEndpointConnection.properties
+    typeof MiotMotionAmbientLightLevelSensorEndpointConnection.properties,
+    typeof MiotMotionAmbientLightLevelSensorEndpointConnection.events
   >
   implements MotionAmbientLightLevelSensorEndpointConnection
 {
@@ -63,29 +64,26 @@ export class MiotMotionAmbientLightLevelSensorEndpointConnection
     AMBIENT_LIGHT_LEVEL_CODEC,
   );
 
-  @observable private accessor ambientLightLevelRefreshedForMotion = false;
+  @observable private accessor ambientLightLevelForMotion:
+    AmbientLightLevel | undefined;
 
-  /** The qualitative ambient light level sampled for detected motion. */
+  /** The latest available ambient light level captured for detected motion. */
   @computed
   get ambientLightLevel(): AmbientLightLevel | undefined {
-    if (
-      this.motionDetected !== true ||
-      !this.ambientLightLevelRefreshedForMotion
-    ) {
-      return undefined;
-    }
-
-    return this.ambientLightLevelCodec?.read();
+    return this.motionDetected === true
+      ? this.ambientLightLevelForMotion
+      : undefined;
   }
 
   protected override handleSnapshotPropertyInvalidated(name: string): void {
     if (name === 'ambient-light-level') {
-      this.ambientLightLevelRefreshedForMotion = false;
+      this.ambientLightLevelForMotion = undefined;
     }
   }
 
   protected override handleMotionDetected(): void {
-    this.ambientLightLevelRefreshedForMotion = true;
+    this.ambientLightLevelForMotion =
+      this.ambientLightLevelCodec?.readAvailable();
   }
 
   protected override handlePropertyStateChange(
@@ -97,13 +95,13 @@ export class MiotMotionAmbientLightLevelSensorEndpointConnection
     super.handlePropertyStateChange(name, value);
 
     if (name === 'no-motion-duration' && (value !== 0 || !motionWasDetected)) {
-      this.ambientLightLevelRefreshedForMotion = false;
+      this.ambientLightLevelForMotion = undefined;
     }
   }
 
   protected override handleStateInvalidated(): void {
     super.handleStateInvalidated();
-    this.ambientLightLevelRefreshedForMotion = false;
+    this.ambientLightLevelForMotion = undefined;
   }
 
   protected override shouldRefreshSnapshotOnEvent(

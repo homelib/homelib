@@ -3,6 +3,7 @@ import type {
   AirConditioner,
   BathHeater,
   Dehumidifier,
+  DoorLock,
   Switch,
 } from './devices/index.js';
 import {$home, Home} from './home.js';
@@ -154,6 +155,7 @@ test('rejects a duplicate home before evaluating its tree callback', () => {
 function assertTreeDeclarationTypes(): void {
   const modeledHome = $home('美岸', tree =>
     tree
+      .$doorLock('门锁')
       .$motionSensor('人体传感器')
       .$motionAmbientLightLevelSensor('人体环境光传感器')
       .$smartSpeaker('智能音箱')
@@ -167,6 +169,8 @@ function assertTreeDeclarationTypes(): void {
     modeledHome.人体环境光传感器.motionDetected;
   const ambientLightLevel: 'low' | 'high' | undefined =
     modeledHome.人体环境光传感器.ambientLightLevel;
+  const doorLock: DoorLock = modeledHome.门锁;
+  const doorLocked: boolean | undefined = doorLock.locked;
 
   modeledHome.客厅.空调.turnOn();
   modeledHome.客厅.除湿机.turnOn();
@@ -180,6 +184,7 @@ function assertTreeDeclarationTypes(): void {
 
   void motionDetected;
   void ambientLightLevel;
+  void doorLocked;
 
   const typedHome = $home('tree type fixture', tree =>
     tree
