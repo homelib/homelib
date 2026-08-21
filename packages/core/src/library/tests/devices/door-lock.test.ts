@@ -96,9 +96,9 @@ class TestDoorLockEndpointConnection implements DoorLockEndpointConnection {
 
   readonly operationEvent = new DeviceEventEmitter<DoorLockOperationEvent>();
 
-  readonly onDoorLockAlert = this.alertEvent.subscribe;
+  readonly onDoorLockAlert = this.alertEvent.createSubscriber();
 
-  readonly onDoorLockOperation = this.operationEvent.subscribe;
+  readonly onDoorLockOperation = this.operationEvent.createSubscriber();
 
   @observable accessor ready = false;
 

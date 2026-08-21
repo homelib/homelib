@@ -22,13 +22,23 @@ export type DeviceEventSource<out TEvent extends DeviceEvent<string>> = (
 export class DeviceEventEmitter<in out TEvent extends DeviceEvent<string>> {
   private readonly listenerSet = new Set<DeviceEventListener<TEvent>>();
 
-  readonly subscribe: DeviceEventSource<TEvent> = listener => {
+  subscribe(
+    this: DeviceEventEmitter<TEvent>,
+    listener: DeviceEventListener<TEvent>,
+  ): () => void {
     this.listenerSet.add(listener);
 
     return () => {
       this.listenerSet.delete(listener);
     };
-  };
+  }
+
+  /** Creates a subscriber that can be passed around without its emitter. */
+  createSubscriber(
+    this: DeviceEventEmitter<TEvent>,
+  ): DeviceEventSource<TEvent> {
+    return this.subscribe.bind(this);
+  }
 
   /** Emits one occurrence synchronously to every current listener. */
   emit(event: TEvent): void {

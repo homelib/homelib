@@ -169,9 +169,9 @@ export class MiotDoorLockEndpointConnection
   private readonly operationEvent =
     new DeviceEventEmitter<DoorLockOperationEvent>();
 
-  readonly onDoorLockAlert = this.alertEvent.subscribe;
+  readonly onDoorLockAlert = this.alertEvent.createSubscriber();
 
-  readonly onDoorLockOperation = this.operationEvent.subscribe;
+  readonly onDoorLockOperation = this.operationEvent.createSubscriber();
 
   private readonly multiplexesDoorAndLockState = matchesMiotUrnPattern(
     this.metadata.device.urn,

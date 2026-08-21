@@ -21,6 +21,32 @@ test('emits every occurrence and supports idempotent disposal', () => {
   expect(occurrences).toEqual([1, 1]);
 });
 
+test('creates a subscriber that stays bound to its emitter', () => {
+  const event = new DeviceEventEmitter<TestValueEvent>();
+  const subscribe = event.createSubscriber();
+  const occurrences: number[] = [];
+
+  subscribe(occurrence => occurrences.push(occurrence.value));
+  event.emit(new TestValueEvent(1));
+
+  expect(occurrences).toEqual([1]);
+});
+
+test('requires the emitter as the subscribe receiver', () => {
+  const event = new DeviceEventEmitter<TestValueEvent>();
+  const subscribe = event.subscribe;
+  const createSubscriber = event.createSubscriber;
+
+  expect(() => {
+    // @ts-expect-error A detached subscribe method has no emitter receiver.
+    subscribe(() => undefined);
+  }).toThrow(TypeError);
+  expect(() => {
+    // @ts-expect-error A detached subscriber factory has no emitter receiver.
+    createSubscriber();
+  }).toThrow(TypeError);
+});
+
 test('isolates listener failures', () => {
   const event = new DeviceEventEmitter<TestValueEvent>();
   const error = new Error('listener failed');
@@ -79,8 +105,8 @@ test('keeps marker events, sources, and emitters type-safe', () => {
   const secondEvent = new SecondMarkerEvent();
   const firstEmitter = new DeviceEventEmitter<FirstMarkerEvent>();
   const secondEmitter = new DeviceEventEmitter<SecondMarkerEvent>();
-  const firstSource = firstEmitter.subscribe;
-  const secondSource = secondEmitter.subscribe;
+  const firstSource = firstEmitter.createSubscriber();
+  const secondSource = secondEmitter.createSubscriber();
   const compatible: DeviceEventSource<FirstMarkerEvent> = firstSource;
 
   // @ts-expect-error Different marker occurrences must remain distinct.

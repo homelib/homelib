@@ -74,7 +74,7 @@ export abstract class Endpoint<
     }
 
     this.eventBindings.push(binding);
-    return target.subscribe;
+    return target.createSubscriber();
   }
 
   @action

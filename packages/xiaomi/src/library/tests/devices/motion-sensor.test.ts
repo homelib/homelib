@@ -539,7 +539,8 @@ test('matches and becomes ready without the no-motion-duration property', () => 
 
   const {connection, motionDetected} = createConnection(spec);
   const occurrences: MotionDetectedEvent[] = [];
-  connection.onMotionDetected(event => occurrences.push(event));
+  const onMotionDetected = connection.onMotionDetected;
+  onMotionDetected(event => occurrences.push(event));
 
   expect(connection.snapshotProperties).toEqual([]);
   expect(connection.notificationTargets).toEqual([

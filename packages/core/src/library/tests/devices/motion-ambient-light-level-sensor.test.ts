@@ -93,7 +93,7 @@ test('exposes ambient light level only while motion is detected', () => {
 class TestMotionAmbientLightLevelSensorEndpointConnection implements MotionAmbientLightLevelSensorEndpointConnection {
   readonly motionDetectedEvent = new DeviceEventEmitter<MotionDetectedEvent>();
 
-  readonly onMotionDetected = this.motionDetectedEvent.subscribe;
+  readonly onMotionDetected = this.motionDetectedEvent.createSubscriber();
 
   @observable accessor ready = false;
 

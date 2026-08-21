@@ -93,7 +93,7 @@ test('keeps event subscriptions across connection replacement', () => {
 class TestMotionSensorEndpointConnection implements MotionSensorEndpointConnection {
   readonly motionDetectedEvent = new DeviceEventEmitter<MotionDetectedEvent>();
 
-  readonly onMotionDetected = this.motionDetectedEvent.subscribe;
+  readonly onMotionDetected = this.motionDetectedEvent.createSubscriber();
 
   @observable accessor ready = false;
 

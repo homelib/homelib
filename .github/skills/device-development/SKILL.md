@@ -31,7 +31,7 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 - `packages/core/src/library/devices` 放具体 Device 及只属于该具体设备的 Endpoint、EndpointConnection、Command、Event 和领域类型。不要仅因为实现使用 `abstract` 就将其归入 `device`。
 - 让 Device 聚合 Endpoint，Endpoint 暴露状态与命令，EndpointConnection 声明 provider 连接契约，Command 校验领域输入。
 - 区分持续状态与离散事件：持续状态用 MobX observable/computed 表达最新已知值；会重复发生且每次都需要被观察的 occurrence 用具体 `DeviceEvent` class 表达。对应 Source 同时声明状态与 `DeviceEventSource<TEvent>`，让依赖该能力的自动化无需依赖具体 Device class。
-- provider 完成 raw 到领域事件的解码后，每次构造一个新的具体 `DeviceEvent` 实例，再通过 `DeviceEventEmitter` 发布。Endpoint 用 `bindEvent(connection => connection.event)` 暴露身份稳定的 source；不要把 provider connection 上的 source 直接透传到 Device，以免 rebind 后订阅失效。
+- provider 完成 raw 到领域事件的解码后，每次构造一个新的具体 `DeviceEvent` 实例，再通过 `DeviceEventEmitter` 发布。通过 `emitter.createSubscriber()` 创建可脱离 emitter 使用的 `DeviceEventSource` 并暴露到 EndpointConnection；不要把 `emitter.subscribe` method 直接保存为 `onXxx`，否则会丢失 emitter 的 `this`。Endpoint 用 `bindEvent(connection => connection.event)` 暴露身份稳定的 source；不要把 provider connection 上的 source 直接透传到 Device，以免 rebind 后订阅失效。
 - 事件的默认日志来自 `DeviceEvent.toLogString()`；稳定的内置事件显式覆盖该方法。不要在 Endpoint 中反射 payload 字段或另外传递事件名和 formatter。
 - 补充 namespace/index 导出和对应单元测试。
 

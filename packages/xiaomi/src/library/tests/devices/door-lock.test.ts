@@ -194,9 +194,11 @@ test('emits loock-v5 events despite its numeric vendor timestamp', () => {
   const alerts: DoorLockAlertEvent[] = [];
   const operation = getMiotEndpointConnectionEvent(metadata, 'lock-operation');
   const alert = getMiotEndpointConnectionEvent(metadata, 'lock-alert');
+  const onDoorLockOperation = connection.onDoorLockOperation;
+  const onDoorLockAlert = connection.onDoorLockAlert;
 
-  connection.onDoorLockOperation(event => operations.push(event));
-  connection.onDoorLockAlert(event => alerts.push(event));
+  onDoorLockOperation(event => operations.push(event));
+  onDoorLockAlert(event => alerts.push(event));
   connection.handleNotification({
     type: 'event',
     data: createEventUpdate(metadata, operation, {

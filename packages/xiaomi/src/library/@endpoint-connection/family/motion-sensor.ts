@@ -33,7 +33,7 @@ export abstract class MiotMotionSensorEndpointConnectionBase<
   private readonly motionDetectedEvent =
     new DeviceEventEmitter<MotionDetectedEvent>();
 
-  readonly onMotionDetected = this.motionDetectedEvent.subscribe;
+  readonly onMotionDetected = this.motionDetectedEvent.createSubscriber();
 
   @observable private accessor motionDetectedValue: boolean | undefined;
 
