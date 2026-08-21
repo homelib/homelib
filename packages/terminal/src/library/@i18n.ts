@@ -13,7 +13,8 @@ export type TerminalMessages = {
   readonly startup: {
     readonly run: string;
     readonly providerCount: (count: number) => string;
-    readonly bindingSummary: (bound: number, needsBinding: number) => string;
+    readonly boundCount: (count: number) => string;
+    readonly needsBindingCount: (count: number) => string;
     readonly hint: string;
   };
   readonly providers: {
@@ -71,8 +72,8 @@ const EN_MESSAGES: TerminalMessages = {
   startup: {
     run: 'run',
     providerCount: count => `${count} declared`,
-    bindingSummary: (bound, needsBinding) =>
-      `${bound} bound · ${needsBinding} need binding`,
+    boundCount: count => `${count} bound`,
+    needsBindingCount: count => `${count} need binding`,
     hint: '↑↓ select · enter · ctrl+c exit',
   },
   providers: {
@@ -148,8 +149,8 @@ const ZH_CN_MESSAGES: TerminalMessages = {
   startup: {
     run: '运行',
     providerCount: count => `${count} 个已声明`,
-    bindingSummary: (bound, needsBinding) =>
-      `${bound} 个已完成 · ${needsBinding} 个待绑定`,
+    boundCount: count => `${count} 个已完成`,
+    needsBindingCount: count => `${count} 个待绑定`,
     hint: '↑↓ 选择 · enter 确认 · ctrl+c 退出',
   },
   providers: {

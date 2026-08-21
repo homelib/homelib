@@ -68,7 +68,7 @@ export function StartupPage({
 }
 
 type StartupMenuItemProps = {
-  readonly details: string | undefined;
+  readonly details: React.ReactNode;
   readonly label: string;
   readonly selected: boolean;
 };
@@ -87,7 +87,7 @@ function StartupMenuItem({
         </Text>
       </Box>
 
-      {details !== undefined ? <Text dimColor>{details}</Text> : null}
+      {details}
     </Box>
   );
 }
@@ -96,13 +96,28 @@ function getItemDetails(
   selection: StartupPageSelection,
   model: StartupPageModel,
   messages: ReturnType<typeof useTerminalI18n>,
-): string | undefined {
+): React.ReactNode {
   if (selection === 'providers') {
-    return messages.startup.providerCount(model.providerCount);
+    return (
+      <Text dimColor>
+        {messages.startup.providerCount(model.providerCount)}
+      </Text>
+    );
   } else if (selection === 'bindings') {
-    return messages.startup.bindingSummary(
-      model.devices.boundCount,
-      model.devices.unboundCount,
+    const needsBinding = model.devices.unboundCount > 0;
+
+    return (
+      <Text>
+        <Text dimColor>
+          {messages.startup.boundCount(model.devices.boundCount)} ·{' '}
+        </Text>
+        <Text
+          color={needsBinding ? 'yellow' : undefined}
+          dimColor={!needsBinding}
+        >
+          {messages.startup.needsBindingCount(model.devices.unboundCount)}
+        </Text>
+      </Text>
     );
   }
 
