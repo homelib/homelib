@@ -9,7 +9,7 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {createMiotNamedValueCodec} from '../@endpoint-connection/index.js';
+import {createMiotNamedValueCodecDefinition} from '../@endpoint-connection/index.js';
 import {MiotEndpointConnection} from '../endpoint-connection/index.js';
 import {
   type MiotActionSchema,
@@ -20,9 +20,10 @@ import {
   resolveMiotActionSchema,
 } from '../miot/index.js';
 
-const PET_FOOD_LEVEL_CODEC = createMiotNamedValueCodec<PetFoodLevel>({
-  '*': {normal: 0, low: 1},
-});
+const PET_FOOD_LEVEL_CODEC_DEFINITION =
+  createMiotNamedValueCodecDefinition<PetFoodLevel>({
+    '*': {normal: 0, low: 1},
+  });
 
 export class MiotPetFeederEndpointConnection
   extends MiotEndpointConnection<
@@ -55,14 +56,14 @@ export class MiotPetFeederEndpointConnection
     },
   } as const satisfies MiotPropertySchema;
 
-  private readonly foodLevelCodec = this.getPropertyValueCodec(
+  private readonly foodLevelBinding = this.bindPropertyValue(
     'pet-food-left-level',
-    PET_FOOD_LEVEL_CODEC,
+    PET_FOOD_LEVEL_CODEC_DEFINITION,
   );
 
   @computed
   get foodLevel(): PetFoodLevel | undefined {
-    return this.foodLevelCodec?.read();
+    return this.foodLevelBinding?.read();
   }
 
   @computed

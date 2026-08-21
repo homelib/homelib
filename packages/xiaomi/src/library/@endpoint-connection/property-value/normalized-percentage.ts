@@ -1,8 +1,7 @@
+import type {MiotPropertyValueCodecDefinition} from '../../endpoint-connection/index.js';
 import {encodeMiotPropertyValue} from '../../miot/index.js';
 
-import type {MiotPropertyValueCodec} from './codec.js';
-
-export const NORMALIZED_PERCENTAGE_PROPERTY_CODEC: MiotPropertyValueCodec<
+export const NORMALIZED_PERCENTAGE_PROPERTY_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
   number,
   number
 > = {

@@ -11,7 +11,6 @@ import {action, computed, observable} from 'mobx';
 import * as x from 'x-value';
 
 import {
-  type MiotEncodedPropertyValue,
   type MiotEvent,
   type MiotEventArgument,
   type MiotEventArguments,
@@ -22,6 +21,7 @@ import {
   type MiotProperty,
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
+  type MiotPropertyValue,
   type MiotResolvedSpecProperty,
   type MiotSpecEvent,
   type MiotSpecProperty,
@@ -33,6 +33,11 @@ import {
   isValidMiotSpecValueRange,
 } from '../miot/index.js';
 import type {MiotProvider} from '../provider.js';
+
+import type {
+  MiotPropertyValueBinding,
+  MiotPropertyValueCodecDefinition,
+} from './property-value.js';
 
 const MIOT_NUMERIC_FORMAT_RANGES: Readonly<
   Record<string, readonly [minimum: number, maximum: number] | undefined>
@@ -159,7 +164,7 @@ export abstract class MiotEndpointConnection<
 
   private readonly observationRevisionMap = new Map<string, number>();
 
-  private readonly propertyValueCodecCache = new WeakMap<
+  private readonly propertyValueBindingCache = new WeakMap<
     object,
     Map<string, unknown>
   >();
@@ -635,83 +640,62 @@ export abstract class MiotEndpointConnection<
    *
    * The physical property, raw state, and complete device URN are connection
    * concerns; concrete devices only provide the domain mapping. The returned
-   * codec is cached for the connection lifetime. `read` decodes the last known
-   * value, while `readAvailable` only decodes a currently available
-   * observation. A codec may still be unavailable when an optional property
-   * is absent or its mapping does not support this physical device.
+   * binding is cached for the connection lifetime. `read` decodes the last
+   * known value, while `readAvailable` only decodes a currently available
+   * observation. A binding may still be unavailable when an optional property
+   * is absent or its definition does not support this physical device.
    */
-  protected getPropertyValueCodec<
+  protected bindPropertyValue<
     const TName extends Extract<
       keyof MiotEndpointConnectionSchemaProperties<TSchema>,
       string
     >,
     TDomain,
-    TEncoded extends MiotEncodedPropertyValue,
+    TRaw extends MiotPropertyValue,
   >(
     name: TName,
-    definition: {
-      readonly resolve: (context: {
-        readonly deviceType: string;
-        readonly property: MiotResolvedSpecProperty;
-      }) =>
-        | {
-            readonly decode: (raw: unknown) => TDomain | undefined;
-            readonly encode: (value: TDomain) => TEncoded;
-          }
-        | undefined;
-    },
-  ):
-    | {
-        readonly read: () => TDomain | undefined;
-        readonly readAvailable: () => TDomain | undefined;
-        readonly encode: (value: TDomain) => TEncoded;
-      }
-    | undefined {
-    let codecMap = this.propertyValueCodecCache.get(definition);
+    definition: MiotPropertyValueCodecDefinition<TDomain, TRaw>,
+  ): MiotPropertyValueBinding<TDomain, TRaw> | undefined {
+    let bindingMap = this.propertyValueBindingCache.get(definition);
 
-    if (codecMap?.has(name)) {
-      return codecMap.get(name) as
-        | {
-            readonly read: () => TDomain | undefined;
-            readonly readAvailable: () => TDomain | undefined;
-            readonly encode: (value: TDomain) => TEncoded;
-          }
-        | undefined;
+    if (bindingMap?.has(name)) {
+      return bindingMap.get(name) as
+        MiotPropertyValueBinding<TDomain, TRaw> | undefined;
     }
 
-    if (codecMap === undefined) {
-      codecMap = new Map();
-      this.propertyValueCodecCache.set(definition, codecMap);
+    if (bindingMap === undefined) {
+      bindingMap = new Map();
+      this.propertyValueBindingCache.set(definition, bindingMap);
     }
 
     const property = this.getProperty(name);
 
     if (property === undefined) {
-      codecMap.set(name, undefined);
+      bindingMap.set(name, undefined);
       return undefined;
     }
 
-    const resolved = definition.resolve({
+    const codec = definition.resolve({
       deviceType: this.metadata.device.urn,
       property,
     });
 
-    if (resolved === undefined) {
-      codecMap.set(name, undefined);
+    if (codec === undefined) {
+      bindingMap.set(name, undefined);
       return undefined;
     }
 
-    const codec = {
-      read: () => resolved.decode(this.getLastKnownPropertyState(name)),
+    const binding: MiotPropertyValueBinding<TDomain, TRaw> = {
+      read: () => codec.decode(this.getLastKnownPropertyState(name)),
       readAvailable: () => {
         const raw = this.getCommandEffectState(name);
-        return raw === undefined ? undefined : resolved.decode(raw);
+        return raw === undefined ? undefined : codec.decode(raw);
       },
-      encode: (value: TDomain) => resolved.encode(value),
+      encode: value => codec.encode(value),
     };
 
-    codecMap.set(name, codec);
-    return codec;
+    bindingMap.set(name, binding);
+    return binding;
   }
 
   private getLastKnownPropertyState(name: string): unknown {

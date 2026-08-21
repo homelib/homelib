@@ -1,5 +1,6 @@
 import {CommandError} from '@homelib/core';
 
+import type {MiotPropertyValueCodecDefinition} from '../../endpoint-connection/index.js';
 import {
   type MiotUrnPattern,
   canonicalizeMiotPropertyValue,
@@ -8,23 +9,21 @@ import {
   selectMiotUrnPatternValue,
 } from '../../miot/index.js';
 
-import type {MiotPropertyValueCodec} from './codec.js';
-
 export type MiotNamedValueCodecMappings<TDomain extends string> = Readonly<
   Record<MiotUrnPattern, Readonly<Partial<Record<TDomain, number>>>>
 >;
 
 /**
- * Creates a numeric codec with device-URN-specific domain names.
+ * Creates a numeric codec definition with device-URN-specific domain names.
  *
  * A selected branch may intentionally describe only part of the domain. A
  * raw mapping that the physical property's format, range, or value list does
  * not support is unavailable for that device, while an observed raw value
  * absent from the mapping decodes to undefined.
  */
-export function createMiotNamedValueCodec<TDomain extends string>(
+export function createMiotNamedValueCodecDefinition<TDomain extends string>(
   mappings: MiotNamedValueCodecMappings<TDomain>,
-): MiotPropertyValueCodec<TDomain, number> {
+): MiotPropertyValueCodecDefinition<TDomain, number> {
   const mappingEntries = Object.entries(mappings);
 
   if (mappingEntries.length === 0) {

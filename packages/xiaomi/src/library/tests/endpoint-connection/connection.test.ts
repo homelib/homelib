@@ -476,20 +476,24 @@ test('provides typed property state helpers across resolved resources', () => {
   expect(connection.mode).toBe(1);
 });
 
-test('resolves device-owned codecs from connection metadata once', () => {
+test('resolves codec definitions and caches their property bindings', () => {
   const connection = createHelperConnection();
   const resolvedModeProperty = {...TEST_HELPER_MODE_PROPERTY, name: 'mode'};
 
-  expect(connection.modeCodecDeviceType).toBe(TEST_HELPER_METADATA.device.urn);
-  expect(connection.modeCodecProperty).toEqual(resolvedModeProperty);
+  expect(connection.modeBindingDeviceType).toBe(
+    TEST_HELPER_METADATA.device.urn,
+  );
+  expect(connection.modeBindingProperty).toEqual(resolvedModeProperty);
   expect(connection.codecResolutionCount).toBe(1);
 
-  expect(connection.modeCodecDeviceType).toBe(TEST_HELPER_METADATA.device.urn);
-  expect(connection.modeCodecProperty).toEqual(resolvedModeProperty);
+  expect(connection.modeBindingDeviceType).toBe(
+    TEST_HELPER_METADATA.device.urn,
+  );
+  expect(connection.modeBindingProperty).toEqual(resolvedModeProperty);
   expect(connection.codecResolutionCount).toBe(1);
-  expect(connection.missingSpeedCodecAvailable).toBe(false);
-  expect(connection.unsupportedModeCodecAvailable).toBe(false);
-  expect(connection.availableModeCodecRaw).toBeUndefined();
+  expect(connection.missingSpeedBindingAvailable).toBe(false);
+  expect(connection.unsupportedModeBindingAvailable).toBe(false);
+  expect(connection.availableModeBindingRaw).toBeUndefined();
 
   connection.handlePropertyUpdate({
     did: TEST_METADATA.device.did,
@@ -498,16 +502,16 @@ test('resolves device-owned codecs from connection metadata once', () => {
     value: 2,
   });
 
-  expect(connection.modeCodecRaw).toBe(2);
-  expect(connection.availableModeCodecRaw).toBe(2);
+  expect(connection.modeBindingRaw).toBe(2);
+  expect(connection.availableModeBindingRaw).toBe(2);
   expect(connection.codecResolutionCount).toBe(1);
 
   connection.handleSnapshotInvalidation([
     {did: TEST_METADATA.device.did, siid: 4, piid: 3},
   ]);
 
-  expect(connection.modeCodecRaw).toBe(2);
-  expect(connection.availableModeCodecRaw).toBeUndefined();
+  expect(connection.modeBindingRaw).toBe(2);
+  expect(connection.availableModeBindingRaw).toBeUndefined();
 });
 
 test('validates range, value-list, and temperature metadata in helpers', () => {
@@ -2563,56 +2567,54 @@ class TestPropertyHelperEndpointConnection extends MiotEndpointConnection<
     return this.codecResolutionCountValue;
   }
 
-  get modeCodecDeviceType(): string | undefined {
-    return this.getPropertyValueCodec('mode', this.modeCodecDefinition)?.read()
+  get modeBindingDeviceType(): string | undefined {
+    return this.bindPropertyValue('mode', this.modeCodecDefinition)?.read()
       ?.deviceType;
   }
 
-  get modeCodecProperty(): MiotSpecProperty | undefined {
-    return this.getPropertyValueCodec('mode', this.modeCodecDefinition)?.read()
+  get modeBindingProperty(): MiotSpecProperty | undefined {
+    return this.bindPropertyValue('mode', this.modeCodecDefinition)?.read()
       ?.property;
   }
 
-  get modeCodecRaw(): unknown {
-    return this.getPropertyValueCodec('mode', this.modeCodecDefinition)?.read()
+  get modeBindingRaw(): unknown {
+    return this.bindPropertyValue('mode', this.modeCodecDefinition)?.read()
       ?.raw;
   }
 
-  get availableModeCodecRaw(): unknown {
-    return this.getPropertyValueCodec(
+  get availableModeBindingRaw(): unknown {
+    return this.bindPropertyValue(
       'mode',
       this.modeCodecDefinition,
     )?.readAvailable()?.raw;
   }
 
-  get missingSpeedCodecAvailable(): boolean {
+  get missingSpeedBindingAvailable(): boolean {
     return (
-      this.getPropertyValueCodec(
+      this.bindPropertyValue(
         'missingSpeed',
         this.missingSpeedCodecDefinition,
       ) !== undefined
     );
   }
 
-  get unsupportedModeCodecAvailable(): boolean {
+  get unsupportedModeBindingAvailable(): boolean {
     return (
-      this.getPropertyValueCodec(
-        'mode',
-        this.unsupportedModeCodecDefinition,
-      ) !== undefined
+      this.bindPropertyValue('mode', this.unsupportedModeCodecDefinition) !==
+      undefined
     );
   }
 
-  get invalidPropertyCodec(): unknown {
-    return this.getPropertyValueCodec(
-      // @ts-expect-error -- Codec aliases are schema-constrained.
+  get invalidPropertyBinding(): unknown {
+    return this.bindPropertyValue(
+      // @ts-expect-error -- Property binding aliases are schema-constrained.
       'missing-mode',
       this.modeCodecDefinition,
     );
   }
 
-  get invalidEncodedPropertyCodec(): unknown {
-    return this.getPropertyValueCodec('mode', {
+  get invalidEncodedPropertyBinding(): unknown {
+    return this.bindPropertyValue('mode', {
       resolve: () => ({
         decode: () => undefined,
         // @ts-expect-error -- A codec must return encoded physical values.

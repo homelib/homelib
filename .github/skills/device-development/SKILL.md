@@ -49,8 +49,10 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 ### 5. MIoT 物理域与设备 codec
 
 - property schema 只按 URN、IID、access 匹配物理属性；`value-list` override 只修正物理 raw domain。resolved property 保留 spec 物理信息，不携带 core named state 或 sentinel 语义。
-- 把 raw 与 core domain 的 named state、sentinel 双向映射放在具体 device 拥有的 typed codec 中；型号差异也由该 codec 按完整 device URN 选择。
-- 具体 `MiotEndpointConnection` 通过 `getPropertyValueCodec(alias, definition)` 把 codec 绑定到 resolved property、完整 device URN 和对应 raw state；状态读取与命令编码复用该 connection-bound codec，不要在调用点自行拼装 resolve context 或把 codec 用到其他 alias 的 raw state。
+- 把 raw 与 core domain 的 named state、sentinel 双向映射放在具体 device 拥有的 typed codec definition 中；型号差异也由该 definition 按完整 device URN 选择。
+- device 拥有 `MiotPropertyValueCodecDefinition`，它按完整 device URN 和 resolved property 解析出仅负责 raw/domain 转换的 `MiotPropertyValueCodec`。
+- 具体 `MiotEndpointConnection` 通过 `bindPropertyValue(alias, definition)` 把 resolved codec 绑定到对应 property alias 的 raw state，得到 `MiotPropertyValueBinding`；状态读取与命令编码复用该 binding，不要在调用点自行拼装 resolve context 或把 codec 用到其他 alias 的 raw state。
+- 三个 property-value contract 统一定义在 `packages/xiaomi/src/library/endpoint-connection/property-value.ts`；跨 concrete device 复用的 codec definition 放在 `packages/xiaomi/src/library/@endpoint-connection/property-value`，binding 的创建与缓存保留在 `packages/xiaomi/src/library/endpoint-connection/connection.ts`。
 - decode 遇到物理 domain 内合法但 codec 未映射的 raw 状态时返回 `undefined`，且不影响 endpoint ready。
 - encode 必须生成 canonical raw，并按 resolved property 的物理 domain 校验；缺少适用映射或 raw 不合法时 fail closed。
 - `MiotCommandEffect` 只接收 codec 已生成的 canonical raw，不解释 core domain，也不选择型号映射。

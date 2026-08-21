@@ -1,6 +1,6 @@
 import {CommandError} from '@homelib/core';
 
-import {createMiotNamedValueCodec} from '../../../@endpoint-connection/property-codec/named-value.js';
+import {createMiotNamedValueCodecDefinition} from '../../../@endpoint-connection/property-value/named-value.js';
 import type {MiotSpecProperty} from '../../../miot/index.js';
 
 const MODE_PROPERTY = {
@@ -24,7 +24,9 @@ const FORMAT_ONLY_MODE_PROPERTY = {
   access: ['read', 'write', 'notify'],
 } as const satisfies MiotSpecProperty;
 
-const MODE_CODEC = createMiotNamedValueCodec<'cool' | 'dry' | 'heat'>({
+const MODE_CODEC_DEFINITION = createMiotNamedValueCodecDefinition<
+  'cool' | 'dry' | 'heat'
+>({
   'urn:miot-spec-v2:device:air-conditioner:0000A004:test-ac:*': {
     cool: 2,
     dry: 3,
@@ -34,7 +36,7 @@ const MODE_CODEC = createMiotNamedValueCodec<'cool' | 'dry' | 'heat'>({
 });
 
 test('encodes and decodes a partial named domain with physical validation', () => {
-  const codec = MODE_CODEC.resolve({
+  const codec = MODE_CODEC_DEFINITION.resolve({
     deviceType: 'urn:miot-spec-v2:device:air-conditioner:0000A004:test-ac:1',
     property: MODE_PROPERTY,
   });
@@ -65,11 +67,11 @@ test('encodes and decodes a partial named domain with physical validation', () =
 });
 
 test('selects the most specific matching device URN branch', () => {
-  const exactCodec = MODE_CODEC.resolve({
+  const exactCodec = MODE_CODEC_DEFINITION.resolve({
     deviceType: 'urn:miot-spec-v2:device:air-conditioner:0000A004:test-ac:2',
     property: MODE_PROPERTY,
   });
-  const fallbackCodec = MODE_CODEC.resolve({
+  const fallbackCodec = MODE_CODEC_DEFINITION.resolve({
     deviceType: 'urn:miot-spec-v2:device:air-conditioner:0000A004:other:1',
     property: MODE_PROPERTY,
   });
@@ -80,21 +82,23 @@ test('selects the most specific matching device URN branch', () => {
 });
 
 test('fails closed when no mapping or no physical value is supported', () => {
-  const exactOnlyCodec = createMiotNamedValueCodec<'cool'>({
+  const exactOnlyCodecDefinition = createMiotNamedValueCodecDefinition<'cool'>({
     'urn:miot-spec-v2:device:air-conditioner:0000A004:test-ac:*': {cool: 2},
   });
-  const unsupportedCodec = createMiotNamedValueCodec<'dry'>({
-    '*': {dry: 3},
-  });
+  const unsupportedCodecDefinition = createMiotNamedValueCodecDefinition<'dry'>(
+    {
+      '*': {dry: 3},
+    },
+  );
 
   expect(
-    exactOnlyCodec.resolve({
+    exactOnlyCodecDefinition.resolve({
       deviceType: 'urn:miot-spec-v2:device:air-conditioner:0000A004:other:1',
       property: MODE_PROPERTY,
     }),
   ).toBeUndefined();
   expect(
-    unsupportedCodec.resolve({
+    unsupportedCodecDefinition.resolve({
       deviceType: 'urn:miot-spec-v2:device:air-conditioner:0000A004:test-ac:1',
       property: MODE_PROPERTY,
     }),
@@ -102,17 +106,17 @@ test('fails closed when no mapping or no physical value is supported', () => {
 });
 
 test('supports named sentinels on ranged and format-only properties', () => {
-  const sentinelCodec = createMiotNamedValueCodec<'auto'>({
+  const sentinelCodecDefinition = createMiotNamedValueCodecDefinition<'auto'>({
     '*': {auto: 0},
   });
-  const rangedCodec = sentinelCodec.resolve({
+  const rangedCodec = sentinelCodecDefinition.resolve({
     deviceType: 'urn:miot-spec-v2:device:fan:0000A005:test:1',
     property: {
       ...FORMAT_ONLY_MODE_PROPERTY,
       'value-range': [0, 5, 1],
     },
   });
-  const formatOnlyCodec = sentinelCodec.resolve({
+  const formatOnlyCodec = sentinelCodecDefinition.resolve({
     deviceType: 'urn:miot-spec-v2:device:fan:0000A005:test:1',
     property: FORMAT_ONLY_MODE_PROPERTY,
   });
@@ -125,9 +129,10 @@ test('supports named sentinels on ranged and format-only properties', () => {
 });
 
 test('accepts a decimal sentinel on a floating-point range step', () => {
-  const codec = createMiotNamedValueCodec<'special'>({
+  const codecDefinition = createMiotNamedValueCodecDefinition<'special'>({
     '*': {special: 0.3},
-  }).resolve({
+  });
+  const codec = codecDefinition.resolve({
     deviceType: 'urn:miot-spec-v2:device:fan:0000A005:test:1',
     property: {
       ...FORMAT_ONLY_MODE_PROPERTY,
@@ -142,22 +147,22 @@ test('accepts a decimal sentinel on a floating-point range step', () => {
 });
 
 test('validates named mappings before resolving a device', () => {
-  expect(() => createMiotNamedValueCodec({})).toThrow(
+  expect(() => createMiotNamedValueCodecDefinition({})).toThrow(
     'A MIoT named value codec must contain a mapping.',
   );
-  expect(() => createMiotNamedValueCodec({'urn:test,': {cool: 2}})).toThrow(
-    'Invalid MIoT value codec URN pattern: urn:test,.',
-  );
-  expect(() => createMiotNamedValueCodec({'*': {}})).toThrow(
+  expect(() =>
+    createMiotNamedValueCodecDefinition({'urn:test,': {cool: 2}}),
+  ).toThrow('Invalid MIoT value codec URN pattern: urn:test,.');
+  expect(() => createMiotNamedValueCodecDefinition({'*': {}})).toThrow(
     'A MIoT named value codec mapping must contain a value: *.',
   );
-  expect(() => createMiotNamedValueCodec({'*': {'': 2}})).toThrow(
+  expect(() => createMiotNamedValueCodecDefinition({'*': {'': 2}})).toThrow(
     'A MIoT named value codec key cannot be empty.',
   );
-  expect(() => createMiotNamedValueCodec({'*': {cool: Number.NaN}})).toThrow(
-    'Invalid MIoT named value codec raw value: cool=NaN.',
-  );
-  expect(() => createMiotNamedValueCodec({'*': {cool: 2, heat: 2}})).toThrow(
-    'Duplicate MIoT named value codec raw value: *=2.',
-  );
+  expect(() =>
+    createMiotNamedValueCodecDefinition({'*': {cool: Number.NaN}}),
+  ).toThrow('Invalid MIoT named value codec raw value: cool=NaN.');
+  expect(() =>
+    createMiotNamedValueCodecDefinition({'*': {cool: 2, heat: 2}}),
+  ).toThrow('Duplicate MIoT named value codec raw value: *=2.');
 });

@@ -7,7 +7,7 @@ import {computed, observable} from 'mobx';
 
 import {
   MiotMotionSensorEndpointConnectionBase,
-  createMiotNamedValueCodec,
+  createMiotNamedValueCodecDefinition,
 } from '../@endpoint-connection/index.js';
 import type {
   MiotEventSchema,
@@ -15,12 +15,13 @@ import type {
   MiotSpecEvent,
 } from '../miot/index.js';
 
-const AMBIENT_LIGHT_LEVEL_CODEC = createMiotNamedValueCodec<AmbientLightLevel>({
-  'urn:miot-spec-v2:device:motion-sensor:0000A014:lumi-bmgl01:1': {
-    low: 1,
-    high: 2,
-  },
-});
+const AMBIENT_LIGHT_LEVEL_CODEC_DEFINITION =
+  createMiotNamedValueCodecDefinition<AmbientLightLevel>({
+    'urn:miot-spec-v2:device:motion-sensor:0000A014:lumi-bmgl01:1': {
+      low: 1,
+      high: 2,
+    },
+  });
 
 /** Xiaomi Motion Sensor 2 (lumi.motion.bmgl01), including ambient light level. */
 export class MiotMotionAmbientLightLevelSensorEndpointConnection
@@ -60,9 +61,9 @@ export class MiotMotionAmbientLightLevelSensorEndpointConnection
     },
   } as const satisfies MiotEventSchema;
 
-  private readonly ambientLightLevelCodec = this.getPropertyValueCodec(
+  private readonly ambientLightLevelBinding = this.bindPropertyValue(
     'ambient-light-level',
-    AMBIENT_LIGHT_LEVEL_CODEC,
+    AMBIENT_LIGHT_LEVEL_CODEC_DEFINITION,
   );
 
   @observable private accessor ambientLightLevelForMotion:
@@ -84,7 +85,7 @@ export class MiotMotionAmbientLightLevelSensorEndpointConnection
 
   protected override handleMotionDetected(): void {
     this.ambientLightLevelForMotion =
-      this.ambientLightLevelCodec?.readAvailable();
+      this.ambientLightLevelBinding?.readAvailable();
   }
 
   protected override handlePropertyStateChange(

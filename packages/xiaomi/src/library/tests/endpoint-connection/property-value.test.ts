@@ -1,6 +1,6 @@
-import type {MiotPropertyValueCodec} from '../../../@endpoint-connection/property-codec/codec.js';
-import type {MiotSpecProperty} from '../../../miot/index.js';
-import {encodeMiotPropertyValue} from '../../../miot/property/value.js';
+import type {MiotPropertyValueCodecDefinition} from '../../endpoint-connection/property-value.js';
+import type {MiotSpecProperty} from '../../miot/index.js';
+import {encodeMiotPropertyValue} from '../../miot/property/value.js';
 
 const MODE_PROPERTY = {
   iid: 1,
@@ -15,8 +15,8 @@ const MODE_PROPERTY = {
   ],
 } as const satisfies MiotSpecProperty;
 
-test('supports custom codecs whose domain combines a sentinel and numbers', () => {
-  const codec = {
+test('supports codec definitions whose domain combines a sentinel and numbers', () => {
+  const definition = {
     resolve({property}) {
       return {
         decode(raw) {
@@ -34,8 +34,8 @@ test('supports custom codecs whose domain combines a sentinel and numbers', () =
         },
       };
     },
-  } satisfies MiotPropertyValueCodec<'auto' | number, number>;
-  const resolved = codec.resolve({
+  } satisfies MiotPropertyValueCodecDefinition<'auto' | number, number>;
+  const codec = definition.resolve({
     deviceType: 'urn:miot-spec-v2:device:fan:0000A005:test:1',
     property: {
       ...MODE_PROPERTY,
@@ -47,11 +47,11 @@ test('supports custom codecs whose domain combines a sentinel and numbers', () =
     },
   });
 
-  expect(resolved.decode(0)).toBe('auto');
-  expect(resolved.decode(1)).toBe(0);
-  expect(resolved.decode(2)).toBe(1);
-  expect(resolved.decode(3)).toBeUndefined();
-  expect(resolved.encode('auto')).toBe(0);
-  expect(resolved.encode(0)).toBe(1);
-  expect(resolved.encode(1)).toBe(2);
+  expect(codec.decode(0)).toBe('auto');
+  expect(codec.decode(1)).toBe(0);
+  expect(codec.decode(2)).toBe(1);
+  expect(codec.decode(3)).toBeUndefined();
+  expect(codec.encode('auto')).toBe(0);
+  expect(codec.encode(0)).toBe(1);
+  expect(codec.encode(1)).toBe(2);
 });

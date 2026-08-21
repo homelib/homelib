@@ -10,9 +10,11 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import type {MiotPropertyValueCodec} from '../@endpoint-connection/index.js';
 import {MiotCommandEffect} from '../command/index.js';
-import {MiotEndpointConnection} from '../endpoint-connection/index.js';
+import {
+  MiotEndpointConnection,
+  type MiotPropertyValueCodecDefinition,
+} from '../endpoint-connection/index.js';
 import {
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
@@ -20,7 +22,10 @@ import {
   isValidMiotSpecValueRange,
 } from '../miot/index.js';
 
-const BRIGHTNESS_CODEC: MiotPropertyValueCodec<number, number> = {
+const BRIGHTNESS_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
+  number,
+  number
+> = {
   resolve({property}) {
     const valueRange = property['value-range'];
 
@@ -46,7 +51,10 @@ const BRIGHTNESS_CODEC: MiotPropertyValueCodec<number, number> = {
   },
 };
 
-const NUMBER_PROPERTY_CODEC: MiotPropertyValueCodec<number, number> = {
+const NUMBER_PROPERTY_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
+  number,
+  number
+> = {
   resolve({property}) {
     return {
       decode(raw) {
@@ -83,14 +91,14 @@ export class MiotLightEndpointConnection
     },
   } as const satisfies MiotPropertySchema;
 
-  private readonly brightnessCodec = this.getPropertyValueCodec(
+  private readonly brightnessBinding = this.bindPropertyValue(
     'brightness',
-    BRIGHTNESS_CODEC,
+    BRIGHTNESS_CODEC_DEFINITION,
   );
 
-  private readonly colorTemperatureCodec = this.getPropertyValueCodec(
+  private readonly colorTemperatureBinding = this.bindPropertyValue(
     'color-temperature',
-    NUMBER_PROPERTY_CODEC,
+    NUMBER_PROPERTY_CODEC_DEFINITION,
   );
 
   @computed
@@ -100,12 +108,12 @@ export class MiotLightEndpointConnection
 
   @computed
   get brightness(): number | undefined {
-    return this.brightnessCodec?.read();
+    return this.brightnessBinding?.read();
   }
 
   @computed
   get colorTemperature(): number | undefined {
-    return this.colorTemperatureCodec?.read();
+    return this.colorTemperatureBinding?.read();
   }
 
   override prepareCommand(command: LightEndpointCommand): CommandExecution {
@@ -116,26 +124,26 @@ export class MiotLightEndpointConnection
         on: encodeMiotPropertyValue(this.properties.on, command.value),
       });
     } else if (command instanceof SetLightBrightnessCommand) {
-      const {brightnessCodec: codec} = this;
+      const {brightnessBinding: binding} = this;
 
-      if (codec === undefined) {
+      if (binding === undefined) {
         throw new CommandError('MIoT light does not support brightness.');
       }
 
       effect = new MiotLightCommandEffect(this, {
-        brightness: codec.encode(command.value),
+        brightness: binding.encode(command.value),
       });
     } else if (command instanceof SetLightColorTemperatureCommand) {
-      const {colorTemperatureCodec: codec} = this;
+      const {colorTemperatureBinding: binding} = this;
 
-      if (codec === undefined) {
+      if (binding === undefined) {
         throw new CommandError(
           'MIoT light does not support color temperature.',
         );
       }
 
       effect = new MiotLightCommandEffect(this, {
-        'color-temperature': codec.encode(command.value),
+        'color-temperature': binding.encode(command.value),
       });
     } else {
       throw new TypeError('Unsupported MIoT light endpoint command.');

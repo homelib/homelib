@@ -13,10 +13,10 @@ import {
 } from '@homelib/core';
 import {computed, observable} from 'mobx';
 
-import type {MiotPropertyValueCodec} from '../@endpoint-connection/index.js';
 import {
   MiotEndpointConnection,
   type MiotEndpointEventArgument,
+  type MiotPropertyValueCodecDefinition,
 } from '../endpoint-connection/index.js';
 import {
   type MiotEventSchema,
@@ -26,7 +26,10 @@ import {
   matchesMiotUrnPattern,
 } from '../miot/index.js';
 
-const DOOR_STATE_CODEC: MiotPropertyValueCodec<DoorState, number> = {
+const DOOR_STATE_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
+  DoorState,
+  number
+> = {
   resolve({deviceType}) {
     if (
       matchesMiotUrnPattern(
@@ -56,7 +59,10 @@ const DOOR_STATE_CODEC: MiotPropertyValueCodec<DoorState, number> = {
   },
 };
 
-const DOOR_LOCKED_CODEC: MiotPropertyValueCodec<boolean, number> = {
+const DOOR_LOCKED_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
+  boolean,
+  number
+> = {
   resolve({deviceType}) {
     if (
       !matchesMiotUrnPattern(
@@ -74,7 +80,10 @@ const DOOR_LOCKED_CODEC: MiotPropertyValueCodec<boolean, number> = {
   },
 };
 
-const LOCK_STATUS_CODEC: MiotPropertyValueCodec<boolean, number> = {
+const LOCK_STATUS_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
+  boolean,
+  number
+> = {
   resolve({deviceType}) {
     if (
       !matchesMiotUrnPattern(
@@ -94,7 +103,10 @@ const LOCK_STATUS_CODEC: MiotPropertyValueCodec<boolean, number> = {
   },
 };
 
-const BATTERY_LEVEL_CODEC: MiotPropertyValueCodec<number, number> = {
+const BATTERY_LEVEL_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
+  number,
+  number
+> = {
   resolve({deviceType}) {
     if (
       !matchesMiotUrnPattern(
@@ -182,45 +194,45 @@ export class MiotDoorLockEndpointConnection
 
   @observable private accessor multiplexedLocked: boolean | undefined;
 
-  private readonly batteryLevelCodec = this.getPropertyValueCodec(
+  private readonly batteryLevelBinding = this.bindPropertyValue(
     'battery-level',
-    BATTERY_LEVEL_CODEC,
+    BATTERY_LEVEL_CODEC_DEFINITION,
   );
 
-  private readonly doorLockedCodec = this.getPropertyValueCodec(
+  private readonly doorLockedBinding = this.bindPropertyValue(
     'door-state',
-    DOOR_LOCKED_CODEC,
+    DOOR_LOCKED_CODEC_DEFINITION,
   );
 
-  private readonly doorStateCodec = this.getPropertyValueCodec(
+  private readonly doorStateBinding = this.bindPropertyValue(
     'door-state',
-    DOOR_STATE_CODEC,
+    DOOR_STATE_CODEC_DEFINITION,
   );
 
-  private readonly lockStatusCodec = this.getPropertyValueCodec(
+  private readonly lockStatusBinding = this.bindPropertyValue(
     'lock-status',
-    LOCK_STATUS_CODEC,
+    LOCK_STATUS_CODEC_DEFINITION,
   );
 
   @computed
   get batteryLevel(): number | undefined {
-    return this.batteryLevelCodec?.read();
+    return this.batteryLevelBinding?.read();
   }
 
   @computed
   get doorState(): DoorState | undefined {
     return this.multiplexesDoorAndLockState
       ? this.multiplexedDoorState
-      : this.doorStateCodec?.read();
+      : this.doorStateBinding?.read();
   }
 
   @computed
   get locked(): boolean | undefined {
     return (
-      this.lockStatusCodec?.read() ??
+      this.lockStatusBinding?.read() ??
       (this.multiplexesDoorAndLockState
         ? this.multiplexedLocked
-        : this.doorLockedCodec?.read())
+        : this.doorLockedBinding?.read())
     );
   }
 
@@ -229,8 +241,8 @@ export class MiotDoorLockEndpointConnection
       return;
     }
 
-    const doorState = this.doorStateCodec?.read();
-    const locked = this.doorLockedCodec?.read();
+    const doorState = this.doorStateBinding?.read();
+    const locked = this.doorLockedBinding?.read();
 
     if (doorState !== undefined) {
       this.multiplexedDoorState = doorState;

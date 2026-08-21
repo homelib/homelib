@@ -15,12 +15,12 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {
-  type MiotPropertyValueCodec,
-  createMiotNamedValueCodec,
-} from '../@endpoint-connection/index.js';
+import {createMiotNamedValueCodecDefinition} from '../@endpoint-connection/index.js';
 import {MiotCommandEffect} from '../command/index.js';
-import {MiotEndpointConnection} from '../endpoint-connection/index.js';
+import {
+  MiotEndpointConnection,
+  type MiotPropertyValueCodecDefinition,
+} from '../endpoint-connection/index.js';
 import {
   type MiotActionSchema,
   MiotInvokeActionRequest,
@@ -30,16 +30,20 @@ import {
   resolveMiotActionSchema,
 } from '../miot/index.js';
 
-const BATH_HEATER_MODE_CODEC = createMiotNamedValueCodec<BathHeaterMode>({
-  'urn:miot-spec-v2:device:bath-heater:0000A028:yeelink-v5': {
-    dry: 1,
-    defog: 2,
-    'quick-defog': 3,
-    'quick-heat': 4,
-  },
-});
+const BATH_HEATER_MODE_CODEC_DEFINITION =
+  createMiotNamedValueCodecDefinition<BathHeaterMode>({
+    'urn:miot-spec-v2:device:bath-heater:0000A028:yeelink-v5': {
+      dry: 1,
+      defog: 2,
+      'quick-defog': 3,
+      'quick-heat': 4,
+    },
+  });
 
-const TEMPERATURE_CODEC: MiotPropertyValueCodec<Temperature, number> = {
+const TEMPERATURE_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
+  Temperature,
+  number
+> = {
   resolve({property}) {
     if (property.unit !== 'celsius') {
       return undefined;
@@ -96,24 +100,24 @@ export class MiotBathHeaterEndpointConnection
     },
   } as const satisfies MiotPropertySchema;
 
-  private readonly modeCodec = this.getPropertyValueCodec(
+  private readonly modeBinding = this.bindPropertyValue(
     'mode',
-    BATH_HEATER_MODE_CODEC,
+    BATH_HEATER_MODE_CODEC_DEFINITION,
   );
 
-  private readonly targetTemperatureCodec = this.getPropertyValueCodec(
+  private readonly targetTemperatureBinding = this.bindPropertyValue(
     'target-temperature',
-    TEMPERATURE_CODEC,
+    TEMPERATURE_CODEC_DEFINITION,
   );
 
-  private readonly temperatureCodec = this.getPropertyValueCodec(
+  private readonly temperatureBinding = this.bindPropertyValue(
     'temperature',
-    TEMPERATURE_CODEC,
+    TEMPERATURE_CODEC_DEFINITION,
   );
 
   @computed
   get mode(): BathHeaterMode | undefined {
-    return this.modeCodec?.read();
+    return this.modeBinding?.read();
   }
 
   @computed
@@ -133,12 +137,12 @@ export class MiotBathHeaterEndpointConnection
 
   @computed
   get targetTemperature(): Temperature | undefined {
-    return this.targetTemperatureCodec?.read();
+    return this.targetTemperatureBinding?.read();
   }
 
   @computed
   get temperature(): Temperature | undefined {
-    return this.temperatureCodec?.read();
+    return this.temperatureBinding?.read();
   }
 
   override prepareCommand(
@@ -156,15 +160,15 @@ export class MiotBathHeaterEndpointConnection
     let effect: MiotBathHeaterCommandEffect;
 
     if (command instanceof SetBathHeaterModeCommand) {
-      const {modeCodec: codec} = this;
+      const {modeBinding: binding} = this;
 
-      if (codec === undefined) {
+      if (binding === undefined) {
         throw new CommandError('MIoT bath heater does not support mode.');
       }
 
       effect = new MiotBathHeaterCommandEffect(
         this,
-        {mode: codec.encode(command.value)},
+        {mode: binding.encode(command.value)},
         {mode: command.value},
       );
     } else if (command instanceof SetBathHeaterHeatingCommand) {
@@ -189,16 +193,16 @@ export class MiotBathHeaterEndpointConnection
         ),
       });
     } else if (command instanceof SetBathHeaterTargetTemperatureCommand) {
-      const {targetTemperatureCodec: codec} = this;
+      const {targetTemperatureBinding: binding} = this;
 
-      if (codec === undefined) {
+      if (binding === undefined) {
         throw new CommandError(
           'MIoT bath heater does not support target temperature.',
         );
       }
 
       effect = new MiotBathHeaterCommandEffect(this, {
-        'target-temperature': codec.encode(command.value),
+        'target-temperature': binding.encode(command.value),
       });
     } else {
       throw new TypeError('Unsupported MIoT bath heater endpoint command.');

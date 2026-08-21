@@ -12,12 +12,12 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {
-  type MiotPropertyValueCodec,
-  createMiotNamedValueCodec,
-} from '../@endpoint-connection/index.js';
+import {createMiotNamedValueCodecDefinition} from '../@endpoint-connection/index.js';
 import {MiotCommandEffect} from '../command/index.js';
-import {MiotEndpointConnection} from '../endpoint-connection/index.js';
+import {
+  MiotEndpointConnection,
+  type MiotPropertyValueCodecDefinition,
+} from '../endpoint-connection/index.js';
 import {
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
@@ -25,7 +25,7 @@ import {
   isValidMiotSpecValueList,
 } from '../miot/index.js';
 
-const FAN_MODE_CODEC = createMiotNamedValueCodec<FanMode>({
+const FAN_MODE_CODEC_DEFINITION = createMiotNamedValueCodecDefinition<FanMode>({
   'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {
     natural: 0,
     normal: 1,
@@ -36,7 +36,10 @@ const FAN_MODE_CODEC = createMiotNamedValueCodec<FanMode>({
   },
 });
 
-const FAN_SPEED_CODEC: MiotPropertyValueCodec<number, number> = {
+const FAN_SPEED_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
+  number,
+  number
+> = {
   resolve({property}) {
     const valueList = property['value-list'];
 
@@ -98,14 +101,14 @@ export class MiotFanEndpointConnection
     },
   } as const satisfies MiotPropertySchema;
 
-  private readonly modeCodec = this.getPropertyValueCodec(
+  private readonly modeBinding = this.bindPropertyValue(
     'mode',
-    FAN_MODE_CODEC,
+    FAN_MODE_CODEC_DEFINITION,
   );
 
-  private readonly speedCodec = this.getPropertyValueCodec(
+  private readonly speedBinding = this.bindPropertyValue(
     'fan-level',
-    FAN_SPEED_CODEC,
+    FAN_SPEED_CODEC_DEFINITION,
   );
 
   @computed
@@ -115,19 +118,19 @@ export class MiotFanEndpointConnection
 
   @computed
   get mode(): FanMode | undefined {
-    return this.modeCodec?.read();
+    return this.modeBinding?.read();
   }
 
   @computed
   get speed(): number | undefined {
-    const {speedCodec: codec} = this;
+    const {speedBinding: binding} = this;
 
-    if (codec === undefined) {
+    if (binding === undefined) {
       return undefined;
     }
 
     const raw = this.getNumberPropertyState('fan-level');
-    return raw === undefined ? 0 : codec.read();
+    return raw === undefined ? 0 : binding.read();
   }
 
   @computed
@@ -143,26 +146,26 @@ export class MiotFanEndpointConnection
         on: encodeMiotPropertyValue(this.properties.on, command.value),
       });
     } else if (command instanceof SetFanModeCommand) {
-      const {modeCodec: codec} = this;
+      const {modeBinding: binding} = this;
 
-      if (codec === undefined) {
+      if (binding === undefined) {
         throw new CommandError('MIoT fan does not support mode.');
       }
 
-      const value = codec.encode(command.value);
+      const value = binding.encode(command.value);
       effect = new MiotFanCommandEffect(
         this,
         {mode: value},
         {mode: command.value},
       );
     } else if (command instanceof SetFanSpeedCommand) {
-      const {speedCodec: codec} = this;
+      const {speedBinding: binding} = this;
 
-      if (codec === undefined) {
+      if (binding === undefined) {
         throw new CommandError('MIoT fan does not support speed.');
       }
 
-      const value = codec.encode(command.value);
+      const value = binding.encode(command.value);
       effect = new MiotFanCommandEffect(this, {'fan-level': value});
     } else if (command instanceof SetFanHorizontalSwingCommand) {
       if (this.properties['horizontal-swing'] === undefined) {
