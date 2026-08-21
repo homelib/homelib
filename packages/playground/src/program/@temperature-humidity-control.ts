@@ -20,6 +20,8 @@ const HEAT_MODE_FAN_SPEED_TEMPERATURE_DIFFERENCE = 4;
 // 很多垃圾空调到了指定温度后还会继续制冷，所以需要一个后退值。
 const TEMPERATURE_BACKOFF = 4;
 
+const VERY_HIGH_RELATIVE_HUMIDITY_OFFSET = 10;
+
 const SOFT_OFF_DEHUMIDIFIER_RELATIVE_HUMIDITY = 1;
 
 export function setupTemperatureHumidityControl(
@@ -108,9 +110,20 @@ export function setupTemperatureHumidityControl(
   ]);
 
   const relativeHumidityMatcher = new StateMatcher<
-    'high' | 'ideal' | 'low',
+    'very-high' | 'high' | 'ideal' | 'low',
     number
   >([
+    {
+      state: 'very-high',
+      enter: relativeHumidity =>
+        relativeHumidity >=
+        idealRelativeHumidityUpperLimit + VERY_HIGH_RELATIVE_HUMIDITY_OFFSET,
+      leave: relativeHumidity =>
+        relativeHumidity <
+        idealRelativeHumidityUpperLimit +
+          VERY_HIGH_RELATIVE_HUMIDITY_OFFSET -
+          idealRelativeHumidityTolerance,
+    },
     {
       state: 'high',
       enter: relativeHumidity =>
@@ -266,7 +279,7 @@ export function setupTemperatureHumidityControl(
         break;
       case 'high':
         switch (relativeHumidityState.state) {
-          case 'high':
+          case 'very-high':
             setAirConditionerDryMode();
             break;
           default:
