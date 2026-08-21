@@ -4,11 +4,11 @@ import {
   type RelativeHumiditySource,
   Temperature,
   type TemperatureSource,
-  autorun,
 } from '@homelib/core';
 import {
   StateMatcher,
   getTemperatureByApparentTemperatureAndRelativeHumidity,
+  whenever,
 } from '@homelib/utils';
 import _ from 'lodash';
 
@@ -138,23 +138,22 @@ export function setupTemperatureHumidityControl(
     },
   ]);
 
-  autorun(() => {
-    if (
-      !airConditioner.ready ||
-      !dehumidifier.ready ||
-      !temperatureSensor.ready ||
-      !humiditySensor.ready
-    ) {
-      return;
-    }
-
+  whenever(
+    () =>
+      airConditioner.ready &&
+      dehumidifier.ready &&
+      temperatureSensor.ready &&
+      humiditySensor.ready,
+  ).autorun(() => {
     const on = onGetter();
 
     if (on === undefined) {
+      console.info(name, '温湿度控制开启状态未知');
       return;
     }
 
     if (!on) {
+      console.info(name, '温湿度控制已关闭');
       airConditioner.turnOff();
       dehumidifier.turnOff();
       return;
@@ -165,6 +164,14 @@ export function setupTemperatureHumidityControl(
     const dehumidifierWaterTankFull = dehumidifier.waterTankFull;
 
     if (temperature === undefined || relativeHumidity === undefined) {
+      console.info(name, {
+        temperature,
+        relativeHumidity,
+        idealTemperatureUpperLimit,
+        idealTemperatureLowerLimit,
+        dehumidifierWaterTankFull,
+      });
+
       return;
     }
 
