@@ -15,18 +15,19 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {MiotEndpointConnection} from '../endpoint-connection.js';
+import {
+  type MiotPropertyValueCodec,
+  NORMALIZED_PERCENTAGE_PROPERTY_CODEC,
+  createMiotNamedValueCodec,
+} from '../@endpoint-connection/index.js';
+import {MiotCommandEffect} from '../command/index.js';
+import {MiotEndpointConnection} from '../endpoint-connection/index.js';
 import {
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
+  encodeMiotPropertyValue,
   isValidMiotSpecValueList,
 } from '../miot/index.js';
-
-import {
-  type MiotPropertyValueCodec,
-  createMiotNamedValueCodec,
-} from './@value-codec.js';
-import {MiotCommandEffect, encodeMiotPropertyValue} from './command-effect.js';
 
 const AIR_CONDITIONER_MODES: ReadonlySet<string> = new Set([
   'auto',
@@ -110,21 +111,6 @@ const AIR_CONDITIONER_FAN_SPEED_CODEC: MiotPropertyValueCodec<
           Math.max(0, Math.round(value * (levels.length - 1))),
         );
         return encodeMiotPropertyValue(context.property, levels[index]);
-      },
-    };
-  },
-};
-
-const TARGET_RELATIVE_HUMIDITY_CODEC: MiotPropertyValueCodec<number, number> = {
-  resolve({property}) {
-    return {
-      decode(raw) {
-        return typeof raw === 'number' && Number.isFinite(raw)
-          ? raw / 100
-          : undefined;
-      },
-      encode(value) {
-        return encodeMiotPropertyValue(property, value * 100);
       },
     };
   },
@@ -233,7 +219,7 @@ export class MiotAirConditionerEndpointConnection
 
   private readonly targetRelativeHumidityCodec = this.getPropertyValueCodec(
     'target-humidity',
-    TARGET_RELATIVE_HUMIDITY_CODEC,
+    NORMALIZED_PERCENTAGE_PROPERTY_CODEC,
   );
 
   @computed

@@ -6,7 +6,7 @@ import {type IClientOptions, type MqttClient, connectAsync} from 'mqtt';
 import {
   MiotEndpointConnectionTransport,
   MiotEndpointConnectionTransportUnavailableError,
-} from '../endpoint-connection.js';
+} from '../endpoint-connection/index.js';
 import {
   type MiotExecutionRequest,
   type MiotExecutionResult,

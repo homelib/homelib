@@ -1,6 +1,11 @@
 import mufan, {configs} from '@mufan/eslint-plugin';
 import {defineConfig, globalIgnores} from 'eslint/config';
 
+const LIBRARY_TEST_RULES = {
+  '@mufan/import': 'off',
+  '@mufan/scoped-modules': 'off',
+};
+
 export default defineConfig([
   globalIgnores([
     'packages/core/bld/',
@@ -46,8 +51,9 @@ export default defineConfig([
     },
   },
   {
-    files: ['packages/core/src/library/**/*.test.{ts,tsx}'],
+    files: ['packages/core/src/library/tests/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
+    rules: LIBRARY_TEST_RULES,
   },
   // packages/terminal/src/library
   {
@@ -62,8 +68,9 @@ export default defineConfig([
     },
   },
   {
-    files: ['packages/terminal/src/library/**/*.test.{ts,tsx}'],
+    files: ['packages/terminal/src/library/tests/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
+    rules: LIBRARY_TEST_RULES,
   },
   // packages/web/src/library
   {
@@ -94,8 +101,9 @@ export default defineConfig([
     },
   },
   {
-    files: ['packages/utils/src/library/**/*.test.{ts,tsx}'],
+    files: ['packages/utils/src/library/tests/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
+    rules: LIBRARY_TEST_RULES,
   },
   // packages/website/src/www
   {
@@ -138,8 +146,9 @@ export default defineConfig([
     },
   },
   {
-    files: ['packages/xiaomi/src/library/**/*.test.{ts,tsx}'],
+    files: ['packages/xiaomi/src/library/tests/**/*.test.{ts,tsx}'],
     extends: [configs.dev],
+    rules: LIBRARY_TEST_RULES,
   },
   // packages/playground/src/program
   {

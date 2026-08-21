@@ -10,15 +10,15 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {MiotEndpointConnection} from '../endpoint-connection.js';
+import type {MiotPropertyValueCodec} from '../@endpoint-connection/index.js';
+import {MiotCommandEffect} from '../command/index.js';
+import {MiotEndpointConnection} from '../endpoint-connection/index.js';
 import {
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
+  encodeMiotPropertyValue,
   isValidMiotSpecValueRange,
 } from '../miot/index.js';
-
-import {type MiotPropertyValueCodec} from './@value-codec.js';
-import {MiotCommandEffect, encodeMiotPropertyValue} from './command-effect.js';
 
 const BRIGHTNESS_CODEC: MiotPropertyValueCodec<number, number> = {
   resolve({property}) {

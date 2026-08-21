@@ -27,7 +27,8 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 
 ### 3. 定义 core 模型
 
-- 在 `packages/core/src/library/devices` 中保持 Device、Endpoint、EndpointConnection 和 Command 与具体协议无关。
+- `packages/core/src/library/device` 只放在 Device 概念下跨多个具体设备复用的协议无关抽象。
+- `packages/core/src/library/devices` 放具体 Device 及只属于该具体设备的 Endpoint、EndpointConnection、Command、Event 和领域类型。不要仅因为实现使用 `abstract` 就将其归入 `device`。
 - 让 Device 聚合 Endpoint，Endpoint 暴露状态与命令，EndpointConnection 声明 provider 连接契约，Command 校验领域输入。
 - 区分持续状态与离散事件：持续状态用 MobX observable/computed 表达最新已知值；会重复发生且每次都需要被观察的 occurrence 用具体 `DeviceEvent` class 表达。对应 Source 同时声明状态与 `DeviceEventSource<TEvent>`，让依赖该能力的自动化无需依赖具体 Device class。
 - provider 完成 raw 到领域事件的解码后，每次构造一个新的具体 `DeviceEvent` 实例，再通过 `DeviceEventEmitter` 发布。Endpoint 用 `bindEvent(connection => connection.event)` 暴露身份稳定的 source；不要把 provider connection 上的 source 直接透传到 Device，以免 rebind 后订阅失效。
@@ -37,6 +38,7 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 ### 4. 实现 provider 适配
 
 - 在目标 provider package 中实现 core EndpointConnection，并沿用该 provider 现有的连接、schema、导出和注册结构。
+- provider 的 `devices` 目录只放 concrete device adapter 与其专属实现。被多个 concrete adapter 复用的 connection family、codec、effect 或协议原语应进入对应的 provider 领域目录；不要因为它们与某种设备有关就留在 `devices`。
 - 对 Xiaomi MIoT，继承 `MiotEndpointConnection`，定义 `static readonly Endpoint`，并让 properties、actions、events 使用 `as const satisfies ...Schema`。
 - MIoT 设备注册前必须保留 concrete connection constructor 的精确类型；不要将其注解或拓宽为 `MiotEndpointConnectionConstructor`，否则 TypeScript 无法校验 static `events` 与实例 event schema 一致。
 - 明确 required/optional 能力；资源缺失、重复或歧义时 fail closed。
@@ -64,6 +66,7 @@ description: '开发与维护 HomeLib device 及任意 provider 适配。Use whe
 
 ### 7. 测试与验证
 
+- library 测试统一放在该 package 的 `src/library/tests`，按生产代码领域目录分类，并保留 `.test.ts` 或 `.test.tsx` 后缀。测试目录可以跨 scope 导入内部实现，但不得因此放宽生产代码的 scoped-module 边界。
 - 测试 core 状态、日志，以及设备支持命令时的命令和输入校验。
 - 事件测试要覆盖具体 event class 与实例身份、订阅与幂等 dispose、connection rebind、`toLogString()` 及其 fallback，以及关联状态在 callback 前已经更新；事件读取失败时还要验证 last-known 旧值不会泄漏到本次 callback。
 - 测试 provider 成功匹配、缺失/重复/歧义时拒绝、状态更新、错误路径，以及设备支持命令时的命令请求；MIoT codec 还要覆盖 canonical round-trip、合法但未映射的 raw、型号分支和物理 domain 拒绝路径。

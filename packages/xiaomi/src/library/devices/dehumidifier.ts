@@ -12,36 +12,21 @@ import {
 } from '@homelib/core';
 import {computed, observable} from 'mobx';
 
-import {MiotEndpointConnection} from '../endpoint-connection.js';
+import {
+  NORMALIZED_PERCENTAGE_PROPERTY_CODEC,
+  createMiotNamedValueCodec,
+} from '../@endpoint-connection/index.js';
+import {MiotCommandEffect} from '../command/index.js';
+import {MiotEndpointConnection} from '../endpoint-connection/index.js';
 import {
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
+  encodeMiotPropertyValue,
 } from '../miot/index.js';
-
-import {
-  type MiotPropertyValueCodec,
-  createMiotNamedValueCodec,
-} from './@value-codec.js';
-import {MiotCommandEffect, encodeMiotPropertyValue} from './command-effect.js';
 
 const DEHUMIDIFIER_MODE_CODEC = createMiotNamedValueCodec<DehumidifierMode>({
   '*': {auto: 0, sleep: 1, laundry: 2},
 });
-
-const TARGET_RELATIVE_HUMIDITY_CODEC: MiotPropertyValueCodec<number, number> = {
-  resolve({property}) {
-    return {
-      decode(raw) {
-        return typeof raw === 'number' && Number.isFinite(raw)
-          ? raw / 100
-          : undefined;
-      },
-      encode(value) {
-        return encodeMiotPropertyValue(property, value * 100);
-      },
-    };
-  },
-};
 
 export class MiotDehumidifierEndpointConnection
   extends MiotEndpointConnection<
@@ -89,7 +74,7 @@ export class MiotDehumidifierEndpointConnection
 
   private readonly targetRelativeHumidityCodec = this.getPropertyValueCodec(
     'target-humidity',
-    TARGET_RELATIVE_HUMIDITY_CODEC,
+    NORMALIZED_PERCENTAGE_PROPERTY_CODEC,
   );
 
   @observable private accessor waterTankFullValue: boolean | undefined;

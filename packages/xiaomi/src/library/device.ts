@@ -20,7 +20,7 @@ import {
   type MiotEndpointConnectionTransports,
   createMiotEndpointConnectionResolvedMetadata,
   isLegacyMiotEndpointConnectionMetadata,
-} from './endpoint-connection.js';
+} from './endpoint-connection/index.js';
 import {
   type MiotActionSchema,
   type MiotEventSchema,

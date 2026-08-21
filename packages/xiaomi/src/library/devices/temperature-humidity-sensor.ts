@@ -6,7 +6,7 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {MiotEndpointConnection} from '../endpoint-connection.js';
+import {MiotEndpointConnection} from '../endpoint-connection/index.js';
 import type {MiotPropertySchema} from '../miot/index.js';
 
 export class MiotTemperatureHumiditySensorEndpointConnection

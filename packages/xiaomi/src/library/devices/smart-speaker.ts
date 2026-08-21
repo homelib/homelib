@@ -8,17 +8,16 @@ import {
   SpeakSmartSpeakerTextCommand,
 } from '@homelib/core';
 
-import {MiotEndpointConnection} from '../endpoint-connection.js';
+import {MiotEndpointConnection} from '../endpoint-connection/index.js';
 import {
   type MiotActionSchema,
   type MiotActionSchemaMatch,
   MiotInvokeActionRequest,
   type MiotPropertySchema,
+  encodeMiotPropertyValue,
   matchesMiotUrnPattern,
   resolveMiotActionSchema,
 } from '../miot/index.js';
-
-import {encodeMiotPropertyValue} from './command-effect.js';
 
 export class MiotSmartSpeakerEndpointConnection
   extends MiotEndpointConnection<

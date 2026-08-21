@@ -19,7 +19,7 @@ import {
   createMiotEndpointConnectionResolvedMetadata,
   getMiotEndpointConnectionResourceKeys,
   normalizeMiotEndpointConnectionMetadata,
-} from './endpoint-connection.js';
+} from './endpoint-connection/index.js';
 import {MiotSpecClient, type MiotSpecInstance} from './miot/index.js';
 
 const SPEC_REQUEST_CONCURRENCY = 6;

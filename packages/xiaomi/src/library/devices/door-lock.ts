@@ -13,10 +13,11 @@ import {
 } from '@homelib/core';
 import {computed, observable} from 'mobx';
 
+import type {MiotPropertyValueCodec} from '../@endpoint-connection/index.js';
 import {
   MiotEndpointConnection,
   type MiotEndpointEventArgument,
-} from '../endpoint-connection.js';
+} from '../endpoint-connection/index.js';
 import {
   type MiotEventSchema,
   type MiotEventSchemaNames,
@@ -24,8 +25,6 @@ import {
   type MiotSpecEvent,
   matchesMiotUrnPattern,
 } from '../miot/index.js';
-
-import type {MiotPropertyValueCodec} from './@value-codec.js';
 
 const DOOR_STATE_CODEC: MiotPropertyValueCodec<DoorState, number> = {
   resolve({deviceType}) {

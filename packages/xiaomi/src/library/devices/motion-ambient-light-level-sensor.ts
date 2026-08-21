@@ -5,14 +5,15 @@ import {
 } from '@homelib/core';
 import {computed, observable} from 'mobx';
 
+import {
+  MiotMotionSensorEndpointConnectionBase,
+  createMiotNamedValueCodec,
+} from '../@endpoint-connection/index.js';
 import type {
   MiotEventSchema,
   MiotPropertySchema,
   MiotSpecEvent,
 } from '../miot/index.js';
-
-import {MiotMotionSensorEndpointConnectionBase} from './@motion-sensor.js';
-import {createMiotNamedValueCodec} from './@value-codec.js';
 
 const AMBIENT_LIGHT_LEVEL_CODEC = createMiotNamedValueCodec<AmbientLightLevel>({
   'urn:miot-spec-v2:device:motion-sensor:0000A014:lumi-bmgl01:1': {

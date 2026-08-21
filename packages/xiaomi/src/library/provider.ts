@@ -44,7 +44,7 @@ import {
   getMiotEndpointConnectionResourceKeys,
   isLegacyMiotEndpointConnectionMetadata,
   normalizeMiotEndpointConnectionMetadata,
-} from './endpoint-connection.js';
+} from './endpoint-connection/index.js';
 import {
   LocalController,
   type LocalControllerDiscovery,

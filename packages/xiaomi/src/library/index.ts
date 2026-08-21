@@ -82,11 +82,11 @@ declare global {
 export * from './backend/index.js';
 export * from './binding.js';
 export * from './cloud/index.js';
-export * from './command.js';
+export * from './command/index.js';
 export * from './configuration.js';
 export * from './device.js';
 export * from './devices/index.js';
-export * from './endpoint-connection.js';
+export * from './endpoint-connection/index.js';
 export * from './local/index.js';
 export * from './miot/index.js';
 export * from './provider.js';

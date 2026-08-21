@@ -7,13 +7,13 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {MiotEndpointConnection} from '../endpoint-connection.js';
+import {MiotCommandEffect} from '../command/index.js';
+import {MiotEndpointConnection} from '../endpoint-connection/index.js';
 import {
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
+  encodeMiotPropertyValue,
 } from '../miot/index.js';
-
-import {MiotCommandEffect, encodeMiotPropertyValue} from './command-effect.js';
 
 /** Xiaomi Wall Switch (xiaomi.switch.w1). */
 export class MiotSwitchEndpointConnection

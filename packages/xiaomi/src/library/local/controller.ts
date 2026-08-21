@@ -4,7 +4,7 @@ import type {BackendClient, CloudServer} from '../backend/index.js';
 import {
   MiotEndpointConnectionTransport,
   MiotEndpointConnectionTransportUnavailableError,
-} from '../endpoint-connection.js';
+} from '../endpoint-connection/index.js';
 import {
   type MiotExecutionRequest,
   type MiotExecutionResult,

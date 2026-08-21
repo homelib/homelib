@@ -9,7 +9,8 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {MiotEndpointConnection} from '../endpoint-connection.js';
+import {createMiotNamedValueCodec} from '../@endpoint-connection/index.js';
+import {MiotEndpointConnection} from '../endpoint-connection/index.js';
 import {
   type MiotActionSchema,
   MiotInvokeActionRequest,
@@ -18,8 +19,6 @@ import {
   isValidMiotSpecValueRange,
   resolveMiotActionSchema,
 } from '../miot/index.js';
-
-import {createMiotNamedValueCodec} from './@value-codec.js';
 
 const PET_FOOD_LEVEL_CODEC = createMiotNamedValueCodec<PetFoodLevel>({
   '*': {normal: 0, low: 1},

@@ -15,20 +15,20 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {MiotEndpointConnection} from '../endpoint-connection.js';
+import {
+  type MiotPropertyValueCodec,
+  createMiotNamedValueCodec,
+} from '../@endpoint-connection/index.js';
+import {MiotCommandEffect} from '../command/index.js';
+import {MiotEndpointConnection} from '../endpoint-connection/index.js';
 import {
   type MiotActionSchema,
   MiotInvokeActionRequest,
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
+  encodeMiotPropertyValue,
   resolveMiotActionSchema,
 } from '../miot/index.js';
-
-import {
-  type MiotPropertyValueCodec,
-  createMiotNamedValueCodec,
-} from './@value-codec.js';
-import {MiotCommandEffect, encodeMiotPropertyValue} from './command-effect.js';
 
 const BATH_HEATER_MODE_CODEC = createMiotNamedValueCodec<BathHeaterMode>({
   'urn:miot-spec-v2:device:bath-heater:0000A028:yeelink-v5': {

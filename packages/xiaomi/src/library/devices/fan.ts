@@ -12,18 +12,18 @@ import {
 } from '@homelib/core';
 import {computed} from 'mobx';
 
-import {MiotEndpointConnection} from '../endpoint-connection.js';
-import {
-  type MiotPropertySchema,
-  type MiotPropertySchemaProperties,
-  isValidMiotSpecValueList,
-} from '../miot/index.js';
-
 import {
   type MiotPropertyValueCodec,
   createMiotNamedValueCodec,
-} from './@value-codec.js';
-import {MiotCommandEffect, encodeMiotPropertyValue} from './command-effect.js';
+} from '../@endpoint-connection/index.js';
+import {MiotCommandEffect} from '../command/index.js';
+import {MiotEndpointConnection} from '../endpoint-connection/index.js';
+import {
+  type MiotPropertySchema,
+  type MiotPropertySchemaProperties,
+  encodeMiotPropertyValue,
+  isValidMiotSpecValueList,
+} from '../miot/index.js';
 
 const FAN_MODE_CODEC = createMiotNamedValueCodec<FanMode>({
   'urn:miot-spec-v2:device:fan:0000A005:zhimi-*': {

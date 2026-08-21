@@ -1,6 +1,5 @@
 export * from './air-conditioner.js';
 export * from './bath-heater.js';
-export * from './command-effect.js';
 export * from './dehumidifier.js';
 export * from './door-lock.js';
 export * from './fan.js';
@@ -12,4 +11,3 @@ export * from './smart-speaker.js';
 export * from './placeholder.js';
 export * from './switch.js';
 export * from './temperature-humidity-sensor.js';
-export * from './value-range.js';

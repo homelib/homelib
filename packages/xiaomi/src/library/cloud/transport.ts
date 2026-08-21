@@ -1,5 +1,5 @@
 import type {BackendClient} from '../backend/index.js';
-import {MiotEndpointConnectionTransport} from '../endpoint-connection.js';
+import {MiotEndpointConnectionTransport} from '../endpoint-connection/index.js';
 import {
   type MiotExecutionRequest,
   type MiotExecutionResult,

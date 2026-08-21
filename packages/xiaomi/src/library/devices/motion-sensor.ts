@@ -3,9 +3,8 @@ import {
   type MotionSensorEndpointConnection,
 } from '@homelib/core';
 
+import {MiotMotionSensorEndpointConnectionBase} from '../@endpoint-connection/index.js';
 import type {MiotEventSchema, MiotPropertySchema} from '../miot/index.js';
-
-import {MiotMotionSensorEndpointConnectionBase} from './@motion-sensor.js';
 
 export class MiotMotionSensorEndpointConnection
   extends MiotMotionSensorEndpointConnectionBase<
