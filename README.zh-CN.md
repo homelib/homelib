@@ -17,32 +17,44 @@ HomeLib 让你使用功能完整的 JavaScript/TypeScript 编写家庭自动化�
 ## 功能
 
 - 在代码中声明逻辑设备，由 HomeLib 协助完成绑定。
-- 基于 MobX 的响应式设备状态。
+- 基于 MobX 的响应式设备状态与类型化设备事件。
 
 ## 使用方法
 
 创建一个新脚本，然后直接使用 Node.js 运行：
 
 ```ts
-import {$home, autorun, bootstrap} from '@homelib/core';
+import {$home, bootstrap} from '@homelib/core';
+import {whenever} from '@homelib/utils';
 import {$xiaomi} from '@homelib/xiaomi';
 
 $xiaomi('家');
 
 const 家 = $home('家', home =>
-  home.$scope('客厅', room => room.$light('灯').$motionSensor('运动传感器')),
+  home.$temperatureHumiditySensor('传感器').$dehumidifier('除湿机'),
 );
 
 await bootstrap();
 
-autorun(() => {
-  if (家.客厅.运动传感器.motionDetected) {
-    家.客厅.灯.turnOn();
+whenever(() => 家.传感器.ready && 家.除湿机.ready).autorun(() => {
+  if (家.传感器.relativeHumidity === undefined) {
+    return;
+  }
+
+  if (家.传感器.relativeHumidity >= 0.6) {
+    家.除湿机.turnOn();
+  } else if (家.传感器.relativeHumidity <= 0.5) {
+    家.除湿机.turnOff();
   }
 });
 ```
 
-声明回调会创建一棵完全类型安全的树：每一层只能通过属性访问该层已经声明的空间和设备。
+这份声明仍然完全类型安全：`家` 只会暴露其中声明的设备，每个设备也只会暴露自身支持的
+状态与命令。
+
+`whenever()` 只在两个设备就绪期间激活这条规则；期间每当可观察的湿度变化，MobX 都会
+重新运行 `autorun()`。两个不同的阈值可以避免设备在单一临界值附近频繁启停。对于运动检测
+这类独立事件，设备还会提供 `onMotionDetected()` 这样的类型化订阅接口。
 
 终端前端会在 `bootstrap()` 期间处理设置和设备绑定。
 已有绑定时，可以使用 `--run` 直接运行。

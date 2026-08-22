@@ -52,30 +52,29 @@ const CATALOG = {
       },
       features: [
         {
-          title: 'Code-first home tree',
+          title: 'Type-safe home',
           description:
-            'Declare your home, scopes and devices as a fully type-safe tree ' +
-            'in TypeScript.',
+            'Model your home and devices in TypeScript, with types that ' +
+            'mirror the exact structure you declare.',
         },
         {
-          title: 'Reactive by design',
+          title: 'Reactive rules',
           description:
-            'MobX-powered device states, computed values and reactions make ' +
-            'automations feel natural.',
+            'Drive ongoing rules with MobX state, and capture individual ' +
+            'occurrences with typed events.',
         },
         {
           title: 'Agent-ready',
           description:
-            'Typed models, provider adapters, tests and a built-in development ' +
-            'skill let coding agents extend device support from verified ' +
-            'metadata—not guesses.',
+            'Let agents extend device support reliably with verified metadata, ' +
+            'tests and a built-in skill.',
         },
       ],
       example: {
         title: 'Example',
         description:
-          'A minimal HomeLib automation that turns on a light when motion is ' +
-          'detected.',
+          'While both devices are ready, MobX reruns this rule as observable ' +
+          'humidity changes; separate 50% and 60% thresholds prevent rapid toggling.',
       },
       footer: 'MIT Licensed · Built by vilicvane',
     },
@@ -97,25 +96,25 @@ const CATALOG = {
       },
       features: [
         {
-          title: '代码优先的家居树',
+          title: '类型安全的家',
           description:
-            '在 TypeScript 中以完全类型安全的树声明你的家、作用域与设备。',
+            '用 TypeScript 声明家与设备，让类型精确映射你定义的实际结构。',
         },
         {
-          title: '天生响应式',
+          title: '响应式规则',
           description:
-            '基于 MobX 的设备状态、派生值与反应式逻辑，让自动化自然流畅。',
+            '用 MobX 状态持续驱动规则，以类型化事件捕捉运动检测等独立事件。',
         },
         {
           title: 'Agent-ready',
           description:
-            '类型化模型、provider 适配、测试与内置开发 Skill，让编程 Agent 能' +
-            '依据真实 metadata 扩展设备支持，而不是猜测协议语义。',
+            '让 Agent 借助真实 metadata、测试与内置 Skill，可靠扩展设备支持。',
         },
       ],
       example: {
         title: '示例',
-        description: '一个最小的 HomeLib 自动化：检测到运动时开灯。',
+        description:
+          '两个设备就绪期间，每当可观察的湿度变化，MobX 都会重新运行这条规则；50% 与 60% 两个阈值可以避免频繁启停。',
       },
       footer: 'MIT 许可 · 由 vilicvane 构建',
     },

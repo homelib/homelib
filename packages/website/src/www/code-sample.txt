@@ -1,20 +1,25 @@
-import {$home, autorun, bootstrap} from '@homelib/core';
+import {$home, bootstrap} from '@homelib/core';
+import {whenever} from '@homelib/utils';
 import {$xiaomi} from '@homelib/xiaomi';
 
 $xiaomi('home');
 
 const home = $home('home', home =>
-  home.$scope('livingRoom', room =>
-    room
-      .$light('light')
-      .$motionSensor('motionSensor'),
-  ),
+  home
+    .$temperatureHumiditySensor('sensor')
+    .$dehumidifier('dehumidifier'),
 );
 
 await bootstrap();
 
-autorun(() => {
-  if (home.livingRoom.motionSensor.motionDetected) {
-    home.livingRoom.light.turnOn();
+whenever(() => home.sensor.ready && home.dehumidifier.ready).autorun(() => {
+  if (home.sensor.relativeHumidity === undefined) {
+    return;
+  }
+
+  if (home.sensor.relativeHumidity >= 0.6) {
+    home.dehumidifier.turnOn();
+  } else if (home.sensor.relativeHumidity <= 0.5) {
+    home.dehumidifier.turnOff();
   }
 });

@@ -17,35 +17,46 @@ You can now utilize the power of JavaScript ecosystem and enjoy a functional ver
 ## Features
 
 - Declare logical devices in code and HomeLib will help with the bindings.
-- MobX-based reactive device state.
+- MobX-based reactive device state and typed device events.
 
 ## Usage
 
 Create a new script and run it directly with Node.js:
 
 ```ts
-import {$home, autorun, bootstrap} from '@homelib/core';
+import {$home, bootstrap} from '@homelib/core';
+import {whenever} from '@homelib/utils';
 import {$xiaomi} from '@homelib/xiaomi';
 
 $xiaomi('home');
 
 const home = $home('home', home =>
-  home.$scope('livingRoom', room =>
-    room.$light('light').$motionSensor('motionSensor'),
-  ),
+  home.$temperatureHumiditySensor('sensor').$dehumidifier('dehumidifier'),
 );
 
 await bootstrap();
 
-autorun(() => {
-  if (home.livingRoom.motionSensor.motionDetected) {
-    home.livingRoom.light.turnOn();
+whenever(() => home.sensor.ready && home.dehumidifier.ready).autorun(() => {
+  if (home.sensor.relativeHumidity === undefined) {
+    return;
+  }
+
+  if (home.sensor.relativeHumidity >= 0.6) {
+    home.dehumidifier.turnOn();
+  } else if (home.sensor.relativeHumidity <= 0.5) {
+    home.dehumidifier.turnOff();
   }
 });
 ```
 
-The declaration callback creates a fully type-safe tree: only scopes and
-devices declared at each level are available as properties.
+The declaration remains fully type-safe: `home` exposes only the devices
+declared on it, and each device exposes only its supported state and commands.
+
+`whenever()` activates the rule only while both devices are ready. MobX then
+reruns the `autorun()` whenever the observable humidity changes. The two
+different thresholds prevent rapid toggling around a single value. For
+individual occurrences, devices also expose typed events such as
+`onMotionDetected()`.
 
 The terminal frontend handles setup and device binding during `bootstrap()`.
 Use `--run` to run directly with existing bindings.
