@@ -13,7 +13,7 @@ import {
 const GlobalStyle = createGlobalStyle`
   :root {
     --color-accent: #ffc42d;
-    --color-on-accent: #fff;
+    --color-on-accent: #333;
 
     --color-text-primary: #333;
     --color-text-secondary: #666;
@@ -70,12 +70,29 @@ const NavBar = styled.header`
   justify-content: space-between;
 
   border-bottom: 1px solid var(--color-layout-border);
+
+  @media (max-width: 640px) {
+    padding: 0 20px;
+  }
+`;
+
+const Logo = styled.img`
+  width: auto;
+  height: 32px;
+
+  @media (max-width: 480px) {
+    height: 26px;
+  }
 `;
 
 const NavLinks = styled.nav`
   display: flex;
   align-items: center;
   gap: 24px;
+
+  @media (max-width: 640px) {
+    gap: 16px;
+  }
 `;
 
 const NavLink = styled.a`
@@ -84,6 +101,12 @@ const NavLink = styled.a`
 
   &:hover {
     color: var(--color-text-primary);
+  }
+`;
+
+const FeaturesNavLink = styled(NavLink)`
+  @media (max-width: 480px) {
+    display: none;
   }
 `;
 
@@ -110,6 +133,10 @@ const Main = styled.main`
   max-width: 960px;
   margin: 0 auto;
   padding: 64px 32px;
+
+  @media (max-width: 640px) {
+    padding: 48px 20px;
+  }
 `;
 
 const Hero = styled.section`
@@ -119,12 +146,20 @@ const Hero = styled.section`
   text-align: center;
   gap: 16px;
   margin-bottom: 64px;
+
+  @media (max-width: 640px) {
+    margin-bottom: 48px;
+  }
 `;
 
 const HeroTitle = styled.h1`
   font-size: 48px;
   line-height: 1.1;
   color: var(--color-text-primary);
+
+  @media (max-width: 640px) {
+    font-size: 36px;
+  }
 `;
 
 const HeroSubtitle = styled.p`
@@ -138,6 +173,15 @@ const Buttons = styled.div`
   display: flex;
   gap: 12px;
   margin-top: 8px;
+
+  @media (max-width: 480px) {
+    width: 100%;
+    flex-direction: column;
+
+    > a {
+      justify-content: center;
+    }
+  }
 `;
 
 const PrimaryButton = styled.a`
@@ -259,7 +303,7 @@ const Footer = styled.footer`
   color: var(--color-text-secondary);
 `;
 
-const FEATURE_ICONS = [Lucide.Code2, Lucide.Zap, Lucide.Plug];
+const FEATURE_ICONS = [Lucide.Code2, Lucide.Zap, Lucide.Bot];
 
 const LOCALE_STORAGE_KEY = 'homelib-website:locale';
 
@@ -279,6 +323,7 @@ export function App(): ReactElement {
   });
 
   const messages = WEBSITE_MESSAGES[locale];
+  const targetLocale = locale === 'en' ? 'zh-CN' : 'en';
 
   useEffect(() => {
     document.title = messages.docTitle;
@@ -292,7 +337,7 @@ export function App(): ReactElement {
   }, [locale, messages]);
 
   const switchLocale = (): void => {
-    setLocale(locale === 'en' ? 'zh-CN' : 'en');
+    setLocale(targetLocale);
   };
 
   return (
@@ -300,14 +345,20 @@ export function App(): ReactElement {
       <GlobalStyle />
       <Page>
         <NavBar>
-          <img src="homelib-text-light.svg" alt="HomeLib" height={32} />
+          <Logo src="homelib-text-light.svg" alt="HomeLib" />
           <NavLinks>
-            <NavLink href="#features">{messages.nav.features}</NavLink>
+            <FeaturesNavLink href="#features">
+              {messages.nav.features}
+            </FeaturesNavLink>
             <NavLink href="https://github.com/homelib/homelib">
               {messages.nav.github}
             </NavLink>
-            <LanguageToggle type="button" onClick={switchLocale}>
-              {locale === 'en' ? '中文' : 'EN'}
+            <LanguageToggle
+              type="button"
+              aria-label={messages.nav.switchLanguage}
+              onClick={switchLocale}
+            >
+              <span lang={targetLocale}>{locale === 'en' ? '中文' : 'EN'}</span>
             </LanguageToggle>
           </NavLinks>
         </NavBar>

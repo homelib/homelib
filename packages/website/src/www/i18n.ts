@@ -10,6 +10,7 @@ export type WebsiteMessages = {
   nav: {
     features: string;
     github: string;
+    switchLanguage: string;
   };
   hero: {
     title: string;
@@ -34,16 +35,17 @@ const CATALOG = {
   defaultLocale: 'en' as const,
   translations: {
     en: {
-      docTitle: 'HomeLib — Code-first Home Automation',
+      docTitle: 'HomeLib — Code-first, TypeScript-native Home Automation',
       nav: {
         features: 'Features',
         github: 'GitHub',
+        switchLanguage: 'Switch to Simplified Chinese',
       },
       hero: {
         title: 'Home automation, defined in code.',
         subtitle:
-          'HomeLib is a TypeScript-first framework for building dependable ' +
-          'home automation. Declare your home as a type-safe tree, bind real ' +
+          'HomeLib is a code-first home automation framework—TypeScript-native ' +
+          'and agent-ready. Declare your home as a fully typed tree, bind real ' +
           'providers, and let reactive state drive your automations.',
         getStarted: 'Get Started',
         viewOnGitHub: 'View on GitHub',
@@ -62,10 +64,11 @@ const CATALOG = {
             'automations feel natural.',
         },
         {
-          title: 'Provider ecosystem',
+          title: 'Agent-ready',
           description:
-            'Start with MIoT and extend to more protocols through a clean ' +
-            'provider interface.',
+            'Typed models, provider adapters, tests and a built-in development ' +
+            'skill let coding agents extend device support from verified ' +
+            'metadata—not guesses.',
         },
       ],
       example: {
@@ -77,16 +80,18 @@ const CATALOG = {
       footer: 'MIT Licensed · Built by vilicvane',
     },
     'zh-CN': {
-      docTitle: 'HomeLib — 代码优先的家庭自动化',
+      docTitle: 'HomeLib — 代码优先、TypeScript 原生的家庭自动化',
       nav: {
         features: '特性',
         github: 'GitHub',
+        switchLanguage: '切换到英文',
       },
       hero: {
         title: '用代码定义家庭自动化。',
         subtitle:
-          'HomeLib 是一个 TypeScript 优先的框架，用于构建可靠的家庭自动化。' +
-          '以类型安全的树声明你的家，绑定真实设备，让响应式状态驱动你的自动化。',
+          'HomeLib 是一个代码优先、原生面向 TypeScript 且 Agent-ready 的家庭' +
+          '自动化框架。以完全类型安全的树声明你的家，绑定真实设备，让响应式状态' +
+          '驱动自动化。',
         getStarted: '开始使用',
         viewOnGitHub: '在 GitHub 查看',
       },
@@ -102,8 +107,10 @@ const CATALOG = {
             '基于 MobX 的设备状态、派生值与反应式逻辑，让自动化自然流畅。',
         },
         {
-          title: '设备生态',
-          description: '从 MIoT 起步，通过简洁的 provider 接口扩展更多协议。',
+          title: 'Agent-ready',
+          description:
+            '类型化模型、provider 适配、测试与内置开发 Skill，让编程 Agent 能' +
+            '依据真实 metadata 扩展设备支持，而不是猜测协议语义。',
         },
       ],
       example: {
