@@ -7,7 +7,11 @@ import {
   type CloudPropertySnapshot,
   type CloudPropertyUpdate,
 } from '../../cloud/device.js';
-import type {CloudMqttDeviceMessageHandler} from '../../cloud/mqtt.js';
+import type {
+  CloudMqttDeviceMessage,
+  CloudMqttDeviceMessageHandler,
+  CloudMqttEvent,
+} from '../../cloud/mqtt.js';
 
 const DID = 'device-1';
 const FIRST_PROPERTY = {did: DID, siid: 2, piid: 1};
@@ -2515,6 +2519,7 @@ test('publishes notification-only reconnect state before a sibling snapshot read
         did: DID,
         siid: 2,
         eiid: 1,
+        source: 'cloud',
         arguments: {type: 'identified', data: []},
       },
     },
@@ -2618,6 +2623,7 @@ test('keeps notification-only listeners live when a sibling snapshot read fails'
         did: DID,
         siid: 2,
         eiid: 1,
+        source: 'cloud',
         arguments: {type: 'identified', data: []},
       },
     },
@@ -2709,6 +2715,7 @@ test('replays property changes and events in arrival order after an in-flight sn
         did: DID,
         siid: 2,
         eiid: 1,
+        source: 'cloud',
         arguments: {
           type: 'identified',
           data: [{piid: 1, value: 'motion'}],
@@ -2814,6 +2821,7 @@ test('absorbs buffered snapshot-property notifications into the published state'
         did: DID,
         siid: 2,
         eiid: 1,
+        source: 'cloud',
         arguments: {type: 'identified', data: []},
       },
     },
@@ -2979,6 +2987,7 @@ test('carries only refresh-independent notifications into a replacement', async 
         did: DID,
         siid: 2,
         eiid: 1,
+        source: 'cloud',
         arguments: {
           type: 'identified',
           data: [{piid: 1, value: 'old'}],
@@ -2995,6 +3004,7 @@ test('carries only refresh-independent notifications into a replacement', async 
         did: DID,
         siid: 2,
         eiid: 1,
+        source: 'cloud',
         arguments: {
           type: 'identified',
           data: [{piid: 1, value: 'new'}],
@@ -3010,6 +3020,7 @@ test('refreshes a snapshot before delivering a selected event', async () => {
   const refreshedSnapshot = deferred<readonly CloudPropertySnapshot[]>();
   const source = createMessageSource();
   const order: string[] = [];
+  const notificationSources: string[] = [];
   const errors: unknown[] = [];
   let readCount = 0;
   const readPriorities: string[] = [];
@@ -3046,8 +3057,9 @@ test('refreshes a snapshot before delivering a selected event', async () => {
       onSnapshotInvalidated: () => {
         order.push('invalidate');
       },
-      onEventOccurred: () => {
+      onNotification: notification => {
         order.push('event');
+        notificationSources.push(notification.data.source);
       },
       onError: error => {
         errors.push(error);
@@ -3055,13 +3067,16 @@ test('refreshes a snapshot before delivering a selected event', async () => {
     },
   );
 
-  source.send({
-    type: 'event',
-    data: {
-      ...FIRST_EVENT.data,
-      arguments: {type: 'identified', data: []},
+  source.send(
+    {
+      type: 'event',
+      data: {
+        ...FIRST_EVENT.data,
+        arguments: {type: 'identified', data: []},
+      },
     },
-  });
+    'local',
+  );
 
   await waitFor(() => readCount === 2);
   expect(order).toEqual(['state:false']);
@@ -3072,6 +3087,7 @@ test('refreshes a snapshot before delivering a selected event', async () => {
   await waitFor(() => order.length === 3);
 
   expect(order).toEqual(['state:false', 'state:true', 'event']);
+  expect(notificationSources).toEqual(['local']);
   expect(errors).toEqual([]);
 
   await subscription.dispose();
@@ -3752,6 +3768,7 @@ test('routes events only to listeners subscribed to the matching event', async (
       did: DID,
       siid: 2,
       eiid: 1,
+      source: 'cloud',
       arguments: {
         type: 'identified',
         data: [{piid: 7, value: 'event'}],
@@ -3820,6 +3837,7 @@ test('buffers subscribed events until the subscription initializes', async () =>
       did: DID,
       siid: 2,
       eiid: 1,
+      source: 'cloud',
       arguments: {
         type: 'identified',
         data: [{piid: 1, value: 'event'}],
@@ -3848,21 +3866,32 @@ function createMessageSource(): TestMessageSource {
         throw this.unsubscribeError;
       }
     },
-    send(message) {
+    send(message, source = 'cloud') {
       if (handler === undefined) {
         throw new Error('Cloud MQTT handler was not registered.');
       }
 
-      handler(message);
+      handler(
+        message.type === 'event'
+          ? {...message, data: {...message.data, source}}
+          : message,
+      );
     },
   };
 }
+
+type TestDeviceMessage =
+  | Exclude<CloudMqttDeviceMessage, {readonly type: 'event'}>
+  | {
+      readonly type: 'event';
+      readonly data: Omit<CloudMqttEvent, 'source'>;
+    };
 
 type TestMessageSource = CloudDeviceMessageSource & {
   subscribeCount: number;
   unsubscribeCount: number;
   unsubscribeError: Error | undefined;
-  send(message: Parameters<CloudMqttDeviceMessageHandler>[0]): void;
+  send(message: TestDeviceMessage, source?: CloudMqttEvent['source']): void;
 };
 
 function deferred<T>(): Deferred<T> {

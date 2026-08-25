@@ -8,10 +8,12 @@ import {action, computed, observable} from 'mobx';
 import {
   MiotEndpointConnection,
   type MiotEndpointEventArgument,
+  formatMiotEventLogString,
 } from '../../endpoint-connection/index.js';
 import type {
   MiotEventSchema,
   MiotEventSchemaNames,
+  MiotNotificationSource,
   MiotPropertySchema,
   MiotResolvedSpecProperty,
   MiotSpecEvent,
@@ -25,6 +27,19 @@ import type {
  * that keep reporting events without them.
  */
 const MOTION_CLEAR_TIMEOUT = 5 * 60_000;
+
+class MiotMotionDetectedEvent extends MotionDetectedEvent {
+  readonly #source: MiotNotificationSource | undefined;
+
+  constructor(source: MiotNotificationSource | undefined) {
+    super();
+    this.#source = source;
+  }
+
+  override toLogString(): string {
+    return formatMiotEventLogString(super.toLogString(), this.#source);
+  }
+}
 
 export abstract class MiotMotionSensorEndpointConnectionBase<
   TPropertySchema extends MiotPropertySchema,
@@ -56,6 +71,7 @@ export abstract class MiotMotionSensorEndpointConnectionBase<
     name: MiotEventSchemaNames<TEventSchema>,
     _event: MiotSpecEvent,
     _args: readonly MiotEndpointEventArgument[],
+    source: MiotNotificationSource | undefined,
   ): void {
     if (name !== 'motion-detected') {
       throw new TypeError(`Unsupported MIoT motion sensor event: ${name}.`);
@@ -64,7 +80,7 @@ export abstract class MiotMotionSensorEndpointConnectionBase<
     this.setMotionDetected(true);
     this.scheduleMotionClear();
     this.handleMotionDetected();
-    this.motionDetectedEvent.emit(new MotionDetectedEvent());
+    this.motionDetectedEvent.emit(new MiotMotionDetectedEvent(source));
   }
 
   /** Applies device-specific state before the occurrence becomes observable. */

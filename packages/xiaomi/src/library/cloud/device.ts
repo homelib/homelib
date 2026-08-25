@@ -1,6 +1,7 @@
 import type {
   MiotEvent,
   MiotEventArguments,
+  MiotNotificationSource,
   MiotProperty,
 } from '../miot/index.js';
 
@@ -1046,6 +1047,7 @@ export class CloudDeviceChannel {
         siid: data.siid,
         eiid: data.eiid,
         arguments: data.arguments,
+        source: data.source,
       };
       const key = getEventKey(event);
       const notification: CloudDeviceNotification = {
@@ -1254,6 +1256,7 @@ export type CloudEvent = {
   readonly siid: number;
   readonly eiid: number;
   readonly arguments: MiotEventArguments;
+  readonly source: MiotNotificationSource;
 };
 
 export type CloudPropertySnapshot = MiotProperty & {

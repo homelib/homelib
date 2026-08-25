@@ -563,11 +563,11 @@ test('matches and becomes ready without the no-motion-duration property', () => 
 
   connection.handleNotification({
     type: 'event',
-    data: createEventUpdate(connection, motionDetected),
+    data: {...createEventUpdate(connection, motionDetected), source: 'local'},
   });
   connection.handleNotification({
     type: 'event',
-    data: createEventUpdate(connection, motionDetected),
+    data: {...createEventUpdate(connection, motionDetected), source: 'cloud'},
   });
 
   expect(connection.motionDetected).toBe(true);
@@ -576,6 +576,10 @@ test('matches and becomes ready without the no-motion-duration property', () => 
     expect.any(MotionDetectedEvent),
   ]);
   expect(occurrences[0]).not.toBe(occurrences[1]);
+  expect(occurrences.map(event => event.toLogString())).toEqual([
+    'motionDetected source=local',
+    'motionDetected source=cloud',
+  ]);
 
   connection.dispose();
 });

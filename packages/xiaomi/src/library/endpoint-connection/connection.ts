@@ -18,6 +18,7 @@ import {
   type MiotEventSchemaNames,
   type MiotExecutionRequest,
   type MiotExecutionResult,
+  type MiotNotificationSource,
   type MiotProperty,
   type MiotPropertySchema,
   type MiotPropertySchemaProperties,
@@ -326,8 +327,13 @@ export abstract class MiotEndpointConnection<
     }
 
     const event = this.prepareEventNotification(notification.data);
+    this.handleEvent(
+      event.name,
+      event.event,
+      event.arguments,
+      notification.data.source,
+    );
 
-    this.handleEvent(event.name, event.event, event.arguments);
     this.stateRevisionValue++;
   }
 
@@ -429,6 +435,7 @@ export abstract class MiotEndpointConnection<
     name: MiotEventSchemaNames<TEventSchema>,
     _event: MiotSpecEvent,
     _args: readonly MiotEndpointEventArgument[],
+    _source: MiotNotificationSource | undefined,
   ): void {
     throw new TypeError(`Unhandled MIoT endpoint event: ${name}.`);
   }
@@ -1300,6 +1307,7 @@ export type MiotEndpointEventArgument = {
 
 export type MiotEventUpdate = MiotEvent & {
   readonly arguments: MiotEventArguments;
+  readonly source?: MiotNotificationSource;
 };
 
 function resolveMiotEventArguments(

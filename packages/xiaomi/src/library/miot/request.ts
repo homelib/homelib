@@ -56,6 +56,9 @@ export type MiotEvent = {
   readonly eiid: number;
 };
 
+/** The delivery path of one MIoT event occurrence. */
+export type MiotNotificationSource = 'cloud' | 'local';
+
 /** One property value carried by a MIoT event occurrence. */
 export type MiotEventArgument = {
   readonly piid: number;

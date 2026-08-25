@@ -17,14 +17,51 @@ import {
   MiotEndpointConnection,
   type MiotEndpointEventArgument,
   type MiotPropertyValueCodecDefinition,
+  formatMiotEventLogString,
 } from '../endpoint-connection/index.js';
 import {
   type MiotEventSchema,
   type MiotEventSchemaNames,
+  type MiotNotificationSource,
   type MiotPropertySchema,
   type MiotSpecEvent,
   matchesMiotUrnPattern,
 } from '../miot/index.js';
+
+class MiotDoorLockOperationEvent extends DoorLockOperationEvent {
+  readonly #source: MiotNotificationSource | undefined;
+
+  constructor(
+    action: DoorLockOperationAction,
+    method: DoorLockOperationMethod | undefined,
+    operatorId: number | undefined,
+    position: DoorLockOperationPosition | undefined,
+    source: MiotNotificationSource | undefined,
+  ) {
+    super(action, method, operatorId, position);
+    this.#source = source;
+  }
+
+  override toLogString(): string {
+    return formatMiotEventLogString(super.toLogString(), this.#source);
+  }
+}
+
+class MiotDoorLockAlertEvent extends DoorLockAlertEvent {
+  readonly #source: MiotNotificationSource | undefined;
+
+  constructor(
+    type: DoorLockAlertType,
+    source: MiotNotificationSource | undefined,
+  ) {
+    super(type);
+    this.#source = source;
+  }
+
+  override toLogString(): string {
+    return formatMiotEventLogString(super.toLogString(), this.#source);
+  }
+}
 
 const DOOR_STATE_CODEC_DEFINITION: MiotPropertyValueCodecDefinition<
   DoorState,
@@ -257,9 +294,10 @@ export class MiotDoorLockEndpointConnection
     name: MiotEventSchemaNames<typeof MiotDoorLockEndpointConnection.events>,
     event: MiotSpecEvent,
     args: readonly MiotEndpointEventArgument[],
+    source: MiotNotificationSource | undefined,
   ): void {
     if (name === 'lock-operation') {
-      const operation = this.decodeOperation(event, args);
+      const operation = this.decodeOperation(event, args, source);
 
       if (operation !== undefined) {
         this.operationEvent.emit(operation);
@@ -268,7 +306,7 @@ export class MiotDoorLockEndpointConnection
       const alertType = this.decodeAlert(args);
 
       if (alertType !== undefined) {
-        this.alertEvent.emit(new DoorLockAlertEvent(alertType));
+        this.alertEvent.emit(new MiotDoorLockAlertEvent(alertType, source));
       }
     } else {
       throw new TypeError(`Unsupported MIoT door-lock event: ${name}.`);
@@ -282,6 +320,7 @@ export class MiotDoorLockEndpointConnection
   private decodeOperation(
     event: MiotSpecEvent,
     args: readonly MiotEndpointEventArgument[],
+    source: MiotNotificationSource | undefined,
   ): DoorLockOperationEvent | undefined {
     let action: DoorLockOperationAction | undefined;
 
@@ -325,7 +364,13 @@ export class MiotDoorLockEndpointConnection
     );
     const position = this.decodeOperationPosition(positionRaw);
 
-    return new DoorLockOperationEvent(action, method, operatorId, position);
+    return new MiotDoorLockOperationEvent(
+      action,
+      method,
+      operatorId,
+      position,
+      source,
+    );
   }
 
   private decodeOperationMethod(

@@ -39,8 +39,8 @@ test('switches cloud to local and back without accepting late old-source message
   expect(messages).toEqual([
     createPropertyMessage('device-1', 1),
     createPropertyMessage('device-1', 3),
-    createEventMessage('device-1', 4),
-    createIdentifiedEventMessage('device-1', 5),
+    createEventMessage('device-1', 4, 'local'),
+    createIdentifiedEventMessage('device-1', 5, 'local'),
   ]);
 
   cloudUnsubscribe.resolve();
@@ -55,8 +55,8 @@ test('switches cloud to local and back without accepting late old-source message
   expect(messages).toEqual([
     createPropertyMessage('device-1', 1),
     createPropertyMessage('device-1', 3),
-    createEventMessage('device-1', 4),
-    createIdentifiedEventMessage('device-1', 5),
+    createEventMessage('device-1', 4, 'local'),
+    createIdentifiedEventMessage('device-1', 5, 'local'),
     createPropertyMessage('device-1', 5),
   ]);
 
@@ -87,9 +87,9 @@ test('preserves object, array, and mixed local event values as positional', asyn
   localSource.emitEventArguments('device-1', mixedValues);
 
   expect(messages).toEqual([
-    createPositionalEventMessage('device-1', objectValues),
-    createPositionalEventMessage('device-1', arrayValues),
-    createPositionalEventMessage('device-1', mixedValues),
+    createPositionalEventMessage('device-1', objectValues, 'local'),
+    createPositionalEventMessage('device-1', arrayValues, 'local'),
+    createPositionalEventMessage('device-1', mixedValues, 'local'),
   ]);
 
   await client.disconnect();
@@ -121,7 +121,7 @@ test('buffers local messages in arrival order until the source becomes active', 
 
   expect(messages).toEqual([
     createPropertyMessage('device-1', 1),
-    createEventMessage('device-1', 2),
+    createEventMessage('device-1', 2, 'local'),
     createPropertyMessage('device-1', 3),
   ]);
 
@@ -163,7 +163,7 @@ test('discards and cleans up messages from a source replaced while subscribing',
 
   expect(messages).toEqual([
     createPropertyMessage('device-1', 3),
-    createEventMessage('device-1', 4),
+    createEventMessage('device-1', 4, 'local'),
   ]);
 
   await client.disconnect();
@@ -573,13 +573,15 @@ function createPropertyMessage(
 function createEventMessage(
   did: string,
   value: number,
+  source: 'cloud' | 'local' = 'cloud',
 ): CloudMqttDeviceMessage {
-  return createPositionalEventMessage(did, [value]);
+  return createPositionalEventMessage(did, [value], source);
 }
 
 function createPositionalEventMessage(
   did: string,
   values: readonly unknown[],
+  source: 'cloud' | 'local' = 'cloud',
 ): CloudMqttDeviceMessage {
   return {
     type: 'event',
@@ -587,6 +589,7 @@ function createPositionalEventMessage(
       did,
       siid: 3,
       eiid: 1,
+      source,
       arguments: {type: 'positional', data: values},
     },
   };
@@ -595,6 +598,7 @@ function createPositionalEventMessage(
 function createIdentifiedEventMessage(
   did: string,
   value: number,
+  source: 'cloud' | 'local' = 'cloud',
 ): CloudMqttDeviceMessage {
   return {
     type: 'event',
@@ -602,6 +606,7 @@ function createIdentifiedEventMessage(
       did,
       siid: 3,
       eiid: 1,
+      source,
       arguments: {
         type: 'identified',
         data: [{piid: 2, value}],

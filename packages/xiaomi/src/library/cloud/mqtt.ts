@@ -4,6 +4,7 @@ import {type CloudServer, OAUTH2_CLIENT_ID} from '../backend/index.js';
 import type {
   MiotEventArgument,
   MiotEventArguments,
+  MiotNotificationSource,
   MiotProperty,
 } from '../miot/index.js';
 
@@ -527,6 +528,7 @@ export type CloudMqttEvent = {
   readonly siid: number;
   readonly eiid: number;
   readonly arguments: MiotEventArguments;
+  readonly source: MiotNotificationSource;
 };
 
 export type CloudMqttState = {
@@ -601,6 +603,7 @@ function parseCloudMqttMessage(
         siid,
         eiid,
         arguments: {type: 'identified', data: eventArguments},
+        source: 'cloud',
       },
     };
   } else if (parts[2] === 'state') {

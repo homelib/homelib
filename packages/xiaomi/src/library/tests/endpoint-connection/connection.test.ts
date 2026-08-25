@@ -43,6 +43,7 @@ import {
   type MiotEventSchemaNames,
   type MiotExecutionRequest,
   type MiotExecutionResult,
+  type MiotNotificationSource,
   type MiotProperty,
   type MiotPropertySchema,
   MiotSetPropertyRequest,
@@ -1082,6 +1083,23 @@ test('validates and dispatches tagged event notifications once', () => {
       ],
     },
   ]);
+});
+
+test('passes the event notification source through dispatch', () => {
+  const connection = createEventConnection();
+
+  connection.handleNotification({
+    type: 'event',
+    data: {
+      did: TEST_METADATA.device.did,
+      siid: 2,
+      eiid: 1,
+      source: 'local',
+      arguments: {type: 'positional', data: [true, 42]},
+    },
+  });
+
+  expect(connection.receivedEventSources).toEqual(['local']);
 });
 
 test('zips positional event arguments in spec order', () => {
@@ -2787,11 +2805,15 @@ class TestEventEndpointConnection extends MiotEndpointConnection<
     readonly arguments: readonly MiotEndpointEventArgument[];
   }> = [];
 
+  readonly receivedEventSources: Array<string | undefined> = [];
+
   protected override handleEvent(
     name: MiotEventSchemaNames<typeof _TEST_EVENT_SCHEMA>,
     _event: MiotSpecEvent,
     args: readonly MiotEndpointEventArgument[],
+    source: MiotNotificationSource | undefined,
   ): void {
+    this.receivedEventSources.push(source);
     this.receivedEvents.push({name, arguments: args});
   }
 

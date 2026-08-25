@@ -1,7 +1,12 @@
 import {
+  DeviceEntry,
+  DoorLock,
   DoorLockAlertEvent,
   DoorLockEndpoint,
   DoorLockOperationEvent,
+  type EndpointEventLogEvent,
+  addLogListener,
+  setEndpointLogTarget,
 } from '@homelib/core';
 
 import {
@@ -293,6 +298,54 @@ test('emits xiaomi-b03 operations and alerts from identified arguments', () => {
   ]);
   expect(operations[0]).not.toBe(operations[1]);
   expect(alerts[0]).not.toBe(alerts[1]);
+});
+
+test('logs the source of each door-lock event occurrence', () => {
+  const {connection, metadata} = createConnection(createXiaomiB03Spec());
+  const entry = new DeviceEntry('door lock');
+  entry.createInstance(DoorLock);
+  const endpoint = entry.getEndpoint();
+  const logEvents: EndpointEventLogEvent[] = [];
+
+  if (!(endpoint instanceof DoorLockEndpoint)) {
+    throw new Error('Expected a door-lock endpoint.');
+  }
+
+  setEndpointLogTarget(endpoint, {
+    scopePath: ['home'],
+    deviceName: 'door lock',
+    endpointName: '',
+  });
+  endpoint.bindConnection(connection);
+  const removeLogListener = addLogListener(event => {
+    if (event.type === 'endpoint-event') {
+      logEvents.push(event);
+    }
+  });
+  const operation = getMiotEndpointConnectionEvent(metadata, 'lock-operation');
+  const data = createEventUpdate(metadata, operation, {
+    type: 'positional',
+    data: [2, 42, 1_777_000_000, 2, 2],
+  });
+
+  try {
+    connection.handleNotification({
+      type: 'event',
+      data: {...data, source: 'local'},
+    });
+    connection.handleNotification({
+      type: 'event',
+      data: {...data, source: 'cloud'},
+    });
+
+    expect(logEvents.map(event => event.eventDescription)).toEqual([
+      'doorLockOperation action="unlock" method="fingerprint" position="outside" operatorId=42 source=local',
+      'doorLockOperation action="unlock" method="fingerprint" position="outside" operatorId=42 source=cloud',
+    ]);
+  } finally {
+    removeLogListener();
+    endpoint.bindConnection(undefined);
+  }
 });
 
 test('ignores xiaomi-b03 lock events without a lock or unlock action', () => {

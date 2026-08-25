@@ -102,6 +102,7 @@ test('subscribes once per device and routes cloud messages', async () => {
         did: 'device-1',
         siid: 3,
         eiid: 1,
+        source: 'cloud',
         arguments: {
           type: 'identified',
           data: [{piid: 2, value: 'pressed'}],

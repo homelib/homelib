@@ -177,6 +177,7 @@ export class RoutedDeviceMessageClient implements CloudDeviceMessageClient {
                   data: {
                     ...update,
                     arguments: resolveLocalEventArguments(update.arguments),
+                    source: 'local',
                   },
                 });
               }),
