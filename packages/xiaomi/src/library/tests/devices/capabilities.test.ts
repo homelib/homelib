@@ -793,6 +793,155 @@ describe('MIoT air conditioner capabilities', () => {
 });
 
 describe('MIoT dehumidifier capabilities', () => {
+  test('renews water-full reports and expires after five minutes of other faults', () => {
+    const metadata = findMetadata(
+      MiotDehumidifierEndpointConnection,
+      createDehumidifierSpec(),
+    );
+    const connection = new MiotDehumidifierEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
+    const values: Array<boolean | undefined> = [];
+    const stop = autorun(() => {
+      values.push(connection.waterTankFull);
+    });
+    import.meta.jest.useFakeTimers();
+
+    try {
+      updateProperty(connection, metadata, 'fault', 1);
+      import.meta.jest.advanceTimersByTime(90_000);
+      // A repeated 1 must renew the timer even though the value is unchanged.
+      updateProperty(connection, metadata, 'fault', 1);
+
+      for (let i = 0; i < 9; i++) {
+        import.meta.jest.advanceTimersByTime(30_000);
+        updateProperty(connection, metadata, 'fault', 5);
+        expect(connection.waterTankFull).toBe(true);
+      }
+
+      import.meta.jest.advanceTimersByTime(29_999);
+      expect(connection.waterTankFull).toBe(true);
+      const revision = connection.stateRevision;
+      import.meta.jest.advanceTimersByTime(1);
+      expect(connection.waterTankFull).toBe(false);
+      expect(connection.stateRevision).toBe(revision + 1);
+      expect(values).toEqual([undefined, true, false]);
+
+      updateProperty(connection, metadata, 'fault', 5);
+      expect(connection.waterTankFull).toBe(false);
+      updateProperty(connection, metadata, 'fault', 1);
+      expect(connection.waterTankFull).toBe(true);
+    } finally {
+      stop();
+      connection.dispose();
+      import.meta.jest.useRealTimers();
+    }
+  });
+
+  test('expires a water-full snapshot and releases target humidity protection without another notification', async () => {
+    const metadata = findMetadata(
+      MiotDehumidifierEndpointConnection,
+      createDehumidifierSpec(),
+    );
+    const transport = new TestTransport();
+    const connection = new MiotDehumidifierEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [transport],
+    );
+    import.meta.jest.useFakeTimers();
+
+    try {
+      connection.handleStateUpdate({
+        did: metadata.device.did,
+        online: true,
+        properties: createStateProperties(metadata, {fault: 1}),
+      });
+      expect(connection.waterTankFull).toBe(true);
+      import.meta.jest.advanceTimersByTime(5 * 60_000);
+      expect(connection.waterTankFull).toBe(false);
+      expect(connection.getCommandEffectState('fault')).toBe(1);
+
+      await executeCommand(
+        connection,
+        new SetDehumidifierTargetRelativeHumidityCommand(0.5),
+      );
+      expect(transport.requests).toEqual([
+        createExpectedRequest(metadata, 'target-humidity', 50),
+      ]);
+    } finally {
+      connection.dispose();
+      import.meta.jest.useRealTimers();
+    }
+  });
+
+  test('clears water-full immediately on zero and cancels timers on disposal', () => {
+    const metadata = findMetadata(
+      MiotDehumidifierEndpointConnection,
+      createDehumidifierSpec(),
+    );
+    const connection = new MiotDehumidifierEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
+    import.meta.jest.useFakeTimers();
+
+    try {
+      updateProperty(connection, metadata, 'fault', 1);
+      import.meta.jest.advanceTimersByTime(60_000);
+      updateProperty(connection, metadata, 'fault', 0);
+      expect(connection.waterTankFull).toBe(false);
+      expect(import.meta.jest.getTimerCount()).toBe(0);
+
+      updateProperty(connection, metadata, 'fault', 1);
+      connection.dispose();
+      expect(import.meta.jest.getTimerCount()).toBe(0);
+      const revision = connection.stateRevision;
+      import.meta.jest.advanceTimersByTime(5 * 60_000);
+      expect(connection.stateRevision).toBe(revision);
+    } finally {
+      connection.dispose();
+      import.meta.jest.useRealTimers();
+    }
+  });
+
+  test('keeps the water-full deadline through offline and reconnect snapshots', () => {
+    const metadata = findMetadata(
+      MiotDehumidifierEndpointConnection,
+      createDehumidifierSpec(),
+    );
+    const connection = new MiotDehumidifierEndpointConnection(
+      new MiotProvider('provider'),
+      metadata,
+      [new TestTransport()],
+    );
+    import.meta.jest.useFakeTimers();
+
+    try {
+      updateProperty(connection, metadata, 'fault', 1);
+      import.meta.jest.advanceTimersByTime(4 * 60_000);
+      connection.handleStateUpdate({
+        did: metadata.device.did,
+        online: false,
+        properties: [],
+      });
+      connection.handleStateUpdate({
+        did: metadata.device.did,
+        online: true,
+        properties: createStateProperties(metadata, {fault: 5}),
+      });
+      expect(connection.waterTankFull).toBe(true);
+      import.meta.jest.advanceTimersByTime(60_000);
+      expect(connection.waterTankFull).toBe(false);
+    } finally {
+      connection.dispose();
+      import.meta.jest.useRealTimers();
+    }
+  });
+
   test('matches and projects optional mode, target humidity, and water tank state', () => {
     const metadata = findMetadata(
       MiotDehumidifierEndpointConnection,

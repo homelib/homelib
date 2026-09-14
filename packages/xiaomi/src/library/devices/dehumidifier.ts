@@ -10,7 +10,7 @@ import {
   SetDehumidifierTargetRelativeHumidityCommand,
   Temperature,
 } from '@homelib/core';
-import {computed, observable} from 'mobx';
+import {action, computed, observable} from 'mobx';
 
 import {
   NORMALIZED_PERCENTAGE_PROPERTY_CODEC_DEFINITION,
@@ -28,6 +28,10 @@ const DEHUMIDIFIER_MODE_CODEC_DEFINITION =
   createMiotNamedValueCodecDefinition<DehumidifierMode>({
     '*': {auto: 0, sleep: 1, laundry: 2},
   });
+
+// Water-full reports repeat while protection is active, interleaved with
+// other faults. Emptying the tank may stop those reports without sending 0.
+const WATER_TANK_FULL_TIMEOUT = 5 * 60_000;
 
 export class MiotDehumidifierEndpointConnection
   extends MiotEndpointConnection<
@@ -80,6 +84,8 @@ export class MiotDehumidifierEndpointConnection
 
   @observable private accessor waterTankFullValue: boolean | undefined;
 
+  private waterTankFullTimer: ReturnType<typeof setTimeout> | undefined;
+
   @computed
   get on(): boolean {
     return this.getBooleanPropertyState('on', false);
@@ -129,14 +135,36 @@ export class MiotDehumidifierEndpointConnection
       return;
     }
 
-    // MIoT exposes one fault code at a time. A different local fault can mask
-    // the tank state, so only explicit tank clear/set values replace the last
-    // known value (which normally comes from the cloud-first snapshot).
+    // Other faults neither clear water-full immediately nor renew its timer.
     if (value === 0) {
+      this.cancelWaterTankFullTimeout();
       this.waterTankFullValue = false;
     } else if (value === 1) {
+      this.cancelWaterTankFullTimeout();
       this.waterTankFullValue = true;
+      this.waterTankFullTimer = setTimeout(() => {
+        this.expireWaterTankFull();
+      }, WATER_TANK_FULL_TIMEOUT);
+      this.waterTankFullTimer.unref();
     }
+  }
+
+  @action
+  private expireWaterTankFull(): void {
+    this.waterTankFullTimer = undefined;
+    this.waterTankFullValue = false;
+    this.notifyStateChanged();
+  }
+
+  private cancelWaterTankFullTimeout(): void {
+    if (this.waterTankFullTimer !== undefined) {
+      clearTimeout(this.waterTankFullTimer);
+      this.waterTankFullTimer = undefined;
+    }
+  }
+
+  override dispose(): void {
+    this.cancelWaterTankFullTimeout();
   }
 
   protected override shouldReplaySnapshotPropertyNotifications(
@@ -186,7 +214,10 @@ export class MiotDehumidifierEndpointConnection
         'target-humidity': binding.encode(command.relativeHumidity),
       });
       assertExecutable = () => {
-        if (this.getCommandEffectState('fault') === 1) {
+        if (
+          this.waterTankFull === true &&
+          this.getCommandEffectState('fault') === 1
+        ) {
           throw new CommandError(
             'Cannot set MIoT dehumidifier target humidity while its water tank is full or unavailable.',
           );
